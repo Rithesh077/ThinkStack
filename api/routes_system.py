@@ -19,19 +19,22 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check():
-    """check overall system health including ollama connectivity.
+    """check overall system health including llm runtime connectivity.
 
     returns:
-        system status, ollama connection state, and configuration.
+        system status, llm connection state, and configuration.
     """
-    ollama_status = await ollama_client.check_health()
+    llm_status = await ollama_client.check_health()
     collection_stats = get_collection_stats()
 
     return {
         "status": "running",
-        "ollama": ollama_status,
+        "llm": llm_status,
+        "ollama": llm_status,
         "knowledge_base": collection_stats,
         "config": {
+            "llm_provider": settings.llm_provider,
+            "llm_model_path": str(settings.llm_model_path),
             "ollama_model": settings.ollama_model,
             "embedding_model": settings.embedding_model,
             "chunk_size": settings.chunk_size,
@@ -41,16 +44,17 @@ async def health_check():
 
 @router.get("/models")
 async def list_models():
-    """list all models available in the local ollama instance.
+    """list all models available in the active local llm runtime.
 
     returns:
         list of available models and the currently configured target.
     """
-    ollama_status = await ollama_client.check_health()
+    llm_status = await ollama_client.check_health()
     return {
-        "target_model": settings.ollama_model,
-        "available": ollama_status.get("model_list", []),
-        "target_available": ollama_status.get("target_available", False),
+        "provider": settings.llm_provider,
+        "target_model": llm_status.get("target_model", settings.ollama_model),
+        "available": llm_status.get("model_list", []),
+        "target_available": llm_status.get("target_available", False),
     }
 
 

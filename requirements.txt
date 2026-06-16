@@ -18,6 +18,9 @@ nltk==3.9.1
 # http client for ollama
 httpx==0.28.1
 
+# llama.cpp local inference
+llama-cpp-python==0.3.28
+
 # utilities
 numpy
 pydantic==2.10.5

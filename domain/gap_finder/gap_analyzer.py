@@ -73,7 +73,11 @@ async def analyze_gaps(
     )
 
     try:
-        response = await ollama_client.generate_json(prompt, system=system)
+        response = await ollama_client.generate_json(
+            prompt,
+            system=system,
+            max_tokens=800,
+        )
         data = json.loads(response)
         gaps_data = data.get("gaps", [])
 

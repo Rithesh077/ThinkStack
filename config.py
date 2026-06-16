@@ -19,7 +19,13 @@ class Settings(BaseSettings):
     papers_dir: Path = Path(__file__).parent / "data" / "papers"
     chroma_dir: Path = Path(__file__).parent / "data" / "vectorstore"
 
-    # ollama
+    # llm runtime
+    llm_provider: str = "llama_cpp"
+    llm_model_path: Path = Path(r"E:\odysseus\data\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+    llm_ctx_size: int = 4096
+    llm_gpu_layers: int = 0
+
+    # ollama (optional fallback runtime)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
     ollama_timeout: int = 120

@@ -18,18 +18,18 @@ import './index.css';
  * main application shell with sidebar navigation and routing.
  *
  * provides the layout structure, navigation between views,
- * and displays ollama connection status in the sidebar footer.
+ * and displays local llm runtime status in the sidebar footer.
  */
 export default function App() {
-  const [ollamaStatus, setOllamaStatus] = useState('checking');
+  const [llmStatus, setLlmStatus] = useState('checking');
 
   useEffect(() => {
     const checkHealth = async () => {
       try {
         const data = await systemApi.health();
-        setOllamaStatus(data.ollama?.status || 'disconnected');
+        setLlmStatus(data.llm?.status || data.ollama?.status || 'disconnected');
       } catch {
-        setOllamaStatus('disconnected');
+        setLlmStatus('disconnected');
       }
     };
     checkHealth();
@@ -71,9 +71,9 @@ export default function App() {
 
           <div className="sidebar-footer">
             <div className="status-indicator">
-              <div className={`status-dot ${ollamaStatus !== 'connected' ? 'disconnected' : ''}`} />
+              <div className={`status-dot ${llmStatus !== 'connected' ? 'disconnected' : ''}`} />
               <span>
-                ollama: {ollamaStatus}
+                llm: {llmStatus}
               </span>
             </div>
           </div>

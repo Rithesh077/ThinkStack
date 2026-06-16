@@ -6,6 +6,7 @@ ingested documents, combining claim extraction with gap detection
 and research direction suggestions.
 """
 
+import json
 import logging
 from dataclasses import asdict
 
@@ -13,18 +14,73 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from domain.knowledge_base.repository import get_chunks_by_doc_id
-from domain.analysis.summarizer import summarize_single
-from domain.analysis.claim_extractor import extract_claims
 from domain.gap_finder.gap_analyzer import analyze_gaps
 from domain.gap_finder.suggestion_engine import generate_suggestions
+from infrastructure.ollama_client import ollama_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+DOCUMENT_ANALYSIS_PROMPT = """analyze the following research paper text and return a json object with:
+1. summary: a concise 3-5 sentence summary
+2. claims: a list of 3-10 key claims or findings
+
+for each claim object include:
+- claim_text
+- claim_type (finding, methodology, limitation, future_work)
+- confidence (high, medium, low)
+- supporting_text
+
+paper text:
+{text}
+
+respond only in valid json with keys summary and claims."""
+
+
 class GapAnalysisRequest(BaseModel):
     """request body for gap analysis."""
     doc_ids: list[str] = Field(..., min_length=2)
+
+
+async def _analyze_document(doc_id: str, text: str) -> tuple[dict, list[dict]]:
+    """summarize a paper and extract claims in a single model call.
+
+    this keeps the gap-finder path shorter by avoiding separate summary
+    and claim extraction calls for each paper.
+    """
+    prompt = DOCUMENT_ANALYSIS_PROMPT.format(text=text[:2500])
+    system = (
+        "you are an academic analysis tool. produce concise, grounded output "
+        "and respond only with valid json."
+    )
+
+    try:
+        response = await ollama_client.generate_json(
+            prompt,
+            system=system,
+            max_tokens=800,
+        )
+        data = json.loads(response)
+        summary_text = data.get("summary", "")
+        claims = data.get("claims", [])
+
+        summaries = [{"doc_id": doc_id, "text": summary_text}]
+        claim_rows = []
+        for claim in claims:
+            claim_rows.append({
+                "doc_id": doc_id,
+                "text": claim.get("claim_text", ""),
+                "type": claim.get("claim_type", "finding"),
+            })
+
+        return summaries[0], claim_rows
+    except Exception as e:
+        logger.error("document analysis failed for %s: %s", doc_id, e)
+        return {
+            "doc_id": doc_id,
+            "text": f"analysis failed: {str(e)}",
+        }, []
 
 
 @router.post("/analyze")
@@ -62,19 +118,9 @@ async def analyze(request: GapAnalysisRequest):
 
         text = " ".join(chunks["documents"])
 
-        summary = await summarize_single(doc_id, text)
-        summaries.append({
-            "doc_id": doc_id,
-            "text": summary.summary_text,
-        })
-
-        doc_claims = await extract_claims(doc_id, text)
-        for claim in doc_claims:
-            all_claims.append({
-                "doc_id": claim.doc_id,
-                "text": claim.claim_text,
-                "type": claim.claim_type,
-            })
+        summary_row, doc_claims = await _analyze_document(doc_id, text)
+        summaries.append(summary_row)
+        all_claims.extend(doc_claims)
 
     if len(summaries) < 2:
         raise HTTPException(
