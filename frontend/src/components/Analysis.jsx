@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Brain, Lightbulb, Layers, FileText } from 'lucide-react';
+import { Brain, Lightbulb, Layers, FileText, MessageSquare } from 'lucide-react';
 import { documentsApi, analysisApi } from '../utils/api';
+import ChatDialog from './ChatDialog';
 
 /**
  * analysis dashboard component.
@@ -8,6 +9,7 @@ import { documentsApi, analysisApi } from '../utils/api';
  * allows users to select documents and run summarization,
  * claim extraction, or theme clustering via the slm.
  * displays structured analysis results.
+ * includes an AI chat dialog for interactive Q&A about analysis.
  */
 export default function Analysis() {
   const [documents, setDocuments] = useState([]);
@@ -16,6 +18,10 @@ export default function Analysis() {
   const [activeTab, setActiveTab] = useState('summarize');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+  // chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     const loadDocs = async () => {
@@ -72,6 +78,44 @@ export default function Analysis() {
       setError(err.message);
     }
     setLoading(false);
+  };
+
+  const handleChatSend = async (text) => {
+    const userMsg = { role: 'user', content: text };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+
+    try {
+      // build context from current analysis results
+      let context = '';
+      if (result) {
+        if (activeTab === 'summarize' && result.summary_text) {
+          context = `Analysis summary: ${result.summary_text}`;
+          if (result.key_points?.length) {
+            context += `\nKey points: ${result.key_points.join('; ')}`;
+          }
+        } else if (activeTab === 'claims' && result.claims) {
+          context = `Extracted claims: ${result.claims.map(c => c.claim_text).join('; ')}`;
+        } else if (activeTab === 'themes' && result.themes) {
+          context = `Themes: ${result.themes.map(t => `${t.label}: ${t.description}`).join('; ')}`;
+        }
+      }
+
+      const response = await analysisApi.summarize(selectedDocs.length > 0 ? selectedDocs : documents.slice(0, 3).map(d => d.doc_id));
+      
+      const assistantMsg = {
+        role: 'assistant',
+        content: response.summary_text || 'I analyzed the selected papers. The analysis is ready above. Feel free to ask me specific questions about the findings.',
+      };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      const errorMsg = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${err.message}. Please make sure the backend is running and papers are uploaded.`,
+      };
+      setChatMessages((prev) => [...prev, errorMsg]);
+    }
+    setChatLoading(false);
   };
 
   const tabs = [
@@ -213,6 +257,14 @@ export default function Analysis() {
           )}
         </div>
       )}
+
+      <ChatDialog
+        title="analysis assistant"
+        messages={chatMessages}
+        onSend={handleChatSend}
+        loading={chatLoading}
+        placeholder="ask about your analysis results..."
+      />
     </div>
   );
 }

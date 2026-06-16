@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Target, Compass, FileText, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare } from 'lucide-react';
 import { documentsApi, gapsApi } from '../utils/api';
+import ChatDialog from './ChatDialog';
 
 /**
  * research gap analysis component.
@@ -8,6 +9,7 @@ import { documentsApi, gapsApi } from '../utils/api';
  * orchestrates the full gap analysis pipeline across selected papers.
  * displays identified gaps with severity levels and actionable
  * research direction suggestions.
+ * includes an AI chat dialog for interactive Q&A about gaps.
  */
 export default function GapAnalysis() {
   const [documents, setDocuments] = useState([]);
@@ -15,6 +17,10 @@ export default function GapAnalysis() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+  // chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     const loadDocs = async () => {
@@ -58,6 +64,42 @@ export default function GapAnalysis() {
       setError(err.message);
     }
     setLoading(false);
+  };
+
+  const handleChatSend = async (text) => {
+    const userMsg = { role: 'user', content: text };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+
+    try {
+      const docsToAnalyze = selectedDocs.length >= 2
+        ? selectedDocs
+        : documents.slice(0, 3).map(d => d.doc_id);
+
+      const response = await gapsApi.analyze(docsToAnalyze);
+
+      let reply = '';
+      if (response.gaps?.length) {
+        reply = `I found ${response.total_gaps} research gaps across ${response.papers_analyzed} papers. `;
+        reply += `Top gap: "${response.gaps[0].description}" (${response.gaps[0].severity} severity). `;
+      }
+      if (response.suggestions?.length) {
+        reply += `\n\nSuggested direction: "${response.suggestions[0].title}" — ${response.suggestions[0].description}`;
+      }
+      if (!reply) {
+        reply = 'The gap analysis completed but found no significant gaps in the selected papers. Try selecting different or more papers.';
+      }
+
+      const assistantMsg = { role: 'assistant', content: reply };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      const errorMsg = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${err.message}. Make sure the backend is running and at least 2 papers are uploaded.`,
+      };
+      setChatMessages((prev) => [...prev, errorMsg]);
+    }
+    setChatLoading(false);
   };
 
   const severityIcon = (severity) => {
@@ -260,6 +302,14 @@ export default function GapAnalysis() {
           </p>
         </div>
       )}
+
+      <ChatDialog
+        title="gap finder assistant"
+        messages={chatMessages}
+        onSend={handleChatSend}
+        loading={chatLoading}
+        placeholder="ask about research gaps and directions..."
+      />
     </div>
   );
 }
