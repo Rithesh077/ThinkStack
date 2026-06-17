@@ -17,36 +17,34 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# gbnf grammar that constrains llama.cpp output to valid json only.
+# this prevents conversational fluff like "Sure, here is the JSON:"
+JSON_GBNF_GRAMMAR = r"""
+root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
 
-def _extract_json_text(raw: str) -> str:
-    """pull the json payload out of a raw model response.
+object ::=
+  "{" ws (
+    string ":" ws value
+    ("," ws string ":" ws value)*
+  )? "}" ws
 
-    small local models (e.g. gemma) often wrap json in markdown code
-    fences or add a short preamble, which breaks ``json.loads``. this
-    strips ```...``` fences and narrows the string to the outermost json
-    object or array so downstream parsing succeeds.
+array  ::=
+  "[" ws (
+    value
+    ("," ws value)*
+  )? "]" ws
 
-    args:
-        raw: the raw text returned by the model.
+string ::=
+  "\"" (
+    [^\\"\x7F\x00-\x1F] |
+    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
+  )* "\"" ws
 
-    returns:
-        the best-effort json substring (unchanged if nothing to strip).
-    """
-    s = (raw or "").strip()
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 
-    # strip a fenced code block: ```json ... ``` or ``` ... ```
-    if "```" in s:
-        match = re.search(r"```(?:json)?\s*(.*?)```", s, re.DOTALL)
-        if match:
-            s = match.group(1).strip()
-
-    # narrow to the outermost object/array
-    if "{" in s and "}" in s:
-        s = s[s.find("{"): s.rfind("}") + 1]
-    elif "[" in s and "]" in s:
-        s = s[s.find("["): s.rfind("]") + 1]
-
-    return s
+ws ::= ([ \t\n] ws)?
+"""
 
 
 class OllamaClient:
@@ -128,7 +126,7 @@ class OllamaClient:
         raise FileNotFoundError(f"llama.cpp model not found at {path}")
 
     def _get_llama(self):
-        """lazily initialize llama.cpp model instance."""
+        """lazily initialize llama.cpp model instance with gpu fallback."""
         if self._llama is not None:
             return self._llama
 
@@ -140,11 +138,31 @@ class OllamaClient:
             ) from e
 
         model_path = self._resolve_llama_model_path()
-        logger.info("loading llama.cpp model from %s", model_path)
+
+        # attempt gpu-accelerated load first, fallback to cpu on failure
+        if self.gpu_layers > 0:
+            try:
+                logger.info(
+                    "loading llama.cpp model from %s with %d gpu layers",
+                    model_path, self.gpu_layers,
+                )
+                self._llama = Llama(
+                    model_path=str(model_path),
+                    n_ctx=self.ctx_size,
+                    n_gpu_layers=self.gpu_layers,
+                    verbose=False,
+                )
+                return self._llama
+            except Exception as e:
+                logger.warning(
+                    "gpu load failed (%s), falling back to cpu-only", e
+                )
+
+        logger.info("loading llama.cpp model from %s (cpu-only)", model_path)
         self._llama = Llama(
             model_path=str(model_path),
             n_ctx=self.ctx_size,
-            n_gpu_layers=self.gpu_layers,
+            n_gpu_layers=0,
             verbose=False,
         )
         return self._llama
@@ -185,6 +203,7 @@ class OllamaClient:
         system: Optional[str],
         temperature: float,
         max_tokens: int,
+        json_mode: bool = False,
     ) -> str:
         llama = self._get_llama()
 
@@ -192,20 +211,27 @@ class OllamaClient:
         # (e.g. gemma) do not define a separate system role, so prepending
         # the instructions keeps generation model-agnostic.
         if system:
-            content = f"{system}\n\n{prompt}"
-        else:
-            content = prompt
-        messages = [{"role": "user", "content": content}]
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
-        # serialize so two requests never drive the same model concurrently;
-        # the blocking inference itself runs in a worker thread.
-        async with self._get_gen_lock():
-            result = await asyncio.to_thread(
-                llama.create_chat_completion,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+        kwargs = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        # enforce structured json output via gbnf grammar when requested
+        if json_mode:
+            try:
+                from llama_cpp import LlamaGrammar
+                kwargs["grammar"] = LlamaGrammar.from_string(JSON_GBNF_GRAMMAR)
+            except Exception as e:
+                logger.warning("failed to load json grammar, proceeding without: %s", e)
+
+        result = await asyncio.to_thread(
+            llama.create_chat_completion,
+            **kwargs,
+        )
 
         choices = result.get("choices", [])
         if not choices:
@@ -272,13 +298,12 @@ class OllamaClient:
             raw json string from the model.
         """
         if self.provider == "llama_cpp":
-            # llama.cpp does not guarantee strict json mode here, so the
-            # response may be fenced or have a preamble; extract the json.
-            raw = await self._generate_llama_cpp(
+            return await self._generate_llama_cpp(
                 prompt=prompt,
                 system=system,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                json_mode=True,
             )
             return _extract_json_text(raw)
 

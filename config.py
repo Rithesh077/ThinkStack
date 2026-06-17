@@ -1,9 +1,9 @@
 """
-scholarlens configuration module.
+thinkstack configuration module.
 
 centralizes all application settings including paths, model names,
 chunking parameters, and server configuration. uses pydantic-settings
-for environment variable overrides.
+for environment variable overrides with the THINKSTACK_ prefix.
 """
 
 from pathlib import Path
@@ -18,10 +18,11 @@ class Settings(BaseSettings):
     data_dir: Path = Path(__file__).parent / "data"
     papers_dir: Path = Path(__file__).parent / "data" / "papers"
     chroma_dir: Path = Path(__file__).parent / "data" / "vectorstore"
+    models_dir: Path = Path(__file__).parent / "data" / "models"
 
     # llm runtime
     llm_provider: str = "llama_cpp"
-    llm_model_path: Path = Path(r"E:\odysseus\data\models\gemma-4-E2B-it-Q4_K_M.gguf")
+    llm_model_path: Path = Path(__file__).parent / "data" / "models"
     llm_ctx_size: int = 4096
     # -1 offloads all model layers to the gpu. the ~3 gb gemma q4 model fits
     # comfortably in the rtx 4050's 6 gb vram; override with
@@ -55,9 +56,7 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
 
-
-
-    model_config = {"env_prefix": "SCHOLARLENS_"}
+    model_config = {"env_prefix": "THINKSTACK_"}
 
 
 settings = Settings()

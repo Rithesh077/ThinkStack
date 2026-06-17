@@ -7,7 +7,7 @@ cosine distance on locally generated embeddings.
 
 import logging
 
-from infrastructure.chromadb_client import get_vector_store
+from infrastructure.local_vector_store import get_vector_store
 from domain.knowledge_base.embedding_service import generate_embedding
 from domain.search.models import SearchQuery, SearchResult
 from config import settings
