@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare } from 'lucide-react';
-import { documentsApi, gapsApi } from '../utils/api';
+import { documentsApi, gapsApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
 /**
@@ -68,36 +68,44 @@ export default function GapAnalysis() {
 
   const handleChatSend = async (text) => {
     const userMsg = { role: 'user', content: text };
+    const history = [...chatMessages];
     setChatMessages((prev) => [...prev, userMsg]);
     setChatLoading(true);
 
     try {
-      const docsToAnalyze = selectedDocs.length >= 2
-        ? selectedDocs
-        : documents.slice(0, 3).map(d => d.doc_id);
-
-      const response = await gapsApi.analyze(docsToAnalyze);
-
-      let reply = '';
-      if (response.gaps?.length) {
-        reply = `I found ${response.total_gaps} research gaps across ${response.papers_analyzed} papers. `;
-        reply += `Top gap: "${response.gaps[0].description}" (${response.gaps[0].severity} severity). `;
-      }
-      if (response.suggestions?.length) {
-        reply += `\n\nSuggested direction: "${response.suggestions[0].title}" — ${response.suggestions[0].description}`;
-      }
-      if (!reply) {
-        reply = 'The gap analysis completed but found no significant gaps in the selected papers. Try selecting different or more papers.';
+      // ground the assistant in the current gap-analysis results, if any
+      let context = '';
+      if (result) {
+        if (result.gaps?.length) {
+          context = `Identified gaps: ${result.gaps
+            .map((g) => `${g.description} (${g.severity})`)
+            .join('; ')}`;
+        }
+        if (result.suggestions?.length) {
+          context += `\nSuggested directions: ${result.suggestions
+            .map((s) => `${s.title}: ${s.description}`)
+            .join('; ')}`;
+        }
       }
 
-      const assistantMsg = { role: 'assistant', content: reply };
-      setChatMessages((prev) => [...prev, assistantMsg]);
+      const response = await chatApi.send(text, {
+        docIds: selectedDocs,
+        history,
+        context,
+      });
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: response.answer },
+      ]);
     } catch (err) {
-      const errorMsg = {
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${err.message}. Make sure the backend is running and at least 2 papers are uploaded.`,
-      };
-      setChatMessages((prev) => [...prev, errorMsg]);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Sorry, I encountered an error: ${err.message}. Make sure the backend is running and papers are uploaded.`,
+        },
+      ]);
     }
     setChatLoading(false);
   };

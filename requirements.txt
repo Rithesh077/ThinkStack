@@ -1,28 +1,38 @@
-# scholarlens - offline slm research agent
-# core framework
+# scholarlens / thinkstack - offline slm research agent
+# python 3.11-3.13.   install with:   pip install -r requirements.txt
+# (the react frontend has its own deps:  cd frontend && npm install)
+
+# ── core framework ───────────────────────────────────────
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
-# pdf processing
-pymupdf==1.25.3
-pdfplumber==0.11.4
+# ── pdf processing ───────────────────────────────────────
+pymupdf>=1.25.3
+pdfplumber>=0.11.4
 
-# local embeddings
-sentence-transformers==3.4.1
+# ── local embeddings (pulls in torch) ────────────────────
+sentence-transformers>=3.4.1
 
-# text processing
+# ── keyword search / text ────────────────────────────────
 rank-bm25==0.2.2
-nltk==3.9.1
+nltk>=3.9.1
 
-# http client for ollama
+# ── http client (ollama runtime) ─────────────────────────
 httpx==0.28.1
 
-# llama.cpp local inference
-llama-cpp-python==0.3.28
+# ── llama.cpp local inference ────────────────────────────
+# the CPU build below works on any machine. for NVIDIA GPU acceleration,
+# install the prebuilt CUDA wheel + matching CUDA 12 runtime instead:
+#   pip install llama-cpp-python --extra-index-url \
+#       https://abetlen.github.io/llama-cpp-python/whl/cu124
+#   pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
+# then copy cudart64_12.dll / cublas64_12.dll / cublasLt64_12.dll from the
+# installed nvidia/*/bin folders into site-packages/llama_cpp/lib/, and set
+# SCHOLARLENS_LLM_GPU_LAYERS=-1 (offload all layers; the config default).
+llama-cpp-python>=0.3.30  # cpu fallback; see GPU note above
 
-# utilities
+# ── utilities ────────────────────────────────────────────
 numpy
-pydantic==2.10.5
-pydantic-settings==2.7.1
-
+pydantic>=2.10.5
+pydantic-settings>=2.7.1

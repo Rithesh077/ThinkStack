@@ -1,104 +1,63 @@
-# Python
+# ── Python ───────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+dist-ssr/
 *.egg-info/
-.installed.cfg
 *.egg
+.eggs/
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
-.nox/
-.venv
+
+# ── Virtual environments ─────────────────────────────────
+.venv/
 venv/
-ENV/
-
-# Frontend (Node/Vite)
-frontend/node_modules/
-frontend/dist/
-frontend/dist-ssr/
-frontend/.eslintcache
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
-frontend/.pnpm-debug.log*
-
-# Vectorstore / Local Database
-data/vectorstore/*
-!data/vectorstore/.gitkeep
-
-# Downloaded Papers / Datasets
-data/papers/*
-!data/papers/.gitkeep
-
-# Environment Variables
-.env
-.env.*
-!.env.example
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Environments
-.env
-.venv
 env/
-venv/
 ENV/
 env.bak/
 venv.bak/
 
-# Node / Frontend
+# ── Node / Frontend ──────────────────────────────────────
 node_modules/
-dist/
-dist-ssr/
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
 *.local
+*-debug.log*
 
-# Project-specific local data
+# ── Local data & runtime state (recreated on startup) ────
+# uploaded papers, the vector store, and the persisted model
+# selection (data/active_model.txt) all live here
 data/
+
+# ── Model weights (kept outside the repo; ignore if copied in) ──
+*.gguf
+
+# ── Environment variables ────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Wheels / build artifacts ─────────────────────────────
 *.whl
 
-# LaTeX build outputs
+# ── LaTeX build outputs (keep .tex and .pdf) ─────────────
 docs/*.aux
 docs/*.log
 docs/*.out
 docs/*.toc
 docs/*.synctex.gz
 
-# IDE and Editor files
+# ── IDE / Editor / OS ────────────────────────────────────
 .vscode/
 .idea/
-.DS_Store
+*.swp
+*.swo
 *.suo
-*.ntvs*
-*.njsproj
 *.sln
-*.sw?
+*~
+.DS_Store

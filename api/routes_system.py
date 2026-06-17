@@ -7,7 +7,8 @@ endpoints for monitoring the application state.
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from infrastructure.ollama_client import ollama_client
 from domain.knowledge_base.repository import get_collection_stats
@@ -15,6 +16,11 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class SetModelRequest(BaseModel):
+    """request body for switching the active llm model."""
+    model: str
 
 
 @router.get("/health")
@@ -55,6 +61,33 @@ async def list_models():
         "target_model": llm_status.get("target_model", settings.ollama_model),
         "available": llm_status.get("model_list", []),
         "target_available": llm_status.get("target_available", False),
+    }
+
+
+@router.post("/model")
+async def set_model(request: SetModelRequest):
+    """switch the active llm model at runtime (global for the app).
+
+    for llama.cpp this releases the current model and loads the requested
+    gguf file on the next generation. use a model name returned by the
+    /models endpoint.
+
+    args:
+        request: the target model name (e.g. a gguf filename).
+
+    returns:
+        the now-active model and updated runtime status.
+    """
+    try:
+        result = await ollama_client.set_model(request.model)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    llm_status = await ollama_client.check_health()
+    return {
+        **result,
+        "provider": settings.llm_provider,
+        "available": llm_status.get("model_list", []),
     }
 
 

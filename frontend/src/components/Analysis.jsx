@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Brain, Lightbulb, Layers, FileText, MessageSquare } from 'lucide-react';
-import { documentsApi, analysisApi } from '../utils/api';
+import { documentsApi, analysisApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
 /**
@@ -82,11 +82,12 @@ export default function Analysis() {
 
   const handleChatSend = async (text) => {
     const userMsg = { role: 'user', content: text };
+    const history = [...chatMessages];
     setChatMessages((prev) => [...prev, userMsg]);
     setChatLoading(true);
 
     try {
-      // build context from current analysis results
+      // pass the current analysis results as extra grounding context
       let context = '';
       if (result) {
         if (activeTab === 'summarize' && result.summary_text) {
@@ -101,19 +102,24 @@ export default function Analysis() {
         }
       }
 
-      const response = await analysisApi.summarize(selectedDocs.length > 0 ? selectedDocs : documents.slice(0, 3).map(d => d.doc_id));
-      
-      const assistantMsg = {
-        role: 'assistant',
-        content: response.summary_text || 'I analyzed the selected papers. The analysis is ready above. Feel free to ask me specific questions about the findings.',
-      };
-      setChatMessages((prev) => [...prev, assistantMsg]);
+      const response = await chatApi.send(text, {
+        docIds: selectedDocs,
+        history,
+        context,
+      });
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: response.answer },
+      ]);
     } catch (err) {
-      const errorMsg = {
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${err.message}. Please make sure the backend is running and papers are uploaded.`,
-      };
-      setChatMessages((prev) => [...prev, errorMsg]);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Sorry, I encountered an error: ${err.message}. Please make sure the backend is running and papers are uploaded.`,
+        },
+      ]);
     }
     setChatLoading(false);
   };

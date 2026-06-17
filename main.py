@@ -21,6 +21,7 @@ from api.routes_search import router as search_router
 from api.routes_analysis import router as analysis_router
 from api.routes_gaps import router as gaps_router
 from api.routes_system import router as system_router
+from api.routes_chat import router as chat_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +61,7 @@ app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(analysis_router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(gaps_router, prefix="/api/gaps", tags=["gaps"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 
 frontend_dist = settings.base_dir / "frontend" / "dist"
 if frontend_dist.exists():

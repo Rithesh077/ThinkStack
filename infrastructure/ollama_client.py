@@ -7,6 +7,7 @@ supporting both ollama and llama.cpp runtimes.
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,37 @@ import httpx
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json_text(raw: str) -> str:
+    """pull the json payload out of a raw model response.
+
+    small local models (e.g. gemma) often wrap json in markdown code
+    fences or add a short preamble, which breaks ``json.loads``. this
+    strips ```...``` fences and narrows the string to the outermost json
+    object or array so downstream parsing succeeds.
+
+    args:
+        raw: the raw text returned by the model.
+
+    returns:
+        the best-effort json substring (unchanged if nothing to strip).
+    """
+    s = (raw or "").strip()
+
+    # strip a fenced code block: ```json ... ``` or ``` ... ```
+    if "```" in s:
+        match = re.search(r"```(?:json)?\s*(.*?)```", s, re.DOTALL)
+        if match:
+            s = match.group(1).strip()
+
+    # narrow to the outermost object/array
+    if "{" in s and "}" in s:
+        s = s[s.find("{"): s.rfind("}") + 1]
+    elif "[" in s and "]" in s:
+        s = s[s.find("["): s.rfind("]") + 1]
+
+    return s
 
 
 class OllamaClient:
@@ -38,6 +70,48 @@ class OllamaClient:
         self.gpu_layers = gpu_layers
         self.timeout = timeout
         self._llama = None
+        # serializes access to the single local model instance. llama.cpp is
+        # not safe for concurrent create_chat_completion calls on one model,
+        # so all generations queue through this lock to avoid contention and
+        # state corruption while keeping the event loop responsive.
+        self._gen_lock: Optional[asyncio.Lock] = None
+        # apply any model the user selected in a previous session
+        self._apply_persisted_model()
+
+    def _get_gen_lock(self) -> asyncio.Lock:
+        """lazily create the generation lock bound to the running loop."""
+        if self._gen_lock is None:
+            self._gen_lock = asyncio.Lock()
+        return self._gen_lock
+
+    def _state_file(self) -> Path:
+        """path of the file that remembers the user's selected model."""
+        return settings.data_dir / "active_model.txt"
+
+    def _apply_persisted_model(self) -> None:
+        """load the model selected in a previous session, if any.
+
+        the selection is applied at startup (a fresh load is always safe),
+        which is how a model switch takes effect without an in-process
+        cuda reload.
+        """
+        try:
+            state = self._state_file()
+            if not state.is_file():
+                return
+            name = state.read_text(encoding="utf-8").strip()
+            if not name:
+                return
+            if self.provider == "llama_cpp":
+                candidate = Path(name)
+                if not candidate.is_file():
+                    candidate = self.model_path.parent / name
+                if candidate.is_file():
+                    self.model_path = candidate
+            else:
+                self.model = name
+        except Exception as e:  # noqa: BLE001 - selection is best-effort
+            logger.warning("could not apply persisted model: %s", e)
 
     def _resolve_llama_model_path(self) -> Path:
         """resolve the configured llama.cpp model path.
@@ -113,17 +187,25 @@ class OllamaClient:
         max_tokens: int,
     ) -> str:
         llama = self._get_llama()
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
 
-        result = await asyncio.to_thread(
-            llama.create_chat_completion,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        # fold the system prompt into the user turn. some chat templates
+        # (e.g. gemma) do not define a separate system role, so prepending
+        # the instructions keeps generation model-agnostic.
+        if system:
+            content = f"{system}\n\n{prompt}"
+        else:
+            content = prompt
+        messages = [{"role": "user", "content": content}]
+
+        # serialize so two requests never drive the same model concurrently;
+        # the blocking inference itself runs in a worker thread.
+        async with self._get_gen_lock():
+            result = await asyncio.to_thread(
+                llama.create_chat_completion,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         choices = result.get("choices", [])
         if not choices:
@@ -190,22 +272,98 @@ class OllamaClient:
             raw json string from the model.
         """
         if self.provider == "llama_cpp":
-            # llama.cpp does not guarantee strict json mode here;
-            # downstream prompts already enforce valid json output.
-            return await self._generate_llama_cpp(
+            # llama.cpp does not guarantee strict json mode here, so the
+            # response may be fenced or have a preamble; extract the json.
+            raw = await self._generate_llama_cpp(
                 prompt=prompt,
                 system=system,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            return _extract_json_text(raw)
 
-        return await self._generate_ollama(
+        raw = await self._generate_ollama(
             prompt=prompt,
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=True,
         )
+        return _extract_json_text(raw)
+
+    def _models_dir(self) -> Path:
+        """the directory holding the gguf model files."""
+        path = self.model_path
+        return path if path.is_dir() else path.parent
+
+    def available_gguf_models(self) -> list[Path]:
+        """list all gguf model files available in the models directory."""
+        return sorted(self._models_dir().glob("*.gguf"))
+
+    def _persist_model(self, name: str) -> None:
+        """remember the selected model for the next startup."""
+        try:
+            state = self._state_file()
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(name, encoding="utf-8")
+        except Exception as e:  # noqa: BLE001 - persistence is best-effort
+            logger.warning("could not persist model selection: %s", e)
+
+    async def set_model(self, name: str) -> dict:
+        """select the active model, the global, crash-safe way.
+
+        llama.cpp cannot reinitialise a cuda context in-process, so reloading
+        a different gguf while one is already resident on the gpu crashes the
+        runtime. to stay stable we therefore:
+
+        * persist the selection so it is applied on the next startup;
+        * apply it live only when no model is loaded yet (a fresh load is
+          safe), otherwise report ``restart_required`` and keep serving the
+          currently loaded model.
+
+        args:
+            name: a gguf filename in the models directory, or a full path.
+
+        returns:
+            dict with the active model and whether a restart is needed.
+
+        raises:
+            FileNotFoundError: if the requested model cannot be located.
+        """
+        if self.provider != "llama_cpp":
+            # for ollama the model is just a tag name; ollama itself handles
+            # loading/unloading, so this applies immediately.
+            self.model = name
+            self._persist_model(name)
+            logger.info("active ollama model set to %s", name)
+            return {"active_model": name, "restart_required": False}
+
+        candidate = Path(name)
+        if not candidate.is_file():
+            candidate = self._models_dir() / name
+        if not candidate.is_file():
+            raise FileNotFoundError(f"model not found: {name}")
+
+        self._persist_model(candidate.name)
+
+        async with self._get_gen_lock():
+            if self._llama is None:
+                # nothing resident yet -> safe to apply now; the next
+                # generation loads this model fresh.
+                self.model_path = candidate
+                logger.info("active llama.cpp model set to %s", candidate.name)
+                return {"active_model": candidate.name, "restart_required": False}
+
+            # a model is already on the gpu; defer to a restart to avoid a
+            # cuda re-init crash. the selection is persisted above.
+            logger.info(
+                "model switch to %s deferred until restart", candidate.name
+            )
+            return {
+                "active_model": self.model_path.name,
+                "pending_model": candidate.name,
+                "restart_required": True,
+            }
 
     async def list_models(self) -> list[dict]:
         """retrieve available model metadata for the active runtime.
@@ -214,8 +372,14 @@ class OllamaClient:
             list of model metadata dictionaries.
         """
         if self.provider == "llama_cpp":
-            model_path = self._resolve_llama_model_path()
-            return [{"name": model_path.name, "path": str(model_path)}]
+            models = [
+                {"name": p.name, "path": str(p)}
+                for p in self.available_gguf_models()
+            ]
+            if not models:
+                model_path = self._resolve_llama_model_path()
+                models = [{"name": model_path.name, "path": str(model_path)}]
+            return models
 
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(f"{self.base_url}/api/tags")
@@ -237,13 +401,17 @@ class OllamaClient:
                 except ImportError:
                     dependency_ok = False
 
+                model_files = [p.name for p in self.available_gguf_models()]
+                if not model_files:
+                    model_files = [model_path.name]
+
                 return {
                     "status": "connected" if dependency_ok else "disconnected",
                     "provider": "llama_cpp",
-                    "models_available": 1,
+                    "models_available": len(model_files),
                     "target_model": model_path.name,
                     "target_available": True,
-                    "model_list": [model_path.name],
+                    "model_list": model_files,
                     "model_path": str(model_path),
                     "dependency_installed": dependency_ok,
                     "model_loaded": self._llama is not None,
