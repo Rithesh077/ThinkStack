@@ -1,5 +1,5 @@
 """
-scholarlens application entry point.
+thinkstack application entry point.
 
 configures and starts the fastapi server with all api routers,
 static file serving for the react frontend, cors middleware,
@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from infrastructure.file_manager import ensure_directories
-from infrastructure.chromadb_client import get_vector_store
+from infrastructure.local_vector_store import get_vector_store
 from api.routes_documents import router as documents_router
 from api.routes_search import router as search_router
 from api.routes_analysis import router as analysis_router
@@ -26,23 +26,23 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("scholarlens")
+logger = logging.getLogger("thinkstack")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """handle startup and shutdown tasks."""
-    logger.info("initializing scholarlens")
+    logger.info("initializing thinkstack")
     ensure_directories()
     get_vector_store()
-    logger.info("scholarlens ready at http://%s:%s", settings.host, settings.port)
+    logger.info("thinkstack ready at http://%s:%s", settings.host, settings.port)
     yield
-    logger.info("shutting down scholarlens")
+    logger.info("shutting down thinkstack")
 
 
 app = FastAPI(
-    title="scholarlens",
-    description="offline slm-based research literature review agent",
+    title="thinkstack",
+    description="offline edge-ai research assistant with local inference",
     version="0.1.0",
     lifespan=lifespan,
 )

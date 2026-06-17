@@ -9,7 +9,7 @@ embeddings and metadata for efficient vector search.
 import logging
 from typing import Optional
 
-from infrastructure.chromadb_client import get_vector_store
+from infrastructure.local_vector_store import get_vector_store
 from domain.knowledge_base.embedding_service import generate_embeddings
 from domain.ingestion.models import TextChunk, DocumentMetadata
 

@@ -36,8 +36,12 @@ docs/*.synctex.gz
 .vscode/
 .idea/
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
+
+#local
+local/
+
+#other local files
+*.swp
+*.swo
+*~
 *.sw?
