@@ -1,34 +1,38 @@
-# Current Features and Known Issues
+# current features and known issues
 
-## Current Features
+## current features
 
-1. **Document Ingestion Pipeline**
-   - Cascading PDF parser: Tries PyMuPDF (fast) first, falls back to `pdfplumber` for scanned or complex layouts.
-   - Text chunking algorithm with overlap and page-number retention using word-overlap scoring.
-   - Metadata extraction via RegEx with SLM (Small Language Model) fallback.
+1. **desktop architecture & devops**
+   - standalone cross-platform executable via tauri (rust).
+   - python fastapi sidecar seamlessly bundled using pyinstaller.
+   - one-click automated devops pipeline for setup, development, validation, and building.
 
-2. **Offline Knowledge Base**
-   - Custom NumPy-based local vector store (zero external DB dependencies).
-   - Local embeddings using `sentence-transformers` (`all-MiniLM-L6-v2`).
+2. **document ingestion pipeline**
+   - cascading pdf parser: tries pymupdf (fast) first, falls back to `pdfplumber` for scanned or complex layouts.
+   - text chunking algorithm with overlap and page-number retention using word-overlap scoring.
+   - metadata extraction via regex with slm (small language model) fallback.
 
-3. **Hybrid Search**
-   - Semantic Search (Cosine similarity via embeddings).
-   - Keyword Search (BM25 token matching).
-   - Reciprocal Rank Fusion (RRF) to merge and rank results.
+3. **offline knowledge base**
+   - custom numpy-based local vector store (zero external db dependencies).
+   - local embeddings using `sentence-transformers` (`all-minilm-l6-v2`).
 
-4. **Analysis & Gap Finder**
-   - Single and multi-paper comparative summarization.
-   - Thematic clustering.
-   - Gap analysis (contradictions, methodological, missing validation, etc.) and actionable research suggestions.
-   - Single, efficient LLM calls for gap orchestration.
+4. **hybrid search**
+   - semantic search (cosine similarity via embeddings).
+   - keyword search (bm25 token matching).
+   - reciprocal rank fusion (rrf) to merge and rank results.
 
-5. **Local LLM Integration**
-   - Dual-runtime client: Supports both **Ollama** (API) and **llama.cpp** (direct memory loading via GGUF).
-   - GBNF grammar constraints for strict JSON output when using `llama_cpp`.
-   - GPU-acceleration fallback logic (tries GPU, falls back to CPU on OOM).
+5. **analysis & gap finder**
+   - single and multi-paper comparative summarization.
+   - thematic clustering.
+   - gap analysis (contradictions, methodological, missing validation) and actionable research suggestions.
 
-## Known Issues
+6. **local llm integration**
+   - dual-runtime client: supports both ollama and llama.cpp (direct memory loading via gguf).
+   - gbnf grammar constraints for strict json and latex output when using llama_cpp.
+   - gpu-acceleration fallback logic (tries gpu, falls back to cpu on oom).
 
-1. **BM25 Search Performance**: The BM25 index is built from scratch on every keyword search query. This is acceptable for a small corpus but will become a bottleneck as the document count grows.
-2. **Analysis Route Duplication**: `routes_gaps.py` partially duplicates summarization logic found in `summarizer.py`. (Intentional for efficiency, but adds maintenance overhead).
-3. **LLM Retry Logic**: While GBNF handles `llama_cpp`, there's no extensive retry logic if Ollama hallucinates malformed JSON.
+## known issues
+
+1. **bm25 search performance**: the bm25 index is built from scratch on every keyword search query. this is acceptable for a small corpus but will become a bottleneck as the document count grows.
+2. **analysis route duplication**: `routes_gaps.py` partially duplicates summarization logic found in `summarizer.py`. (intentional for efficiency, but adds maintenance overhead).
+3. **llm retry logic**: while gbnf handles `llama_cpp`, there's no extensive retry logic if ollama hallucinates malformed structures.
