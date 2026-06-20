@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Brain, Lightbulb, Layers, FileText, MessageSquare } from 'lucide-react';
+import { Brain, Lightbulb, Layers, FileText, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
 import { documentsApi, analysisApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
@@ -18,6 +18,8 @@ export default function Analysis() {
   const [activeTab, setActiveTab] = useState('summarize');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -62,13 +64,13 @@ export default function Analysis() {
       let data;
       switch (activeTab) {
         case 'summarize':
-          data = await analysisApi.summarize(selectedDocs);
+          data = await analysisApi.summarize(selectedDocs, password);
           break;
         case 'claims':
-          data = await analysisApi.extractClaims(selectedDocs);
+          data = await analysisApi.extractClaims(selectedDocs, password);
           break;
         case 'themes':
-          data = await analysisApi.clusterThemes(selectedDocs);
+          data = await analysisApi.clusterThemes(selectedDocs, password);
           break;
         default:
           return;
@@ -163,7 +165,7 @@ export default function Analysis() {
                   />
                 </label>
                 <div className="doc-info">
-                  <div className="doc-title">{doc.metadata?.title || doc.filename}</div>
+                  <div className="doc-title">{doc.filename}</div>
                   <div className="doc-meta">{doc.chunks} chunks</div>
                 </div>
               </div>
@@ -184,6 +186,36 @@ export default function Analysis() {
           </button>
         ))}
       </div>
+
+      {(() => {
+        const encryptedSelectedDocs = documents.filter(d => 
+          selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+        );
+        
+        if (encryptedSelectedDocs.length === 0) return null;
+        
+        return (
+          <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+              <Lock size={14} />
+              <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                className="chat-input"
+                style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
+                placeholder="enter encryption password..."
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <button
         className="btn btn-primary"

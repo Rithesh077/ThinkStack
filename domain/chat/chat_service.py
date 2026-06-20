@@ -17,7 +17,7 @@ from config import settings
 from domain.chat.models import ChatAnswer, ChatSource, ChatTurn
 from domain.search.models import SearchQuery
 from domain.search.semantic_search import semantic_search
-from infrastructure.chromadb_client import get_vector_store
+from infrastructure.local_vector_store import get_vector_store
 from infrastructure.ollama_client import ollama_client
 
 logger = logging.getLogger(__name__)

@@ -36,3 +36,8 @@ llama-cpp-python>=0.3.30  # cpu fallback; see GPU note above
 numpy
 pydantic>=2.10.5
 pydantic-settings>=2.7.1
+
+# ── encryption (aes-256-gcm + argon2id kdf) ──────────────
+cryptography>=44.0.0
+argon2-cffi>=23.1.0
+
