@@ -1,63 +1,61 @@
-# ── Python ───────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
 build/
+develop-eggs/
 dist/
-dist-ssr/
-*.egg-info/
-*.egg
+downloads/
+eggs/
 .eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .pytest_cache/
 .coverage
 htmlcov/
-
-# ── Virtual environments ─────────────────────────────────
-.venv/
+.tox/
+.nox/
+.venv
 venv/
-env/
 ENV/
-env.bak/
-venv.bak/
 
-# ── Node / Frontend ──────────────────────────────────────
-node_modules/
+# Frontend (Node/Vite)
 frontend/node_modules/
 frontend/dist/
+frontend/dist-ssr/
 frontend/.eslintcache
-*.local
-*-debug.log*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
 
-# ── Local data & runtime state (recreated on startup) ────
-# uploaded papers, the vector store, and the persisted model
-# selection (data/active_model.txt) all live here
-data/
+# Vectorstore / Local Database
+data/vectorstore/*
+!data/vectorstore/.gitkeep
 
-# ── Model weights (kept outside the repo; ignore if copied in) ──
-*.gguf
+# Downloaded Papers / Datasets
+data/papers/*
+!data/papers/.gitkeep
 
-# ── Environment variables ────────────────────────────────
+# Environment Variables
 .env
 .env.*
 !.env.example
 
-# ── Wheels / build artifacts ─────────────────────────────
-*.whl
-
-# ── LaTeX build outputs (keep .tex and .pdf) ─────────────
-docs/*.aux
-docs/*.log
-docs/*.out
-docs/*.toc
-docs/*.synctex.gz
-
-# ── IDE / Editor / OS ────────────────────────────────────
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-*.suo
-*.sln
 *~
 .DS_Store

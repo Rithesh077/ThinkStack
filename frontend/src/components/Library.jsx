@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, Unlock, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react';
-import { documentsApi, encryptionApi } from '../utils/api';
+import { FileText, Trash2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { documentsApi } from '../utils/api';
 import UploadPanel from './UploadPanel';
 
 /**
  * paper library component.
  *
  * displays all ingested documents, allows upload of new papers,
- * and provides document deletion and encryption controls.
- * shows metadata, chunk counts, and encryption status for each paper.
+ * and provides document deletion. shows metadata and chunk
+ * counts for each paper.
  */
 export default function Library() {
   const [documents, setDocuments] = useState([]);
@@ -16,15 +16,6 @@ export default function Library() {
   const [stats, setStats] = useState({ total: 0, total_chunks: 0 });
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [docDetails, setDocDetails] = useState({});
-
-  // encryption state
-  const [encryptingDoc, setEncryptingDoc] = useState(null);   // doc_id being encrypted/decrypted
-  const [encryptPassword, setEncryptPassword] = useState('');
-  const [encryptAction, setEncryptAction] = useState(null);   // 'encrypt' | 'decrypt' | 'remove' | 'view'
-  const [encryptError, setEncryptError] = useState('');
-  const [encryptBusy, setEncryptBusy] = useState(false);
-  const [decryptedText, setDecryptedText] = useState(null);
-  const [showPassword, setShowPassword] = useState(false);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -65,67 +56,6 @@ export default function Library() {
         console.error('failed to load document details:', err);
       }
     }
-  };
-
-  // --- Encryption handlers ---
-
-  const openEncryptDialog = (docId, action) => {
-    setEncryptingDoc(docId);
-    setEncryptAction(action);
-    setEncryptPassword('');
-    setEncryptError('');
-    setDecryptedText(null);
-    setShowPassword(false);
-  };
-
-  const closeEncryptDialog = () => {
-    setEncryptingDoc(null);
-    setEncryptAction(null);
-    setEncryptPassword('');
-    setEncryptError('');
-    setDecryptedText(null);
-    setShowPassword(false);
-  };
-
-  const handleEncryptSubmit = async (e) => {
-    e.preventDefault();
-    if (!encryptPassword.trim()) {
-      setEncryptError('password is required');
-      return;
-    }
-
-    setEncryptBusy(true);
-    setEncryptError('');
-
-    try {
-      if (encryptAction === 'encrypt') {
-        await encryptionApi.encrypt(encryptingDoc, encryptPassword);
-        closeEncryptDialog();
-        loadDocuments();
-      } else if (encryptAction === 'view') {
-        const result = await encryptionApi.decrypt(encryptingDoc, encryptPassword);
-        setDecryptedText(result.full_text);
-      } else if (encryptAction === 'remove') {
-        await encryptionApi.removeEncryption(encryptingDoc, encryptPassword);
-        closeEncryptDialog();
-        loadDocuments();
-      }
-    } catch (err) {
-      setEncryptError(err.message || 'operation failed');
-    }
-
-    setEncryptBusy(false);
-  };
-
-  const isDocEncrypted = (doc) => {
-    const meta = doc.metadata || {};
-    return meta.is_encrypted === 'true' || meta.is_encrypted === true;
-  };
-
-  const actionLabels = {
-    encrypt: { title: 'encrypt paper', button: 'encrypt', icon: Lock },
-    view: { title: 'view encrypted paper', button: 'decrypt & view', icon: Eye },
-    remove: { title: 'remove encryption', button: 'remove encryption', icon: ShieldOff },
   };
 
   return (
@@ -178,20 +108,11 @@ export default function Library() {
             <div key={doc.doc_id}>
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
                 <div className="doc-icon">
-                  {isDocEncrypted(doc) ? (
-                    <Lock size={18} color="var(--accent)" />
-                  ) : (
-                    <FileText size={18} />
-                  )}
+                  <FileText size={18} />
                 </div>
                 <div className="doc-info">
                   <div className="doc-title">
-                    {doc.filename}
-                    {isDocEncrypted(doc) && (
-                      <span className="badge badge-warning" style={{ marginLeft: '0.5rem', fontSize: '0.65rem' }}>
-                        encrypted
-                      </span>
-                    )}
+                    {doc.metadata?.title || doc.filename}
                   </div>
                   <div className="doc-meta">
                     {doc.metadata?.authors && `${doc.metadata.authors} | `}
@@ -199,33 +120,7 @@ export default function Library() {
                     {doc.chunks} chunks | {(doc.size_bytes / 1024).toFixed(0)} kb
                   </div>
                 </div>
-                <div className="doc-actions" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
-                  {isDocEncrypted(doc) ? (
-                    <>
-                      <button
-                        className="btn-icon"
-                        onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'view'); }}
-                        title="view decrypted text"
-                      >
-                        <Eye size={16} />
-                      </button>
-                      <button
-                        className="btn-icon"
-                        onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'remove'); }}
-                        title="remove encryption"
-                      >
-                        <ShieldOff size={16} />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="btn-icon"
-                      onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'encrypt'); }}
-                      title="encrypt paper"
-                    >
-                      <ShieldCheck size={16} />
-                    </button>
-                  )}
+                <div className="doc-actions">
                   <button
                     className="btn-icon"
                     onClick={(e) => { e.stopPropagation(); handleDelete(doc.doc_id); }}
@@ -243,17 +138,10 @@ export default function Library() {
               {expandedDoc === doc.doc_id && docDetails[doc.doc_id] && (
                 <div style={{ padding: '0 1.25rem 1rem', marginTop: '-0.25rem' }}>
                   <div className="card" style={{ background: 'var(--bg-tertiary)' }}>
-                    {isDocEncrypted(doc) ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--warning)', fontSize: '0.85rem' }}>
-                        <Lock size={14} />
-                        <span>this document is encrypted. use the view button to read.</span>
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7' }}>
-                        {docDetails[doc.doc_id].full_text?.substring(0, 800)}
-                        {docDetails[doc.doc_id].full_text?.length > 800 && '...'}
-                      </p>
-                    )}
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7' }}>
+                      {docDetails[doc.doc_id].full_text?.substring(0, 800)}
+                      {docDetails[doc.doc_id].full_text?.length > 800 && '...'}
+                    </p>
                   </div>
                 </div>
               )}
@@ -261,107 +149,6 @@ export default function Library() {
           ))
         )}
       </div>
-
-      {/* ── Encryption Modal ── */}
-      {encryptingDoc && encryptAction && (
-        <div
-          className="modal-overlay"
-          onClick={closeEncryptDialog}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            className="card"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '460px',
-              padding: '1.5rem', animation: 'fadeIn 0.2s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              {(() => { const Icon = actionLabels[encryptAction]?.icon || Lock; return <Icon size={20} />; })()}
-              <h3 style={{ margin: 0 }}>{actionLabels[encryptAction]?.title}</h3>
-            </div>
-
-            {decryptedText ? (
-              <div>
-                <div className="card" style={{ background: 'var(--bg-tertiary)', maxHeight: '400px', overflowY: 'auto' }}>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
-                    {decryptedText.substring(0, 3000)}
-                    {decryptedText.length > 3000 && '...'}
-                  </p>
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={closeEncryptDialog}
-                  style={{ marginTop: '1rem', width: '100%' }}
-                >
-                  close
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleEncryptSubmit}>
-                <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="search-input"
-                    placeholder="enter password…"
-                    value={encryptPassword}
-                    onChange={(e) => setEncryptPassword(e.target.value)}
-                    autoFocus
-                    style={{ width: '100%', paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn-icon"
-                    onClick={() => setShowPassword((v) => !v)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)' }}
-                    title={showPassword ? 'hide password' : 'show password'}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-
-                {encryptError && (
-                  <div style={{
-                    color: 'var(--danger)', background: 'rgba(248,113,113,0.1)',
-                    padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
-                    fontSize: '0.85rem', marginBottom: '1rem',
-                  }}>
-                    {encryptError}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeEncryptDialog}
-                    style={{ flex: 1 }}
-                  >
-                    cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className={`btn ${encryptAction === 'remove' ? 'btn-danger' : 'btn-primary'}`}
-                    disabled={encryptBusy}
-                    style={{ flex: 1 }}
-                  >
-                    {encryptBusy ? (
-                      <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                    ) : (
-                      actionLabels[encryptAction]?.button
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 """
-thinkstack application entry point.
+scholarlens application entry point.
 
 configures and starts the fastapi server with all api routers,
 static file serving for the react frontend, cors middleware,
@@ -15,36 +15,34 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from infrastructure.file_manager import ensure_directories
-from infrastructure.local_vector_store import get_vector_store
+from infrastructure.chromadb_client import get_vector_store
 from api.routes_documents import router as documents_router
 from api.routes_search import router as search_router
 from api.routes_analysis import router as analysis_router
 from api.routes_gaps import router as gaps_router
 from api.routes_system import router as system_router
-from api.routes_chat import router as chat_router
-from api.routes_encryption import router as encryption_router
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("thinkstack")
+logger = logging.getLogger("scholarlens")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """handle startup and shutdown tasks."""
-    logger.info("initializing thinkstack")
+    logger.info("initializing scholarlens")
     ensure_directories()
     get_vector_store()
-    logger.info("thinkstack ready at http://%s:%s", settings.host, settings.port)
+    logger.info("scholarlens ready at http://%s:%s", settings.host, settings.port)
     yield
-    logger.info("shutting down thinkstack")
+    logger.info("shutting down scholarlens")
 
 
 app = FastAPI(
-    title="thinkstack",
-    description="offline edge-ai research assistant with local inference",
+    title="scholarlens",
+    description="offline slm-based research literature review agent",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -62,8 +60,6 @@ app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(analysis_router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(gaps_router, prefix="/api/gaps", tags=["gaps"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
-app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
-app.include_router(encryption_router, prefix="/api/encryption", tags=["encryption"])
 
 frontend_dist = settings.base_dir / "frontend" / "dist"
 if frontend_dist.exists():

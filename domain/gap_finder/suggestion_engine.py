@@ -67,11 +67,7 @@ async def generate_suggestions(gaps: list[ResearchGap]) -> list[Suggestion]:
     )
 
     try:
-        response = await ollama_client.generate_json(
-            prompt,
-            system=system,
-            max_tokens=800,
-        )
+        response = await ollama_client.generate_json(prompt, system=system)
         data = json.loads(response)
         suggestions_data = data.get("suggestions", [])
 
