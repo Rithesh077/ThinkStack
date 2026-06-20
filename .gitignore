@@ -61,3 +61,6 @@ docs/*.synctex.gz
 *.sln
 *~
 .DS_Store
+
+#local
+local/

@@ -87,9 +87,6 @@ if you are not using `./scripts/setup.sh`, ensure you have:
 | latex compiler     | tectonic (rust-based, bundled sidecar)  |
 | p2p networking     | libp2p (rust)                           |
 
-## learning guide
-
-for a comprehensive breakdown of the foundational concepts driving this project—from cpu inference and cloud fine-tuning to context-free grammars and cryptography—please see the `edge_AI_learning_guide.md` in the documentation artifacts.
 
 ## license
 
