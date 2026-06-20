@@ -108,6 +108,34 @@ class VectorStore:
         self._save()
         return len(ids)
 
+    def update(
+        self,
+        ids: list[str],
+        metadatas: Optional[list[dict]] = None,
+    ) -> int:
+        """update metadata for existing entries without changing documents/embeddings.
+
+        args:
+            ids: list of entry ids to update.
+            metadatas: list of metadata dicts corresponding to the ids.
+
+        returns:
+            number of entries updated.
+        """
+        existing_ids = {e["id"]: i for i, e in enumerate(self._entries)}
+        updated = 0
+
+        if metadatas:
+            for entry_id, meta in zip(ids, metadatas):
+                if entry_id in existing_ids:
+                    self._entries[existing_ids[entry_id]]["metadata"] = meta
+                    updated += 1
+
+        if updated > 0:
+            self._save()
+            
+        return updated
+
     def query(
         self,
         query_embedding: list[float],

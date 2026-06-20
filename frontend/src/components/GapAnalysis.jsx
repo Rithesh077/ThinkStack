@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare } from 'lucide-react';
+import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
 import { documentsApi, gapsApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
@@ -17,6 +17,8 @@ export default function GapAnalysis() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -58,7 +60,7 @@ export default function GapAnalysis() {
     setResult(null);
 
     try {
-      const data = await gapsApi.analyze(selectedDocs);
+      const data = await gapsApi.analyze(selectedDocs, password);
       setResult(data);
     } catch (err) {
       setError(err.message);
@@ -162,13 +164,43 @@ export default function GapAnalysis() {
                   />
                 </label>
                 <div className="doc-info">
-                  <div className="doc-title">{doc.metadata?.title || doc.filename}</div>
+                  <div className="doc-title">{doc.filename}</div>
                   <div className="doc-meta">{doc.chunks} chunks</div>
                 </div>
               </div>
             ))}
           </div>
         )}
+
+        {(() => {
+          const encryptedSelectedDocs = documents.filter(d => 
+            selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+          );
+          
+          if (encryptedSelectedDocs.length === 0) return null;
+          
+          return (
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+                <Lock size={14} />
+                <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="chat-input"
+                  style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
+                  placeholder="enter encryption password..."
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ marginTop: '1rem' }}>
           <button

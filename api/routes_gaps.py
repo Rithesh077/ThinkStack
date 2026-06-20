@@ -41,6 +41,7 @@ respond only in valid json with keys summary and claims."""
 class GapAnalysisRequest(BaseModel):
     """request body for gap analysis."""
     doc_ids: list[str] = Field(..., min_length=2)
+    password: str | None = None
 
 
 async def _analyze_document(doc_id: str, text: str) -> tuple[dict, list[dict]]:
@@ -116,7 +117,22 @@ async def analyze(request: GapAnalysisRequest):
             logger.warning("no chunks found for document %s, skipping", doc_id)
             continue
 
-        text = " ".join(chunks["documents"])
+        first_meta = chunks["metadatas"][0] if chunks["metadatas"] else {}
+        is_enc = first_meta.get("is_encrypted")
+        if is_enc == "true" or is_enc is True:
+            if not request.password:
+                raise HTTPException(status_code=403, detail=f"document is encrypted. password required.")
+            from domain.encryption.vault import decrypt_paper, WrongPasswordError
+            from domain.encryption.envelope import EnvelopeFormatError
+            envelope = first_meta.get("encrypted_envelope")
+            try:
+                text = decrypt_paper(envelope, request.password)
+            except WrongPasswordError:
+                raise HTTPException(status_code=403, detail="incorrect password")
+            except EnvelopeFormatError:
+                raise HTTPException(status_code=422, detail="corrupted envelope")
+        else:
+            text = " ".join(chunks["documents"])
 
         summary_row, doc_claims = await _analyze_document(doc_id, text)
         summaries.append(summary_row)
