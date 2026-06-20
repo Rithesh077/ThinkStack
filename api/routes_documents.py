@@ -112,6 +112,7 @@ async def list_documents():
                 "title": first_meta.get("title", ""),
                 "authors": first_meta.get("authors", ""),
                 "year": first_meta.get("year", ""),
+                "is_encrypted": first_meta.get("is_encrypted", "false"),
             }
 
         documents.append({

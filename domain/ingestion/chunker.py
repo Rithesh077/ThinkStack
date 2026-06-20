@@ -150,9 +150,17 @@ def chunk_pages(
     chunks = chunk_text(full_text, doc_id, chunk_size, chunk_overlap)
 
     for chunk in chunks:
+        best_page = 0
+        best_overlap = 0
         for page in pages:
-            if chunk.text[:80] in page["text"]:
-                chunk.page_number = page["page_number"]
-                break
+            # count character overlap between chunk text and page text
+            overlap = sum(
+                1 for word in chunk.text.split()[:20]
+                if word in page["text"]
+            )
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_page = page["page_number"]
+        chunk.page_number = best_page
 
     return chunks
