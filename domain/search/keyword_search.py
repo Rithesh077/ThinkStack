@@ -11,7 +11,7 @@ import re
 
 from rank_bm25 import BM25Okapi
 
-from infrastructure.local_vector_store import get_vector_store
+from infrastructure.chromadb_client import get_vector_store
 from domain.search.models import SearchQuery, SearchResult
 
 logger = logging.getLogger(__name__)

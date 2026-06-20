@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def ensure_directories() -> None:
     """create all required data directories if they do not exist."""
-    for directory in [settings.data_dir, settings.papers_dir, settings.chroma_dir, settings.models_dir]:
+    for directory in [settings.data_dir, settings.papers_dir, settings.chroma_dir]:
         directory.mkdir(parents=True, exist_ok=True)
         logger.info("ensured directory: %s", directory)
 

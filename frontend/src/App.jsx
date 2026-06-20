@@ -18,57 +18,24 @@ import './index.css';
  * main application shell with sidebar navigation and routing.
  *
  * provides the layout structure, navigation between views,
- * and displays local llm runtime status in the sidebar footer.
+ * and displays ollama connection status in the sidebar footer.
  */
 export default function App() {
-  const [llmStatus, setLlmStatus] = useState('checking');
-  const [models, setModels] = useState([]);
-  const [activeModel, setActiveModel] = useState('');
-  const [switching, setSwitching] = useState(false);
-  const [modelNote, setModelNote] = useState('');
+  const [ollamaStatus, setOllamaStatus] = useState('checking');
 
   useEffect(() => {
     const checkHealth = async () => {
       try {
         const data = await systemApi.health();
-        setLlmStatus(data.llm?.status || data.ollama?.status || 'disconnected');
-        const list = data.llm?.model_list || [];
-        setModels(list);
-        setActiveModel((prev) => prev || data.llm?.target_model || '');
+        setOllamaStatus(data.ollama?.status || 'disconnected');
       } catch {
-        setLlmStatus('disconnected');
+        setOllamaStatus('disconnected');
       }
     };
     checkHealth();
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleModelChange = async (e) => {
-    const model = e.target.value;
-    if (!model || model === activeModel) return;
-    const previous = activeModel;
-    setActiveModel(model);
-    setSwitching(true);
-    setModelNote('');
-    try {
-      const res = await systemApi.setModel(model);
-      if (res.restart_required) {
-        // a model is already loaded; llama.cpp can't swap in-process, so the
-        // choice applies on the next restart. keep showing the running model.
-        setActiveModel(res.active_model || previous);
-        setModelNote(`restart to apply ${prettyModel(model)}`);
-      } else {
-        setActiveModel(res.active_model || model);
-      }
-    } catch {
-      setActiveModel(previous); // revert on failure
-    }
-    setSwitching(false);
-  };
-
-  const prettyModel = (name) =>
-    name.replace(/\.gguf$/i, '').replace(/-Q4_K_M$/i, '');
 
   const navItems = [
     { to: '/', icon: BookOpen, label: 'library' },
@@ -103,29 +70,10 @@ export default function App() {
           </nav>
 
           <div className="sidebar-footer">
-            {models.length > 0 && (
-              <div className="model-selector">
-                <label htmlFor="model-select">model</label>
-                <select
-                  id="model-select"
-                  className="model-select"
-                  value={activeModel}
-                  onChange={handleModelChange}
-                  disabled={switching}
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {prettyModel(m)}
-                    </option>
-                  ))}
-                </select>
-                {modelNote && <span className="model-note">{modelNote}</span>}
-              </div>
-            )}
             <div className="status-indicator">
-              <div className={`status-dot ${llmStatus !== 'connected' ? 'disconnected' : ''}`} />
+              <div className={`status-dot ${ollamaStatus !== 'connected' ? 'disconnected' : ''}`} />
               <span>
-                llm: {switching ? 'switching…' : llmStatus}
+                ollama: {ollamaStatus}
               </span>
             </div>
           </div>
