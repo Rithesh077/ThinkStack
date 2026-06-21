@@ -144,7 +144,7 @@ export default function GapAnalysis() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header fade-up stagger-1">
         <div className="page-header-left">
           <h2>Gap Finder</h2>
           <p>AI-identified research gaps and novel directions in your library.</p>
@@ -156,19 +156,18 @@ export default function GapAnalysis() {
       </div>
 
       {showSetup && (
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card fade-up stagger-2" style={{ marginBottom: '1.5rem' }}>
           <div className="card-header">
-            <span className="card-title">select papers for gap analysis (min. 2)</span>
+            <span className="card-title">Select papers for gap analysis (min. 2)</span>
             <button className="btn btn-secondary btn-sm" onClick={selectAll}>
-              {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
+              {selectedDocs.length === documents.length ? 'Deselect all' : 'Select all'}
             </button>
           </div>
 
           {documents.length === 0 ? (
             <div className="empty-state">
-              <FileText size={36} />
-              <h3>no papers available</h3>
-              <p>upload at least 2 papers in the library first.</p>
+              <h3>No papers available</h3>
+              <p>Upload at least 2 papers in the Library first.</p>
             </div>
           ) : (
             <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
@@ -201,19 +200,19 @@ export default function GapAnalysis() {
               <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
                   <Lock size={14} />
-                  <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+                  <span>Password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <input
                     type={showPassword ? "text" : "password"}
                     className="input"
                     style={{ width: '300px' }}
-                    placeholder="enter encryption password..."
+                    placeholder="Enter encryption password..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
-                  <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <button className="btn-icon btn-icon-accent" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
               </div>
@@ -227,11 +226,11 @@ export default function GapAnalysis() {
               disabled={loading || selectedDocs.length < 2}
             >
               {loading ? <div className="spinner" /> : <Target size={16} />}
-              <span>{loading ? 'analyzing gaps...' : 'run gap analysis'}</span>
+              <span>{loading ? 'Analyzing gaps...' : 'Run Gap Analysis'}</span>
             </button>
             {selectedDocs.length < 2 && selectedDocs.length > 0 && (
               <span style={{ marginLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
-                select at least 2 papers
+                Select at least 2 papers
               </span>
             )}
           </div>
@@ -245,13 +244,13 @@ export default function GapAnalysis() {
       )}
 
       {loading && (
-        <div className="card">
+        <div className="card fade-up stagger-3">
           <div className="loading-overlay">
             <div className="spinner spinner-lg" />
-            <span>running gap analysis pipeline...</span>
+            <span>Running gap analysis pipeline...</span>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '400px', textAlign: 'center' }}>
-              this may take a few minutes. the system is summarizing papers,
-              extracting claims, and analyzing gaps using the local slm.
+              This may take a few minutes. The system is summarizing papers,
+              extracting claims, and analyzing gaps using the local SLM.
             </p>
           </div>
         </div>
@@ -264,7 +263,7 @@ export default function GapAnalysis() {
               {result.gaps.map((gap, i) => {
                 const gapSuggestions = getSuggestionsForGap(i);
                 return (
-                  <div key={i} className={`gap-card severity-${gap.severity}`}>
+                  <div key={i} className={`gap-card severity-${gap.severity} fade-up stagger-${(i % 4) + 1}`}>
                     <div className="gap-card-header">
                       <h4 className="gap-card-title">
                         {gap.description?.split('.')[0] || gapTypeLabel(gap.gap_type)}
@@ -312,30 +311,29 @@ export default function GapAnalysis() {
           )}
 
           {result.gaps && result.gaps.length === 0 && (
-            <div className="card">
-              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>no significant gaps identified.</p>
+            <div className="card fade-up stagger-4">
+              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>No significant gaps identified.</p>
             </div>
           )}
         </>
       )}
 
       {!result && !loading && !showSetup && (
-        <div className="empty-state">
-          <Target size={48} />
-          <h3>find research gaps</h3>
+        <div className="empty-state fade-up stagger-2">
+          <h3>Find Research Gaps</h3>
           <p>
-            click "Scan Library" to select papers and identify contradictions,
+            Click "Scan Library" to select papers and identify contradictions,
             under-explored areas, and promising research directions.
           </p>
         </div>
       )}
 
       <ChatDialog
-        title="gap finder assistant"
+        title="Gap Finder Assistant"
         messages={chatMessages}
         onSend={handleChatSend}
         loading={chatLoading}
-        placeholder="ask about research gaps and directions..."
+        placeholder="Ask about research gaps and directions..."
       />
     </div>
   );

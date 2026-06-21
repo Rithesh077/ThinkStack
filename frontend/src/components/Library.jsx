@@ -130,14 +130,14 @@ export default function Library() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header fade-up stagger-1">
         <div className="page-header-left">
           <h2>Library</h2>
           <p>Manage your collection of ingested research papers.</p>
         </div>
       </div>
 
-      <div className="stat-row">
+      <div className="stat-row fade-up stagger-2">
         <div className="stat-card">
           <div className="stat-card-top">
             <span className="stat-card-label">Papers Ingested</span>
@@ -168,11 +168,13 @@ export default function Library() {
         </div>
       </div>
 
-      <UploadPanel onUploadComplete={loadDocuments} />
+      <div className="fade-up stagger-3">
+        <UploadPanel onUploadComplete={loadDocuments} />
+      </div>
 
-      <h3 className="section-heading" style={{ marginTop: '2rem' }}>Ingested Papers</h3>
+      <h3 className="section-heading fade-up stagger-4" style={{ marginTop: '2rem' }}>Ingested Papers</h3>
 
-      <div className="card">
+      <div className="card fade-up stagger-4">
         <div className="card-header">
           <span className="card-title"></span>
           <button className="btn btn-secondary btn-sm" onClick={loadDocuments}>
@@ -220,35 +222,35 @@ export default function Library() {
                   {isDocEncrypted(doc) ? (
                     <>
                       <button
-                        className="btn-icon"
+                        className="btn-icon btn-icon-accent"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'view'); }}
                         title="view decrypted text"
                       >
-                        <Eye size={16} />
+                        <Eye size={20} />
                       </button>
                       <button
-                        className="btn-icon"
+                        className="btn-icon btn-icon-warning"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'remove'); }}
                         title="remove encryption"
                       >
-                        <ShieldOff size={16} />
+                        <ShieldOff size={20} />
                       </button>
                     </>
                   ) : (
                     <button
-                      className="btn-icon"
+                      className="btn-icon btn-icon-accent"
                       onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'encrypt'); }}
                       title="encrypt paper"
                     >
-                      <ShieldCheck size={16} />
+                      <ShieldCheck size={20} />
                     </button>
                   )}
                   <button
-                    className="btn-icon"
+                    className="btn-icon btn-icon-danger"
                     onClick={(e) => { e.stopPropagation(); handleDelete(doc.doc_id); }}
                     title="delete paper"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={20} />
                   </button>
                   {expandedDoc === doc.doc_id ? (
                     <ChevronUp size={16} color="var(--text-muted)" />
@@ -333,12 +335,12 @@ export default function Library() {
                   />
                   <button
                     type="button"
-                    className="btn-icon"
+                    className="btn-icon btn-icon-accent"
                     onClick={() => setShowPassword((v) => !v)}
-                    style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)' }}
+                    style={{ position: 'absolute', right: '0.25rem', top: '50%', transform: 'translateY(-50%)' }}
                     title={showPassword ? 'hide password' : 'show password'}
                   >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
 

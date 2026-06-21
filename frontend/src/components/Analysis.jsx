@@ -128,14 +128,14 @@ export default function Analysis() {
   };
 
   const tabs = [
-    { id: 'summarize', label: 'summarize', icon: Brain },
-    { id: 'claims', label: 'extract claims', icon: Lightbulb },
-    { id: 'themes', label: 'cluster themes', icon: Layers },
+    { id: 'summarize', label: 'Summarize', icon: Brain },
+    { id: 'claims', label: 'Extract Claims', icon: Lightbulb },
+    { id: 'themes', label: 'Cluster Themes', icon: Layers },
   ];
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header fade-up stagger-1">
         <div className="page-header-left">
           <h2>Analysis</h2>
           <p>Run cross-paper analyses and synthesize findings.</p>
@@ -148,19 +148,18 @@ export default function Analysis() {
 
       {showNewAnalysis && (
         <>
-          <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card fade-up stagger-2" style={{ marginBottom: '1.5rem' }}>
             <div className="card-header">
-              <span className="card-title">select papers to analyze</span>
+              <span className="card-title">Select papers to analyze</span>
               <button className="btn btn-secondary btn-sm" onClick={selectAll}>
-                {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
+                {selectedDocs.length === documents.length ? 'Deselect all' : 'Select all'}
               </button>
             </div>
 
             {documents.length === 0 ? (
               <div className="empty-state">
-                <FileText size={36} />
-                <h3>no papers available</h3>
-                <p>upload papers in the library first.</p>
+                <h3>No papers available</h3>
+                <p>Upload papers in the Library first.</p>
               </div>
             ) : (
               <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
@@ -183,7 +182,7 @@ export default function Analysis() {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+          <div className="fade-up stagger-3" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -207,19 +206,19 @@ export default function Analysis() {
               <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
                   <Lock size={14} />
-                  <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+                  <span>Password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <input
                     type={showPassword ? "text" : "password"}
                     className="input"
                     style={{ width: '300px' }}
-                    placeholder="enter encryption password..."
+                    placeholder="Enter encryption password..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
-                  <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <button className="btn-icon btn-icon-accent" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
               </div>
@@ -227,13 +226,13 @@ export default function Analysis() {
           })()}
 
           <button
-            className="btn btn-primary"
+            className="btn btn-primary fade-up stagger-4"
             onClick={runAnalysis}
             disabled={loading || selectedDocs.length === 0}
             style={{ marginBottom: '1.5rem' }}
           >
             {loading ? <div className="spinner" /> : <Brain size={16} />}
-            <span>{loading ? 'analyzing...' : `run ${activeTab}`}</span>
+            <span>{loading ? 'Analyzing...' : `Run ${activeTab}`}</span>
           </button>
         </>
       )}
@@ -245,16 +244,16 @@ export default function Analysis() {
       )}
 
       {result && (
-        <div className="card">
+        <div className="card fade-up stagger-4">
           {activeTab === 'summarize' && (
             <div className="analysis-section">
-              <h3><Brain size={18} /> summary</h3>
+              <h3><Brain size={18} /> Summary</h3>
               <p style={{ color: 'var(--text-secondary)', lineHeight: '1.8', marginBottom: '1rem' }}>
                 {result.summary_text}
               </p>
               {result.key_points && result.key_points.length > 0 && (
                 <>
-                  <h3 style={{ fontSize: '0.95rem', marginTop: '1rem' }}>key points</h3>
+                  <h3 style={{ fontSize: '0.95rem', marginTop: '1rem' }}>Key Points</h3>
                   <ul className="key-points">
                     {result.key_points.map((point, i) => (
                       <li key={i}>{point}</li>
@@ -267,7 +266,7 @@ export default function Analysis() {
 
           {activeTab === 'claims' && result.claims && (
             <div className="analysis-section">
-              <h3><Lightbulb size={18} /> extracted claims ({result.total})</h3>
+              <h3><Lightbulb size={18} /> Extracted Claims ({result.total})</h3>
               {result.claims.map((claim, i) => (
                 <div key={i} className="result-item">
                   <div className="result-meta">
@@ -288,7 +287,7 @@ export default function Analysis() {
 
           {activeTab === 'themes' && result.themes && (
             <div className="analysis-section">
-              <h3><Layers size={18} /> thematic clusters ({result.total})</h3>
+              <h3><Layers size={18} /> Thematic Clusters ({result.total})</h3>
               {result.themes.map((theme, i) => (
                 <div key={i} className="suggestion-card">
                   <div className="suggestion-title">{theme.label}</div>
@@ -308,10 +307,9 @@ export default function Analysis() {
       )}
 
       {!result && !loading && !showNewAnalysis && (
-        <div className="card">
+        <div className="card fade-up stagger-2">
           <div className="empty-state">
-            <Target size={48} />
-            <h3>No analyses yet</h3>
+            <h3>No Analyses Yet</h3>
             <p>
               Run an AI analysis across multiple papers to synthesize findings.
             </p>
@@ -323,11 +321,11 @@ export default function Analysis() {
       )}
 
       <ChatDialog
-        title="analysis assistant"
+        title="Analysis Assistant"
         messages={chatMessages}
         onSend={handleChatSend}
         loading={chatLoading}
-        placeholder="ask about your analysis results..."
+        placeholder="Ask about your analysis results..."
       />
     </div>
   );
