@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { CloudUpload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { documentsApi } from '../utils/api';
 
 /**
@@ -82,11 +82,18 @@ export default function UploadPanel({ onUploadComplete }) {
           </div>
         ) : (
           <>
-            <div className="upload-zone-icon">
-              <Upload size={40} />
+            <div className="upload-zone-icon-wrapper">
+              <CloudUpload size={24} strokeWidth={1.5} />
             </div>
-            <h3>drop research papers here</h3>
-            <p>or click to browse. accepts pdf files.</p>
+            <h3>Drag & Drop Research Papers</h3>
+            <p>Upload PDFs to extract knowledge and run analyses</p>
+            <button
+              type="button"
+              className="upload-browse-btn"
+              onClick={(e) => { e.stopPropagation(); document.getElementById('file-input').click(); }}
+            >
+              Browse Files
+            </button>
           </>
         )}
       </div>
@@ -112,11 +119,11 @@ export default function UploadPanel({ onUploadComplete }) {
               </div>
               <div className="doc-info">
                 <div className="doc-title">{r.filename}</div>
-                <div className="doc-meta">
-                  {r.status === 'success' || r.status === 'ingested'
-                    ? `${r.chunks_created} chunks created | ${r.metadata?.title || 'title extracted'}`
-                    : r.error}
-                </div>
+                {(r.status !== 'success' && r.status !== 'ingested') && (
+                  <div className="doc-meta">
+                    {r.error}
+                  </div>
+                )}
               </div>
               <span className={`badge badge-${r.status === 'success' || r.status === 'ingested' ? 'success' : 'danger'}`}>
                 {r.status}
