@@ -76,8 +76,13 @@ export default function App() {
   ];
 
   return (
-    <BrowserRouter>
-      <div className="app-layout">
+    <>
+      <div className="ambient-bg">
+        <div className="ambient-orb orb-1"></div>
+        <div className="ambient-orb orb-2"></div>
+      </div>
+      <BrowserRouter>
+        <div className="app-layout">
         <aside className="sidebar">
           <div className="sidebar-brand">
             <div className="brand-logo-container">
@@ -121,5 +126,6 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+    </>
   );
 }

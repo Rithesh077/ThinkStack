@@ -41,8 +41,8 @@ export default function Search() {
   return (
     <div>
       <div className="page-header">
-        <h2>search papers</h2>
-        <p>semantic and keyword search across your knowledge base</p>
+        <h2>Search Papers</h2>
+        <p>Semantic and keyword search across your knowledge base</p>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -89,8 +89,8 @@ export default function Search() {
           {results.results.length === 0 ? (
             <div className="empty-state">
               <SearchIcon size={48} />
-              <h3>no results found</h3>
-              <p>try different search terms or upload more papers.</p>
+              <h3>No Results Found</h3>
+              <p>Try different search terms or upload more papers.</p>
             </div>
           ) : (
             results.results.map((result, i) => (
@@ -122,10 +122,9 @@ export default function Search() {
 
       {!results && !loading && (
         <div className="empty-state">
-          <Sparkles size={48} />
-          <h3>start searching</h3>
+          <h3>Start Searching</h3>
           <p>
-            enter a research topic, question, or concept to search
+            Enter a research topic, question, or concept to search
             across all your ingested papers using hybrid semantic
             and keyword matching.
           </p>
