@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Brain, Lightbulb, Layers, FileText, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
+import { Brain, Lightbulb, Layers, FileText, MessageSquare, Lock, Eye, EyeOff, Plus, Target } from 'lucide-react';
 import { documentsApi, analysisApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
@@ -20,6 +20,7 @@ export default function Analysis() {
   const [error, setError] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewAnalysis, setShowNewAnalysis] = useState(false);
 
   // chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -76,6 +77,7 @@ export default function Analysis() {
           return;
       }
       setResult(data);
+      setShowNewAnalysis(false);
     } catch (err) {
       setError(err.message);
     }
@@ -89,7 +91,6 @@ export default function Analysis() {
     setChatLoading(true);
 
     try {
-      // pass the current analysis results as extra grounding context
       let context = '';
       if (result) {
         if (activeTab === 'summarize' && result.summary_text) {
@@ -135,97 +136,107 @@ export default function Analysis() {
   return (
     <div>
       <div className="page-header">
-        <h2>analysis engine</h2>
-        <p>summarize papers, extract claims, and discover themes using the local slm</p>
-      </div>
-
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">select papers to analyze</span>
-          <button className="btn btn-secondary btn-sm" onClick={selectAll}>
-            {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
-          </button>
+        <div className="page-header-left">
+          <h2>Analysis</h2>
+          <p>Run cross-paper analyses and synthesize findings.</p>
         </div>
-
-        {documents.length === 0 ? (
-          <div className="empty-state">
-            <FileText size={36} />
-            <h3>no papers available</h3>
-            <p>upload papers in the library first.</p>
-          </div>
-        ) : (
-          <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
-            {documents.map((doc) => (
-              <div key={doc.doc_id} className="doc-item" onClick={() => toggleDoc(doc.doc_id)} style={{ cursor: 'pointer' }}>
-                <label className="checkbox-wrap" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedDocs.includes(doc.doc_id)}
-                    onChange={() => toggleDoc(doc.doc_id)}
-                  />
-                </label>
-                <div className="doc-info">
-                  <div className="doc-title">{doc.filename}</div>
-                  <div className="doc-meta">{doc.chunks} chunks</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <button className="btn btn-primary" onClick={() => setShowNewAnalysis(!showNewAnalysis)}>
+          <Plus size={16} />
+          <span>New Analysis</span>
+        </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={`btn ${activeTab === id ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => { setActiveTab(id); setResult(null); }}
-          >
-            <Icon size={16} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </div>
-
-      {(() => {
-        const encryptedSelectedDocs = documents.filter(d => 
-          selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
-        );
-        
-        if (encryptedSelectedDocs.length === 0) return null;
-        
-        return (
-          <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
-              <Lock size={14} />
-              <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <input
-                type={showPassword ? "text" : "password"}
-                className="chat-input"
-                style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
-                placeholder="enter encryption password..."
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+      {showNewAnalysis && (
+        <>
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <div className="card-header">
+              <span className="card-title">select papers to analyze</span>
+              <button className="btn btn-secondary btn-sm" onClick={selectAll}>
+                {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
               </button>
             </div>
-          </div>
-        );
-      })()}
 
-      <button
-        className="btn btn-primary"
-        onClick={runAnalysis}
-        disabled={loading || selectedDocs.length === 0}
-        style={{ marginBottom: '1.5rem' }}
-      >
-        {loading ? <div className="spinner" /> : <Brain size={16} />}
-        <span>{loading ? 'analyzing...' : `run ${activeTab}`}</span>
-      </button>
+            {documents.length === 0 ? (
+              <div className="empty-state">
+                <FileText size={36} />
+                <h3>no papers available</h3>
+                <p>upload papers in the library first.</p>
+              </div>
+            ) : (
+              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                {documents.map((doc) => (
+                  <div key={doc.doc_id} className="doc-item" onClick={() => toggleDoc(doc.doc_id)} style={{ cursor: 'pointer' }}>
+                    <label className="checkbox-wrap" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDocs.includes(doc.doc_id)}
+                        onChange={() => toggleDoc(doc.doc_id)}
+                      />
+                    </label>
+                    <div className="doc-info">
+                      <div className="doc-title">{doc.filename}</div>
+                      <div className="doc-meta">{doc.chunks} chunks</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                className={`btn ${activeTab === id ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setActiveTab(id); setResult(null); }}
+              >
+                <Icon size={16} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+
+          {(() => {
+            const encryptedSelectedDocs = documents.filter(d => 
+              selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+            );
+            
+            if (encryptedSelectedDocs.length === 0) return null;
+            
+            return (
+              <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+                  <Lock size={14} />
+                  <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    className="input"
+                    style={{ width: '300px' }}
+                    placeholder="enter encryption password..."
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          <button
+            className="btn btn-primary"
+            onClick={runAnalysis}
+            disabled={loading || selectedDocs.length === 0}
+            style={{ marginBottom: '1.5rem' }}
+          >
+            {loading ? <div className="spinner" /> : <Brain size={16} />}
+            <span>{loading ? 'analyzing...' : `run ${activeTab}`}</span>
+          </button>
+        </>
+      )}
 
       {error && (
         <div className="toast error" style={{ position: 'static', marginBottom: '1rem' }}>
@@ -293,6 +304,21 @@ export default function Analysis() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {!result && !loading && !showNewAnalysis && (
+        <div className="card">
+          <div className="empty-state">
+            <Target size={48} />
+            <h3>No analyses yet</h3>
+            <p>
+              Run an AI analysis across multiple papers to synthesize findings.
+            </p>
+            <button className="btn btn-primary" onClick={() => setShowNewAnalysis(true)} style={{ marginTop: '1rem' }}>
+              Create your first analysis
+            </button>
+          </div>
         </div>
       )}
 

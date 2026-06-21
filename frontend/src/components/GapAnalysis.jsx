@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
+import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare, Lock, Eye, EyeOff, Search, ArrowRight } from 'lucide-react';
 import { documentsApi, gapsApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
 
@@ -19,6 +19,7 @@ export default function GapAnalysis() {
   const [error, setError] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
   // chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -62,6 +63,7 @@ export default function GapAnalysis() {
     try {
       const data = await gapsApi.analyze(selectedDocs, password);
       setResult(data);
+      setShowSetup(false);
     } catch (err) {
       setError(err.message);
     }
@@ -75,7 +77,6 @@ export default function GapAnalysis() {
     setChatLoading(true);
 
     try {
-      // ground the assistant in the current gap-analysis results, if any
       let context = '';
       if (result) {
         if (result.gaps?.length) {
@@ -112,11 +113,11 @@ export default function GapAnalysis() {
     setChatLoading(false);
   };
 
-  const severityIcon = (severity) => {
+  const severityLabel = (severity) => {
     switch (severity) {
-      case 'high': return <AlertTriangle size={14} color="var(--danger)" />;
-      case 'medium': return <AlertTriangle size={14} color="var(--warning)" />;
-      default: return <AlertTriangle size={14} color="var(--info)" />;
+      case 'high': return 'HIGH PRIORITY';
+      case 'medium': return 'MEDIUM PRIORITY';
+      default: return 'LOW PRIORITY';
     }
   };
 
@@ -131,93 +132,111 @@ export default function GapAnalysis() {
     return labels[type] || type;
   };
 
+  // Find matching suggestions for a gap (simple heuristic: match by index or content)
+  const getSuggestionsForGap = (gapIndex) => {
+    if (!result?.suggestions) return [];
+    // Distribute suggestions across gaps evenly
+    const totalGaps = result.gaps?.length || 1;
+    const sugPerGap = Math.ceil(result.suggestions.length / totalGaps);
+    const start = gapIndex * sugPerGap;
+    return result.suggestions.slice(start, start + sugPerGap);
+  };
+
   return (
     <div>
       <div className="page-header">
-        <h2>research gap finder</h2>
-        <p>identify gaps, contradictions, and promising research directions</p>
+        <div className="page-header-left">
+          <h2>Gap Finder</h2>
+          <p>AI-identified research gaps and novel directions in your library.</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setShowSetup(!showSetup)}>
+          <Search size={16} />
+          <span>Scan Library</span>
+        </button>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">select papers for gap analysis (min. 2)</span>
-          <button className="btn btn-secondary btn-sm" onClick={selectAll}>
-            {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
-          </button>
-        </div>
-
-        {documents.length === 0 ? (
-          <div className="empty-state">
-            <FileText size={36} />
-            <h3>no papers available</h3>
-            <p>upload at least 2 papers in the library first.</p>
+      {showSetup && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <span className="card-title">select papers for gap analysis (min. 2)</span>
+            <button className="btn btn-secondary btn-sm" onClick={selectAll}>
+              {selectedDocs.length === documents.length ? 'deselect all' : 'select all'}
+            </button>
           </div>
-        ) : (
-          <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
-            {documents.map((doc) => (
-              <div key={doc.doc_id} className="doc-item" onClick={() => toggleDoc(doc.doc_id)} style={{ cursor: 'pointer' }}>
-                <label className="checkbox-wrap" onClick={(e) => e.stopPropagation()}>
+
+          {documents.length === 0 ? (
+            <div className="empty-state">
+              <FileText size={36} />
+              <h3>no papers available</h3>
+              <p>upload at least 2 papers in the library first.</p>
+            </div>
+          ) : (
+            <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+              {documents.map((doc) => (
+                <div key={doc.doc_id} className="doc-item" onClick={() => toggleDoc(doc.doc_id)} style={{ cursor: 'pointer' }}>
+                  <label className="checkbox-wrap" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.includes(doc.doc_id)}
+                      onChange={() => toggleDoc(doc.doc_id)}
+                    />
+                  </label>
+                  <div className="doc-info">
+                    <div className="doc-title">{doc.filename}</div>
+                    <div className="doc-meta">{doc.chunks} chunks</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(() => {
+            const encryptedSelectedDocs = documents.filter(d => 
+              selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+            );
+            
+            if (encryptedSelectedDocs.length === 0) return null;
+            
+            return (
+              <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+                  <Lock size={14} />
+                  <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <input
-                    type="checkbox"
-                    checked={selectedDocs.includes(doc.doc_id)}
-                    onChange={() => toggleDoc(doc.doc_id)}
+                    type={showPassword ? "text" : "password"}
+                    className="input"
+                    style={{ width: '300px' }}
+                    placeholder="enter encryption password..."
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                   />
-                </label>
-                <div className="doc-info">
-                  <div className="doc-title">{doc.filename}</div>
-                  <div className="doc-meta">{doc.chunks} chunks</div>
+                  <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
-            ))}
+            );
+          })()}
+
+          <div style={{ marginTop: '1rem' }}>
+            <button
+              className="btn btn-primary"
+              onClick={runGapAnalysis}
+              disabled={loading || selectedDocs.length < 2}
+            >
+              {loading ? <div className="spinner" /> : <Target size={16} />}
+              <span>{loading ? 'analyzing gaps...' : 'run gap analysis'}</span>
+            </button>
+            {selectedDocs.length < 2 && selectedDocs.length > 0 && (
+              <span style={{ marginLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+                select at least 2 papers
+              </span>
+            )}
           </div>
-        )}
-
-        {(() => {
-          const encryptedSelectedDocs = documents.filter(d => 
-            selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
-          );
-          
-          if (encryptedSelectedDocs.length === 0) return null;
-          
-          return (
-            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
-                <Lock size={14} />
-                <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  className="chat-input"
-                  style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
-                  placeholder="enter encryption password..."
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        <div style={{ marginTop: '1rem' }}>
-          <button
-            className="btn btn-primary"
-            onClick={runGapAnalysis}
-            disabled={loading || selectedDocs.length < 2}
-          >
-            {loading ? <div className="spinner" /> : <Target size={16} />}
-            <span>{loading ? 'analyzing gaps...' : 'run gap analysis'}</span>
-          </button>
-          {selectedDocs.length < 2 && selectedDocs.length > 0 && (
-            <span style={{ marginLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
-              select at least 2 papers
-            </span>
-          )}
         </div>
-      </div>
+      )}
 
       {error && (
         <div className="toast error" style={{ position: 'static', marginBottom: '1rem' }}>
@@ -240,45 +259,27 @@ export default function GapAnalysis() {
 
       {result && (
         <>
-          <div className="stat-row">
-            <div className="stat-card">
-              <div className="stat-value">{result.papers_analyzed}</div>
-              <div className="stat-label">papers analyzed</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{result.total_claims}</div>
-              <div className="stat-label">claims extracted</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{result.total_gaps}</div>
-              <div className="stat-label">gaps identified</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{result.total_suggestions}</div>
-              <div className="stat-label">suggestions</div>
-            </div>
-          </div>
-
-          <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <div className="analysis-section">
-              <h3><Target size={18} /> identified gaps</h3>
-              {result.gaps && result.gaps.length > 0 ? (
-                result.gaps.map((gap, i) => (
+          {result.gaps && result.gaps.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {result.gaps.map((gap, i) => {
+                const gapSuggestions = getSuggestionsForGap(i);
+                return (
                   <div key={i} className={`gap-card severity-${gap.severity}`}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      {severityIcon(gap.severity)}
-                      <span className="gap-type" style={{ color: `var(--${gap.severity === 'high' ? 'danger' : gap.severity === 'medium' ? 'warning' : 'info'})` }}>
-                        {gapTypeLabel(gap.gap_type)}
-                      </span>
-                      <span className={`badge badge-${gap.severity === 'high' ? 'danger' : gap.severity === 'medium' ? 'warning' : 'info'}`}>
-                        {gap.severity}
+                    <div className="gap-card-header">
+                      <h4 className="gap-card-title">
+                        {gap.description?.split('.')[0] || gapTypeLabel(gap.gap_type)}
+                      </h4>
+                      <span className="badge badge-priority">
+                        {severityLabel(gap.severity)}
                       </span>
                     </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: '1.7' }}>
+
+                    <p className="gap-card-description">
                       {gap.description}
                     </p>
+
                     {gap.evidence && gap.evidence.length > 0 && (
-                      <div style={{ marginTop: '0.75rem' }}>
+                      <div style={{ marginBottom: '1rem' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>evidence:</span>
                         <ul style={{ listStyle: 'none', padding: 0, marginTop: '0.25rem' }}>
                           {gap.evidence.map((ev, j) => (
@@ -289,56 +290,42 @@ export default function GapAnalysis() {
                         </ul>
                       </div>
                     )}
-                  </div>
-                ))
-              ) : (
-                <p style={{ color: 'var(--text-muted)' }}>no significant gaps identified.</p>
-              )}
-            </div>
-          </div>
 
-          <div className="card">
-            <div className="analysis-section">
-              <h3><Compass size={18} /> research direction suggestions</h3>
-              {result.suggestions && result.suggestions.length > 0 ? (
-                result.suggestions.map((sug, i) => (
-                  <div key={i} className="suggestion-card">
-                    <div className="suggestion-title">{sug.title}</div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: '1.7', marginBottom: '0.75rem' }}>
-                      {sug.description}
-                    </p>
-                    {sug.rationale && (
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                        <strong>rationale:</strong> {sug.rationale}
-                      </p>
+                    {gapSuggestions.length > 0 && (
+                      <div className="gap-suggestions">
+                        <div className="gap-suggestions-title">
+                          <AlertTriangle size={14} />
+                          <span>Suggested Directions</span>
+                        </div>
+                        {gapSuggestions.map((sug, j) => (
+                          <div key={j} className="gap-suggestion-item">
+                            <ArrowRight size={14} className="gap-suggestion-arrow" />
+                            <span>{sug.title ? `${sug.title}: ${sug.description}` : sug.description}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <span className={`badge badge-${sug.feasibility === 'high' ? 'success' : sug.feasibility === 'medium' ? 'warning' : 'info'}`}>
-                        feasibility: {sug.feasibility}
-                      </span>
-                      <span className={`badge badge-${sug.potential_impact === 'high' ? 'success' : sug.potential_impact === 'medium' ? 'warning' : 'info'}`}>
-                        <TrendingUp size={10} />
-                        impact: {sug.potential_impact}
-                      </span>
-                    </div>
                   </div>
-                ))
-              ) : (
-                <p style={{ color: 'var(--text-muted)' }}>no suggestions generated.</p>
-              )}
+                );
+              })}
             </div>
-          </div>
+          )}
+
+          {result.gaps && result.gaps.length === 0 && (
+            <div className="card">
+              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>no significant gaps identified.</p>
+            </div>
+          )}
         </>
       )}
 
-      {!result && !loading && (
+      {!result && !loading && !showSetup && (
         <div className="empty-state">
           <Target size={48} />
           <h3>find research gaps</h3>
           <p>
-            select at least 2 papers above and run gap analysis.
-            the system will identify contradictions, under-explored areas,
-            and suggest promising research directions.
+            click "Scan Library" to select papers and identify contradictions,
+            under-explored areas, and promising research directions.
           </p>
         </div>
       )}

@@ -54,15 +54,13 @@ export default function App() {
     try {
       const res = await systemApi.setModel(model);
       if (res.restart_required) {
-        // a model is already loaded; llama.cpp can't swap in-process, so the
-        // choice applies on the next restart. keep showing the running model.
         setActiveModel(res.active_model || previous);
         setModelNote(`restart to apply ${prettyModel(model)}`);
       } else {
         setActiveModel(res.active_model || model);
       }
     } catch {
-      setActiveModel(previous); // revert on failure
+      setActiveModel(previous);
     }
     setSwitching(false);
   };
@@ -71,10 +69,10 @@ export default function App() {
     name.replace(/\.gguf$/i, '').replace(/-Q4_K_M$/i, '');
 
   const navItems = [
-    { to: '/', icon: BookOpen, label: 'library' },
-    { to: '/search', icon: Search, label: 'search' },
-    { to: '/analysis', icon: Brain, label: 'analysis' },
-    { to: '/gaps', icon: Target, label: 'gap finder' },
+    { to: '/', icon: BookOpen, label: 'Library' },
+    { to: '/search', icon: Search, label: 'Search' },
+    { to: '/analysis', icon: Brain, label: 'Analysis' },
+    { to: '/gaps', icon: Target, label: 'Gap Finder' },
   ];
 
   return (
@@ -82,8 +80,9 @@ export default function App() {
       <div className="app-layout">
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <h1>scholarlens</h1>
-            <p>offline research agent</p>
+            <div className="brand-logo-container">
+              <h1>Think<span className="brand-cursive">Stack</span></h1>
+            </div>
           </div>
 
           <nav className="sidebar-nav">
@@ -103,29 +102,10 @@ export default function App() {
           </nav>
 
           <div className="sidebar-footer">
-            {models.length > 0 && (
-              <div className="model-selector">
-                <label htmlFor="model-select">model</label>
-                <select
-                  id="model-select"
-                  className="model-select"
-                  value={activeModel}
-                  onChange={handleModelChange}
-                  disabled={switching}
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {prettyModel(m)}
-                    </option>
-                  ))}
-                </select>
-                {modelNote && <span className="model-note">{modelNote}</span>}
-              </div>
-            )}
             <div className="status-indicator">
               <div className={`status-dot ${llmStatus !== 'connected' ? 'disconnected' : ''}`} />
               <span>
-                llm: {switching ? 'switching…' : llmStatus}
+                {switching ? 'Switching…' : llmStatus === 'connected' ? 'System Online' : `LLM: ${llmStatus}`}
               </span>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, Unlock, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react';
+import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, Unlock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target } from 'lucide-react';
 import { documentsApi, encryptionApi } from '../utils/api';
 import UploadPanel from './UploadPanel';
 
@@ -18,9 +18,9 @@ export default function Library() {
   const [docDetails, setDocDetails] = useState({});
 
   // encryption state
-  const [encryptingDoc, setEncryptingDoc] = useState(null);   // doc_id being encrypted/decrypted
+  const [encryptingDoc, setEncryptingDoc] = useState(null);
   const [encryptPassword, setEncryptPassword] = useState('');
-  const [encryptAction, setEncryptAction] = useState(null);   // 'encrypt' | 'decrypt' | 'remove' | 'view'
+  const [encryptAction, setEncryptAction] = useState(null);
   const [encryptError, setEncryptError] = useState('');
   const [encryptBusy, setEncryptBusy] = useState(false);
   const [decryptedText, setDecryptedText] = useState(null);
@@ -131,31 +131,50 @@ export default function Library() {
   return (
     <div>
       <div className="page-header">
-        <h2>paper library</h2>
-        <p>manage your research paper collection</p>
+        <div className="page-header-left">
+          <h2>Library</h2>
+          <p>Manage your collection of ingested research papers.</p>
+        </div>
       </div>
 
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-value">{stats.total}</div>
-          <div className="stat-label">papers ingested</div>
+          <div className="stat-card-top">
+            <span className="stat-card-label">Papers Ingested</span>
+            <FileText size={16} className="stat-card-icon" />
+          </div>
+          <div className="stat-value">{stats.total || '-'}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">{stats.total_chunks}</div>
-          <div className="stat-label">knowledge chunks</div>
+          <div className="stat-card-top">
+            <span className="stat-card-label">Knowledge Chunks</span>
+            <BarChart2 size={16} className="stat-card-icon" />
+          </div>
+          <div className="stat-value">{stats.total_chunks || '-'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-top">
+            <span className="stat-card-label">Analyses Run</span>
+            <Brain size={16} className="stat-card-icon" />
+          </div>
+          <div className="stat-value">-</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-top">
+            <span className="stat-card-label">Gaps Found</span>
+            <Target size={16} className="stat-card-icon" />
+          </div>
+          <div className="stat-value">-</div>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
-          <span className="card-title">upload papers</span>
-        </div>
-        <UploadPanel onUploadComplete={loadDocuments} />
-      </div>
+      <UploadPanel onUploadComplete={loadDocuments} />
+
+      <h3 className="section-heading" style={{ marginTop: '2rem' }}>Ingested Papers</h3>
 
       <div className="card">
         <div className="card-header">
-          <span className="card-title">ingested papers</span>
+          <span className="card-title"></span>
           <button className="btn btn-secondary btn-sm" onClick={loadDocuments}>
             <RefreshCw size={14} />
             <span>refresh</span>
@@ -179,9 +198,9 @@ export default function Library() {
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
                 <div className="doc-icon">
                   {isDocEncrypted(doc) ? (
-                    <Lock size={18} color="var(--accent)" />
+                    <Lock size={18} color="var(--accent-secondary)" />
                   ) : (
-                    <FileText size={18} />
+                    <CheckCircle size={18} color="var(--success)" />
                   )}
                 </div>
                 <div className="doc-info">
@@ -194,9 +213,7 @@ export default function Library() {
                     )}
                   </div>
                   <div className="doc-meta">
-                    {doc.metadata?.authors && `${doc.metadata.authors} | `}
-                    {doc.metadata?.year && `${doc.metadata.year} | `}
-                    {doc.chunks} chunks | {(doc.size_bytes / 1024).toFixed(0)} kb
+                    <Clock size={12} /> {doc.metadata?.timestamp || new Date().toLocaleDateString()}
                   </div>
                 </div>
                 <div className="doc-actions" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
@@ -307,7 +324,7 @@ export default function Library() {
                 <div style={{ position: 'relative', marginBottom: '1rem' }}>
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    className="search-input"
+                    className="input"
                     placeholder="enter password…"
                     value={encryptPassword}
                     onChange={(e) => setEncryptPassword(e.target.value)}
