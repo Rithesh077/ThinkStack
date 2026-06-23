@@ -56,6 +56,14 @@ run pre-commit checks (syntax, imports, stale references) before pushing:
 ./scripts/validate.sh
 ```
 
+### testing
+
+run the comprehensive paper writer unit and integration test suite (validates file management, LaTeX compilation, log diagnostics, and the API endpoints over HTTP):
+
+```bash
+.venv/bin/python scripts/test_paper_writer.py
+```
+
 ### production build
 
 freeze the python backend using pyinstaller and compile the final tauri executable for your operating system:
