@@ -31,6 +31,14 @@
    - gbnf grammar constraints for strict json and latex output when using llama_cpp.
    - gpu-acceleration fallback logic (tries gpu, falls back to cpu on oom).
 
+7. **ai-assisted paper writer (latex)**
+   - interactive monospaced CodeMirror editor integrated directly inside the Tauri desktop app interface.
+   - `.ths` (ThinkStack) file format support: users write prompts/ideas directly inside the editor, and the AI translates it in-place to compilable LaTeX.
+   - auto-save (saves incrementally after 2 seconds of inactivity) and manual save capabilities.
+   - built-in offline compiler pipeline utilizing system `pdflatex` to generate and compile papers.
+   - real-time error log parsing that exposes compiler diagnostics directly within the UI when compilation fails.
+   - automated test suite validating the end-to-end writer API and compiler pipeline.
+
 ## known issues
 
 1. **bm25 search performance**: the bm25 index is built from scratch on every keyword search query. this is acceptable for a small corpus but will become a bottleneck as the document count grows.
