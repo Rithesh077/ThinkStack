@@ -27,6 +27,7 @@ export default function PaperWriter() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [warnings, setWarnings] = useState([]);
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -68,6 +69,7 @@ export default function PaperWriter() {
   const openProject = async (id) => {
     setError('');
     setStatus('');
+    setWarnings([]);
     setPdfUrl(null);
     try {
       const d = await papersApi.get(id);
@@ -116,13 +118,16 @@ export default function PaperWriter() {
     if (!activeId) return;
     setBusy(true);
     setError('');
+    setWarnings([]);
     setStatus('compiling…');
     try {
       await papersApi.save(activeId, source);
       setDirty(false);
-      await papersApi.compile(activeId);
+      const res = await papersApi.compile(activeId);
       setPdfUrl(`${papersApi.downloadUrl(activeId)}?t=${Date.now()}`);
-      flash('compiled');
+      const w = res?.warnings || [];
+      setWarnings(w);
+      flash(w.length ? `compiled with ${w.length} warning${w.length > 1 ? 's' : ''}` : 'compiled');
       loadProjects();
     } catch (e) {
       setError(e.message);
@@ -313,6 +318,14 @@ export default function PaperWriter() {
 
           {/* preview */}
           <div className="card pw-preview">
+            {warnings.length > 0 && (
+              <details className="pw-warn">
+                <summary>
+                  ⚠ Compiled with {warnings.length} warning{warnings.length > 1 ? 's' : ''} — PDF may have missing figures
+                </summary>
+                <pre>{warnings.join('\n\n')}</pre>
+              </details>
+            )}
             <AnimatePresence mode="wait">
               {pdfUrl ? (
                 <motion.iframe

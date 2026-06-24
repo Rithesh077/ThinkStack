@@ -173,11 +173,12 @@ async def api_generate_latex(req: GenerateLatexRequest):
 async def api_compile_pdf(req: CompileRequest):
     """compile the project's latex source into a pdf."""
     try:
-        pdf_path = compile_pdf(req.project_id)
+        _, warnings = compile_pdf(req.project_id)
         return {
             "project_id": req.project_id,
             "status": "compiled",
             "pdf_url": f"/api/papers/download/{req.project_id}",
+            "warnings": warnings,
         }
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

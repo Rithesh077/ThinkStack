@@ -70,6 +70,20 @@ _PREAMBLE = r"""\documentclass[12pt,a4paper]{article}
 """
 
 
+# shown in place of an environment we could not render, so the rest of the
+# document still produces a PDF (overleaf-style graceful degradation). uses only
+# core latex primitives so it can never itself fail to compile.
+_PLACEHOLDER = (
+    "\n\\begin{center}\\fbox{\\parbox{0.7\\linewidth}{\\centering "
+    "\\textit{[a figure/table here could not be rendered and was omitted -- "
+    "check its LaTeX]}}}\\end{center}\n"
+)
+
+# environments worth replacing with a placeholder when they break compilation
+# (vs. failing the whole document). ordered so the most likely culprit wins.
+_SALVAGE_ENVS = {"tikzpicture", "axis", "pgfplots", "figure", "table"}
+
+
 def _has_package(preamble: str, pkg: str) -> bool:
     """true if the preamble already loads ``pkg`` (handles grouped imports)."""
     return bool(
@@ -201,30 +215,157 @@ def save_source(project_id: str, source: str) -> dict:
     return {"project_id": project_id, "status": "saved"}
 
 
-def compile_pdf(project_id: str) -> Path:
-    """compile the project's main.tex into a pdf.
+def _extract_errors(log_text: str) -> list[str]:
+    """pull the meaningful ``! ...`` error blocks out of a pdflatex log.
 
-    runs pdflatex twice (for references/toc) in non-interactive mode.
+    each block is the error line plus a few non-blank context lines (which carry
+    the ``l.NN`` source line and the offending control sequence), deduplicated.
+    """
+    lines = log_text.splitlines()
+    blocks: list[str] = []
+    for i, line in enumerate(lines):
+        if line.startswith("!"):
+            ctx = [l for l in lines[i:i + 5] if l.strip()]
+            blocks.append("\n".join(ctx))
+    seen: set[str] = set()
+    out: list[str] = []
+    for b in blocks:
+        if b not in seen:
+            seen.add(b)
+            out.append(b)
+    return out[:4]
+
+
+def _first_error_line(log_text: str) -> int | None:
+    """return the source line number from the first ``l.NN`` marker in the log."""
+    m = re.search(r"^l\.(\d+)", log_text, re.MULTILINE)
+    return int(m.group(1)) if m else None
+
+
+def _find_env_spans(source: str) -> list[tuple[str, int, int]]:
+    """find balanced ``\\begin{env}...\\end{env}`` spans (handles nesting).
+
+    returns ``(env_name, start_offset, end_offset)`` tuples where end_offset is
+    just past the closing ``\\end{env}``.
+    """
+    spans: list[tuple[str, int, int]] = []
+    stack: list[tuple[str, int]] = []
+    for m in re.finditer(r"\\(begin|end)\{([^}]+)\}", source):
+        kind, env = m.group(1), m.group(2)
+        if kind == "begin":
+            stack.append((env, m.start()))
+        else:
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i][0] == env:
+                    _, s_start = stack[i]
+                    spans.append((env, s_start, m.end()))
+                    del stack[i:]
+                    break
+    return spans
+
+
+def _salvage_one(source: str, log_text: str) -> tuple[str, str | None]:
+    """replace the single broken environment around the error line with a
+    placeholder so the rest of the document can compile.
+
+    returns ``(new_source, note)`` where note is None if nothing could be
+    localized (so the caller can fall back to a coarser strategy).
+    """
+    line_no = _first_error_line(log_text)
+    if not line_no:
+        return source, None
+    lines = source.splitlines(keepends=True)
+    idx = line_no - 1
+    if idx < 0 or idx >= len(lines):
+        return source, None
+    err_pos = sum(len(l) for l in lines[:idx])  # char offset of the error line
+
+    enclosing = [
+        (env, s, e) for (env, s, e) in _find_env_spans(source)
+        if env in _SALVAGE_ENVS and s <= err_pos <= e
+    ]
+    if not enclosing:
+        return source, None
+    # innermost enclosing env = the one whose \begin is closest before the error
+    env, s, e = max(enclosing, key=lambda t: t[1])
+    new_source = source[:s] + _PLACEHOLDER + source[e:]
+    note = (
+        f"the '{env}' block near line {line_no} could not be rendered "
+        "and was replaced with a placeholder"
+    )
+    return new_source, note
+
+
+def _neutralize_all_figures(source: str) -> tuple[str, str | None]:
+    """last resort: replace every tikz/pgfplots picture with a placeholder.
+
+    used only when no PDF can be produced and the failing environment could not
+    be localized, so at least the document's text renders.
+    """
+    new = source
+    total = 0
+    for env in ("tikzpicture", "axis"):
+        pattern = re.compile(
+            r"\\begin\{" + env + r"\}.*?\\end\{" + env + r"\}", re.DOTALL
+        )
+        new, count = pattern.subn(_PLACEHOLDER, new)
+        total += count
+    if total == 0:
+        return source, None
+    return new, f"{total} figure(s) could not be rendered and were replaced with placeholders"
+
+
+def _run_pdflatex(pdflatex: str, tex_file: Path, project_dir: Path):
+    """run a single non-interactive pdflatex pass.
+
+    note: there is intentionally NO ``-halt-on-error``. in nonstopmode pdflatex
+    recovers from most errors and still ships a PDF (overleaf behaviour); we then
+    treat "a PDF exists" as success and surface the errors as warnings.
+    """
+    return subprocess.run(
+        [
+            pdflatex,
+            "-interaction=nonstopmode",
+            "-output-directory", str(project_dir),
+            str(tex_file),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(project_dir),
+    )
+
+
+def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
+    """compile the project's main.tex into a pdf, overleaf-style.
+
+    compiles in non-interactive mode WITHOUT halting on the first error, so a
+    single broken figure/table no longer prevents a PDF. if a PDF is produced,
+    any errors pdflatex recovered from are returned as warnings. only if no PDF
+    can be produced at all do we surgically replace the offending environment
+    with a placeholder and retry; failing that, raise.
 
     args:
         project_id: the project identifier.
 
     returns:
-        path to the generated pdf file.
+        ``(pdf_path, warnings)`` -- the generated pdf and a list of human-readable
+        warning strings (empty on a fully clean compile).
 
     raises:
         FileNotFoundError: if the project doesn't exist.
-        RuntimeError: if pdflatex is not installed or compilation fails.
+        RuntimeError: if pdflatex is not installed or no PDF could be produced.
     """
     project_dir = _get_project_dir(project_id)
     tex_file = project_dir / "main.tex"
+    log_file = project_dir / "main.log"
+    pdf_path = project_dir / "main.pdf"
 
     if not tex_file.exists():
         raise FileNotFoundError(f"project {project_id} has no main.tex")
 
-    # auto-heal: ensure the preamble declares any packages the body relies on
-    # (fixes "Environment tikzpicture undefined" and similar on older projects
-    # or AI-generated content).
+    # auto-heal: wrap bare fragments + declare any packages the body relies on
+    # (fixes "Environment tikzpicture undefined" and similar).
     try:
         source = tex_file.read_text(encoding="utf-8")
         fixed = _ensure_compilable(source)
@@ -240,44 +381,58 @@ def compile_pdf(project_id: str) -> Path:
             "pdflatex is not installed. install texlive-latex-base or equivalent."
         )
 
-    # run pdflatex twice for cross-references
-    for pass_num in range(2):
-        result = subprocess.run(
-            [
-                pdflatex,
-                "-interaction=nonstopmode",
-                "-halt-on-error",
-                "-output-directory", str(project_dir),
-                str(tex_file),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=str(project_dir),
-        )
+    # remove any stale pdf so "pdf exists" reliably means "this run produced one"
+    try:
+        pdf_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
-        if result.returncode != 0:
-            # extract the meaningful error from the log, INCLUDING the context
-            # lines after each "!" (which carry the l.NN line number and the
-            # offending control sequence) so the message is actually diagnosable.
-            log_file = project_dir / "main.log"
-            blocks = []
-            if log_file.exists():
-                lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
-                for i, line in enumerate(lines):
-                    if line.startswith("!"):
-                        # error line + up to 4 following lines of context
-                        ctx = [l for l in lines[i:i + 5] if l.strip()]
-                        blocks.append("\n".join(ctx))
+    warnings: list[str] = []
+    result = None
+    MAX_SALVAGE = 4
 
-            error_msg = "\n\n".join(blocks[:4]) if blocks else result.stdout[-1500:]
-            raise RuntimeError(f"pdflatex pass {pass_num + 1} failed:\n{error_msg}")
+    # try to produce a PDF; if a pass yields none, salvage the broken env + retry
+    for _ in range(MAX_SALVAGE + 1):
+        result = _run_pdflatex(pdflatex, tex_file, project_dir)
+        if pdf_path.exists():
+            break
 
-    pdf_path = project_dir / "main.pdf"
+        log_text = log_file.read_text(encoding="utf-8", errors="replace") if log_file.exists() else ""
+        source = tex_file.read_text(encoding="utf-8")
+        new_source, note = _salvage_one(source, log_text)
+        if note is None:
+            new_source, note = _neutralize_all_figures(source)
+        if note is None:
+            # can't localize and nothing to neutralize -> genuine hard failure
+            errors = _extract_errors(log_text)
+            detail = "\n\n".join(errors) if errors else (result.stdout or "")[-1500:]
+            raise RuntimeError(f"pdflatex failed:\n{detail}")
+        tex_file.write_text(new_source, encoding="utf-8")
+        warnings.append(note)
+    else:
+        # exhausted retries without ever producing a PDF
+        log_text = log_file.read_text(encoding="utf-8", errors="replace") if log_file.exists() else ""
+        errors = _extract_errors(log_text)
+        detail = "\n\n".join(errors) if errors else (result.stdout if result else "")[-1500:]
+        raise RuntimeError(f"pdflatex failed to produce a PDF:\n{detail}")
+
+    # second pass for cross-references / toc (best effort; PDF already exists)
+    try:
+        _run_pdflatex(pdflatex, tex_file, project_dir)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("pdflatex reference pass skipped: %s", e)
+
+    # surface any errors pdflatex recovered from as warnings (overleaf-style)
+    if log_file.exists():
+        recovered = _extract_errors(log_file.read_text(encoding="utf-8", errors="replace"))
+        for err in recovered:
+            if err not in warnings:
+                warnings.append(err)
+
     if not pdf_path.exists():
         raise RuntimeError("pdflatex completed but no pdf was generated")
 
-    return pdf_path
+    return pdf_path, warnings
 
 
 def list_projects() -> list[dict]:
