@@ -6,6 +6,7 @@ the working directory for latex projects on disk.
 """
 
 import logging
+import re
 import shutil
 import subprocess
 import uuid
@@ -16,6 +17,125 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 PAPERS_DIR = settings.data_dir / "papers_workspace"
+
+# if the body uses one of these (left = regex), the package (middle) must be in
+# the preamble, plus any extra setup lines (right). this lets us auto-heal
+# documents whose preamble is missing a \usepackage the content relies on
+# (e.g. AI-generated tikz/pgfplots charts or booktabs tables).
+_PACKAGE_RULES = [
+    (r"\\begin\{tikzpicture\}|\\usetikzlibrary", "tikz", []),
+    (r"\\begin\{axis\}|\\addplot|pgfplots", "pgfplots", [r"\pgfplotsset{compat=1.18}"]),
+    (r"\\toprule|\\midrule|\\bottomrule|\\cmidrule", "booktabs", []),
+    (r"\\begin\{tabularx\}", "tabularx", []),
+    (r"\\multirow", "multirow", []),
+    (r"\\includegraphics", "graphicx", []),
+    (r"\\(text)?color\b|\\definecolor", "xcolor", []),
+    (r"\\href|\\url\b", "hyperref", []),
+    (r"\{[^}]*\}\[H\]|\}\[H\]", "float", []),
+    # common academic commands that otherwise throw "undefined control sequence"
+    (r"\\citep|\\citet|\\citeauthor|\\citeyear", "natbib", []),
+    (r"\\SI\b|\\si\b|\\num\b|\\SIrange\b|\\ang\b", "siunitx", []),
+    (r"\\bm\b", "bm", []),
+    (r"\\enquote\b", "csquotes", []),
+    (r"\\begin\{subfigure\}|\\subcaptionbox", "subcaption", []),
+    (r"\\mathbb|\\mathfrak|\\mathscr", "amssymb", []),
+    (r"\\begin\{enumerate\}\[|\\begin\{itemize\}\[|\\setlist", "enumitem", []),
+]
+
+# the standard preamble shared by the starter template and the fragment
+# wrapper, so a bare snippet (the AI often returns only body content) still
+# compiles into a complete document.
+_PREAMBLE = r"""\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+% --- tables ---
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+% --- figures / charts ---
+\usepackage{float}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
+% --- links ---
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+"""
+
+
+def _has_package(preamble: str, pkg: str) -> bool:
+    """true if the preamble already loads ``pkg`` (handles grouped imports)."""
+    return bool(
+        re.search(r"\\usepackage(\[[^\]]*\])?\{[^}]*\b" + re.escape(pkg) + r"\b[^}]*\}", preamble)
+    )
+
+
+def _ensure_packages(source: str) -> str:
+    """inject any \\usepackage lines the document body needs but is missing.
+
+    keeps compilation robust when the AI generates charts/tables/figures whose
+    packages were never declared (the classic "Environment tikzpicture
+    undefined" error).
+    """
+    doc_start = source.find(r"\begin{document}")
+    if doc_start == -1:
+        return source  # not a complete document; leave untouched
+    preamble = source[:doc_start]
+
+    missing: list[str] = []
+    extras: list[str] = []
+    for pattern, pkg, extra in _PACKAGE_RULES:
+        if re.search(pattern, source) and not _has_package(preamble, pkg):
+            missing.append(pkg)
+            extras.extend(extra)
+
+    # pgfplots is built on tikz
+    if "pgfplots" in missing and "tikz" not in missing and not _has_package(preamble, "tikz"):
+        missing.insert(0, "tikz")
+
+    missing = list(dict.fromkeys(missing))
+    if not missing:
+        return source
+
+    inject = "% --- packages auto-added by thinkstack ---\n"
+    inject += "".join(f"\\usepackage{{{p}}}\n" for p in missing)
+    inject += "".join(f"{line}\n" for line in dict.fromkeys(extras))
+
+    m = re.search(r"\\documentclass[^\n]*\n", preamble)
+    if m:
+        return source[: m.end()] + inject + source[m.end():]
+    # no documentclass line found; prepend (best effort)
+    return inject + source
+
+
+def _ensure_compilable(source: str) -> str:
+    """guarantee the source is a complete, compilable document.
+
+    the AI is instructed to return only body content (no \\documentclass /
+    \\begin{document}); if such a fragment is compiled directly you get
+    "Environment figure undefined" (no class loaded). here we wrap any bare
+    fragment in the standard preamble + document, then ensure packages.
+    """
+    s = (source or "").strip()
+    if "\\documentclass" in s and "\\begin{document}" in s:
+        return _ensure_packages(source)  # already a full document
+
+    # extract the body if it is wrapped in document tags without a class,
+    # otherwise treat the whole snippet as the body
+    body = s
+    m = re.search(r"\\begin\{document\}(.*?)\\end\{document\}", s, re.DOTALL)
+    if m:
+        body = m.group(1).strip()
+
+    wrapped = f"{_PREAMBLE}\n\\begin{{document}}\n\n{body}\n\n\\end{{document}}\n"
+    return _ensure_packages(wrapped)
 
 
 def _ensure_workspace() -> Path:
@@ -102,6 +222,18 @@ def compile_pdf(project_id: str) -> Path:
     if not tex_file.exists():
         raise FileNotFoundError(f"project {project_id} has no main.tex")
 
+    # auto-heal: ensure the preamble declares any packages the body relies on
+    # (fixes "Environment tikzpicture undefined" and similar on older projects
+    # or AI-generated content).
+    try:
+        source = tex_file.read_text(encoding="utf-8")
+        fixed = _ensure_compilable(source)
+        if fixed != source:
+            tex_file.write_text(fixed, encoding="utf-8")
+            logger.info("auto-wrapped / healed latex for %s", project_id)
+    except Exception as e:  # noqa: BLE001 - best-effort, never block compile
+        logger.warning("latex auto-heal skipped: %s", e)
+
     pdflatex = shutil.which("pdflatex")
     if not pdflatex:
         raise RuntimeError(
@@ -125,15 +257,20 @@ def compile_pdf(project_id: str) -> Path:
         )
 
         if result.returncode != 0:
-            # extract the meaningful error from the log
+            # extract the meaningful error from the log, INCLUDING the context
+            # lines after each "!" (which carry the l.NN line number and the
+            # offending control sequence) so the message is actually diagnosable.
             log_file = project_dir / "main.log"
-            error_lines = []
+            blocks = []
             if log_file.exists():
-                for line in log_file.read_text(encoding="utf-8", errors="replace").splitlines():
-                    if line.startswith("!") or "Error" in line:
-                        error_lines.append(line)
+                lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                for i, line in enumerate(lines):
+                    if line.startswith("!"):
+                        # error line + up to 4 following lines of context
+                        ctx = [l for l in lines[i:i + 5] if l.strip()]
+                        blocks.append("\n".join(ctx))
 
-            error_msg = "\n".join(error_lines[:10]) if error_lines else result.stdout[-2000:]
+            error_msg = "\n\n".join(blocks[:4]) if blocks else result.stdout[-1500:]
             raise RuntimeError(f"pdflatex pass {pass_num + 1} failed:\n{error_msg}")
 
     pdf_path = project_dir / "main.pdf"
@@ -202,15 +339,7 @@ def delete_project(project_id: str) -> bool:
 def _default_template(title: str) -> str:
     """return a minimal academic paper latex template."""
     safe_title = title.replace("_", r"\_").replace("&", r"\&")
-    return rf"""\documentclass[12pt,a4paper]{{article}}
-
-\usepackage[utf8]{{inputenc}}
-\usepackage[T1]{{fontenc}}
-\usepackage{{amsmath,amssymb}}
-\usepackage{{graphicx}}
-\usepackage{{hyperref}}
-\usepackage[margin=1in]{{geometry}}
-
+    return _PREAMBLE + rf"""
 \title{{{safe_title}}}
 \author{{author name}}
 \date{{\today}}
