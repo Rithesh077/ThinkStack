@@ -22,11 +22,11 @@ class Settings(BaseSettings):
 
     # llm runtime
     llm_provider: str = "llama_cpp"
-    llm_model_path: Path = Path(__file__).parent / "data" / "models"
+    llm_model_path: Path = Path(r"E:\odysseus\data\models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
     llm_ctx_size: int = 4096
-    # -1 offloads all model layers to the gpu. the ~3 gb gemma q4 model fits
-    # comfortably in the rtx 4050's 6 gb vram; override with
-    # SCHOLARLENS_LLM_GPU_LAYERS=0 to force cpu-only inference.
+    # -1 offloads all model layers to the gpu. the ~2.5 gb qwen3-4b q4 model
+    # fits comfortably in gpu vram; override with
+    # THINKSTACK_LLM_GPU_LAYERS=0 to force cpu-only inference.
     llm_gpu_layers: int = -1
 
     # generation defaults for interactive chat (kept small for low latency)

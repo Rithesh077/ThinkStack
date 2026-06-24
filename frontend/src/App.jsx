@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookOpen, Search, Brain, Target, Sun, Moon } from 'lucide-react';
+import { BookOpen, Search, Brain, Target, PenLine, Sun, Moon } from 'lucide-react';
 import { systemApi } from './utils/api';
 import Library from './components/Library';
 import SearchPage from './components/Search';
 import Analysis from './components/Analysis';
 import GapAnalysis from './components/GapAnalysis';
+import PaperWriter from './components/PaperWriter';
 import './index.css';
 
 const THEME_KEY = 'ts-theme';
@@ -47,6 +48,7 @@ function AnimatedRoutes() {
         <Route path="/search" element={<Page><SearchPage /></Page>} />
         <Route path="/analysis" element={<Page><Analysis /></Page>} />
         <Route path="/gaps" element={<Page><GapAnalysis /></Page>} />
+        <Route path="/write" element={<Page><PaperWriter /></Page>} />
       </Routes>
     </AnimatePresence>
   );
@@ -109,6 +111,7 @@ export default function App() {
     { to: '/search', icon: Search, label: 'Search' },
     { to: '/analysis', icon: Brain, label: 'Analysis' },
     { to: '/gaps', icon: Target, label: 'Gap Finder' },
+    { to: '/write', icon: PenLine, label: 'Paper Writer' },
   ];
 
   return (

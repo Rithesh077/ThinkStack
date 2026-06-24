@@ -1380,3 +1380,157 @@ input::-webkit-credentials-auto-fill-button {
 .recharts-cartesian-axis-tick-value {
   font-family: var(--font-base);
 }
+
+/* ============================================================
+   PAPER WRITER
+   ============================================================ */
+.pw-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.2rem;
+}
+
+.pw-projects {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.pw-hint { color: var(--text-3); font-size: 0.85rem; }
+
+.pw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 100px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.pw-chip:hover { color: var(--text); border-color: var(--accent-border); }
+
+.pw-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.pw-chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success); box-shadow: 0 0 6px var(--success);
+}
+
+.pw-chip-del {
+  display: inline-flex; opacity: 0.5; transition: opacity var(--transition-fast);
+}
+.pw-chip-del:hover { opacity: 1; color: var(--danger); }
+
+.pw-create { display: flex; gap: 0.5rem; align-items: center; }
+.pw-create .input { width: 180px; }
+
+.pw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .pw-grid { grid-template-columns: 1fr; }
+}
+
+.pw-editor { display: flex; flex-direction: column; padding: 1rem 1.1rem; }
+
+.pw-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.75rem; gap: 0.5rem;
+}
+
+.pw-toolbar-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem; color: var(--text-2); display: flex; align-items: center; gap: 0.4rem;
+}
+
+.pw-toolbar-actions { display: flex; align-items: center; gap: 0.45rem; }
+
+.pw-status { font-size: 0.78rem; color: var(--accent); font-weight: 600; }
+
+.pw-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--warning); box-shadow: 0 0 6px var(--warning);
+}
+
+.pw-textarea {
+  width: 100%;
+  min-height: 460px;
+  resize: vertical;
+  background: var(--input-bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  outline: none;
+  tab-size: 2;
+  transition: border-color var(--transition-fast);
+}
+
+.pw-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.pw-ai {
+  display: flex; align-items: center; gap: 0.55rem; margin-top: 0.85rem;
+}
+.pw-ai .input { flex: 1; }
+.pw-ai-icon { color: var(--accent); flex-shrink: 0; }
+
+.pw-preview { padding: 0; overflow: hidden; min-height: 540px; display: flex; }
+.pw-iframe { width: 100%; height: 100%; min-height: 540px; border: none; border-radius: var(--radius-lg); background: #fff; }
+
+.pw-empty {
+  margin: auto; text-align: center; color: var(--text-3);
+  display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
+}
+
+.pw-spin { animation: spin 0.8s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   CHAT FIX — wrap long messages so nothing gets clipped
+   ============================================================ */
+.chat-panel-content,
+.chat-message,
+.chat-bubble-content { min-width: 0; }
+
+.chat-message { max-width: 88%; }
+
+.chat-bubble {
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;       /* preserve the model's line breaks */
+  overflow-wrap: anywhere;     /* break long words / urls */
+  word-break: break-word;
+}
+
+.chat-bubble-content { overflow-wrap: anywhere; }
+
+/* keep the assistant "thinking" loader from forcing overflow */
+.chat-bubble-loading { flex-wrap: wrap; }

@@ -171,7 +171,7 @@ class OllamaClient:
         model_path = self._resolve_llama_model_path()
 
         # attempt gpu-accelerated load first, fallback to cpu on failure
-        if self.gpu_layers > 0:
+        if self.gpu_layers != 0:
             try:
                 logger.info(
                     "loading llama.cpp model from %s with %d gpu layers",
@@ -259,10 +259,11 @@ class OllamaClient:
             except Exception as e:
                 logger.warning("failed to load json grammar, proceeding without: %s", e)
 
-        result = await asyncio.to_thread(
-            llama.create_chat_completion,
-            **kwargs,
-        )
+        async with self._get_gen_lock():
+            result = await asyncio.to_thread(
+                llama.create_chat_completion,
+                **kwargs,
+            )
 
         choices = result.get("choices", [])
         if not choices:

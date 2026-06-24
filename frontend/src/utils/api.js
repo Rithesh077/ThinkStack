@@ -132,3 +132,32 @@ export const encryptionApi = {
     }),
 };
 
+export const papersApi = {
+  list: () => request('/papers/projects'),
+
+  create: (name) =>
+    request('/papers/projects', { method: 'POST', body: { name } }),
+
+  get: (projectId) => request(`/papers/projects/${projectId}`),
+
+  save: (projectId, source) =>
+    request('/papers/save', {
+      method: 'POST',
+      body: { project_id: projectId, source },
+    }),
+
+  generate: (projectId, prompt, currentSource = '') =>
+    request('/papers/generate', {
+      method: 'POST',
+      body: { project_id: projectId, prompt, current_source: currentSource },
+    }),
+
+  compile: (projectId) =>
+    request('/papers/compile', { method: 'POST', body: { project_id: projectId } }),
+
+  remove: (projectId) =>
+    request(`/papers/projects/${projectId}`, { method: 'DELETE' }),
+
+  downloadUrl: (projectId) => `${BASE_URL}/papers/download/${projectId}`,
+};
+
