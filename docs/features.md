@@ -31,15 +31,13 @@
    - gbnf grammar constraints for strict json and latex output when using llama_cpp.
    - gpu-acceleration fallback logic (tries gpu, falls back to cpu on oom).
 
-7. **document encryption**
-   - per-paper encryption at rest using aes-256-gcm with an argon2id key-derivation function.
-   - encrypt / decrypt-and-view / remove-encryption flows exposed via `/api/encryption`.
-
-8. **ai-assisted latex paper writer**
-   - file-based project workspace (`data/papers_workspace/<project_id>/`) with create / save / list / delete and a starter academic template.
-   - `/api/papers/generate` turns a plain-language or pseudo-code prompt into raw, compilable latex body content using the local slm (no `\documentclass`/`\begin{document}` wrapper, no markdown fences).
-   - offline pdf compilation via `pdflatex` (run twice for cross-references, non-interactive, 60s timeout) with meaningful error extraction from the `.log`; compiled pdf served from `/api/papers/download/{project_id}`.
-   - editor surfaced in the tauri desktop frontend (`src/components/PaperWriter.tsx`).
+7. **ai-assisted paper writer (latex)**
+   - interactive monospaced CodeMirror editor integrated directly inside the Tauri desktop app interface.
+   - `.ths` (ThinkStack) file format support: users write prompts/ideas directly inside the editor, and the AI translates it in-place to compilable LaTeX.
+   - auto-save (saves incrementally after 2 seconds of inactivity) and manual save capabilities.
+   - built-in offline compiler pipeline utilizing system `pdflatex` to generate and compile papers.
+   - real-time error log parsing that exposes compiler diagnostics directly within the UI when compilation fails.
+   - automated test suite validating the end-to-end writer API and compiler pipeline.
 
 ## known issues
 

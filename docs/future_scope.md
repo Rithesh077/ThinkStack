@@ -12,6 +12,15 @@
 
 ---
 
+## completed features (recent updates)
+
+### ai-assisted research paper writer (latex)
+- **description:** built-in text editor using CodeMirror where users write prompts or ideas inside a `.ths` file, and a local AI converts them in-place to compilable LaTeX.
+- **compilation:** compiles instantly to PDF using the local system's `pdflatex` and provides a real-time compilation log parser for debugging LaTeX errors.
+- **future enhancement:** bundle Tectonic as an offline sidecar for self-contained, zero-dependency compiling.
+
+---
+
 ## planned features
 
 ### ✅ implemented: ai-powered research paper writer (latex)
@@ -25,9 +34,9 @@
 - allows users to securely share their local research papers, generated drafts, and analysis results with specific peers.
 - utilizes public key infrastructure (pki) and digital signatures. no central server holds user data or access lists.
 
-### priority 3: advanced gap analysis targeting future work
+### priority 2: advanced gap analysis targeting future work
 **description:** expanding the current gap analysis engine to specifically target and synthesize the "future work" and "limitations" sections of multiple ingested papers using cross-attention analysis.
 
-### priority 4: citation visualization
+### priority 3: citation visualization
 **description:** a graphical visualization of document citations.
 - will allow users to map how different papers reference one another, highlighting foundational papers and identifying research clusters visually.
