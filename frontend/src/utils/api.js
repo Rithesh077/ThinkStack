@@ -60,30 +60,47 @@ export const searchApi = {
 };
 
 export const analysisApi = {
-  summarize: (docIds) =>
+  summarize: (docIds, password) =>
     request('/analysis/summarize', {
       method: 'POST',
-      body: { doc_ids: docIds },
+      body: { doc_ids: docIds, password },
     }),
 
-  extractClaims: (docIds) =>
+  extractClaims: (docIds, password) =>
     request('/analysis/claims', {
       method: 'POST',
-      body: { doc_ids: docIds },
+      body: { doc_ids: docIds, password },
     }),
 
-  clusterThemes: (docIds) =>
+  clusterThemes: (docIds, password) =>
     request('/analysis/themes', {
       method: 'POST',
-      body: { doc_ids: docIds },
+      body: { doc_ids: docIds, password },
     }),
 };
 
 export const gapsApi = {
-  analyze: (docIds) =>
+  analyze: (docIds, password) =>
     request('/gaps/analyze', {
       method: 'POST',
-      body: { doc_ids: docIds },
+      body: { doc_ids: docIds, password },
+    }),
+};
+
+export const chatApi = {
+  /**
+   * ask the rag chat assistant a question.
+   *
+   * @param {string} message - the user's question.
+   * @param {object} [opts] - optional scope and grounding.
+   * @param {string[]} [opts.docIds] - restrict retrieval to these documents.
+   * @param {{role: string, content: string}[]} [opts.history] - prior turns.
+   * @param {string} [opts.context] - current analysis results as extra context.
+   */
+  send: (message, { docIds = [], history = [], context = '' } = {}) =>
+    request('/chat', {
+      method: 'POST',
+      body: { message, doc_ids: docIds, history, context },
     }),
 };
 
@@ -91,4 +108,27 @@ export const systemApi = {
   health: () => request('/system/health'),
   models: () => request('/system/models'),
   stats: () => request('/system/stats'),
+  setModel: (model) =>
+    request('/system/model', { method: 'POST', body: { model } }),
 };
+
+export const encryptionApi = {
+  encrypt: (docId, password) =>
+    request('/encryption/encrypt', {
+      method: 'POST',
+      body: { doc_id: docId, password },
+    }),
+
+  decrypt: (docId, password) =>
+    request('/encryption/decrypt', {
+      method: 'POST',
+      body: { doc_id: docId, password },
+    }),
+
+  removeEncryption: (docId, password) =>
+    request('/encryption/remove', {
+      method: 'POST',
+      body: { doc_id: docId, password },
+    }),
+};
+

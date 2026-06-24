@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Brain, Lightbulb, Layers, FileText } from 'lucide-react';
-import { documentsApi, analysisApi } from '../utils/api';
+import { Brain, Lightbulb, Layers, FileText, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
+import { documentsApi, analysisApi, chatApi } from '../utils/api';
+import ChatDialog from './ChatDialog';
 
 /**
  * analysis dashboard component.
@@ -8,6 +9,7 @@ import { documentsApi, analysisApi } from '../utils/api';
  * allows users to select documents and run summarization,
  * claim extraction, or theme clustering via the slm.
  * displays structured analysis results.
+ * includes an AI chat dialog for interactive Q&A about analysis.
  */
 export default function Analysis() {
   const [documents, setDocuments] = useState([]);
@@ -16,6 +18,12 @@ export default function Analysis() {
   const [activeTab, setActiveTab] = useState('summarize');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     const loadDocs = async () => {
@@ -56,13 +64,13 @@ export default function Analysis() {
       let data;
       switch (activeTab) {
         case 'summarize':
-          data = await analysisApi.summarize(selectedDocs);
+          data = await analysisApi.summarize(selectedDocs, password);
           break;
         case 'claims':
-          data = await analysisApi.extractClaims(selectedDocs);
+          data = await analysisApi.extractClaims(selectedDocs, password);
           break;
         case 'themes':
-          data = await analysisApi.clusterThemes(selectedDocs);
+          data = await analysisApi.clusterThemes(selectedDocs, password);
           break;
         default:
           return;
@@ -72,6 +80,50 @@ export default function Analysis() {
       setError(err.message);
     }
     setLoading(false);
+  };
+
+  const handleChatSend = async (text) => {
+    const userMsg = { role: 'user', content: text };
+    const history = [...chatMessages];
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+
+    try {
+      // pass the current analysis results as extra grounding context
+      let context = '';
+      if (result) {
+        if (activeTab === 'summarize' && result.summary_text) {
+          context = `Analysis summary: ${result.summary_text}`;
+          if (result.key_points?.length) {
+            context += `\nKey points: ${result.key_points.join('; ')}`;
+          }
+        } else if (activeTab === 'claims' && result.claims) {
+          context = `Extracted claims: ${result.claims.map(c => c.claim_text).join('; ')}`;
+        } else if (activeTab === 'themes' && result.themes) {
+          context = `Themes: ${result.themes.map(t => `${t.label}: ${t.description}`).join('; ')}`;
+        }
+      }
+
+      const response = await chatApi.send(text, {
+        docIds: selectedDocs,
+        history,
+        context,
+      });
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: response.answer },
+      ]);
+    } catch (err) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Sorry, I encountered an error: ${err.message}. Please make sure the backend is running and papers are uploaded.`,
+        },
+      ]);
+    }
+    setChatLoading(false);
   };
 
   const tabs = [
@@ -113,7 +165,7 @@ export default function Analysis() {
                   />
                 </label>
                 <div className="doc-info">
-                  <div className="doc-title">{doc.metadata?.title || doc.filename}</div>
+                  <div className="doc-title">{doc.filename}</div>
                   <div className="doc-meta">{doc.chunks} chunks</div>
                 </div>
               </div>
@@ -134,6 +186,36 @@ export default function Analysis() {
           </button>
         ))}
       </div>
+
+      {(() => {
+        const encryptedSelectedDocs = documents.filter(d => 
+          selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+        );
+        
+        if (encryptedSelectedDocs.length === 0) return null;
+        
+        return (
+          <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+              <Lock size={14} />
+              <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                className="chat-input"
+                style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
+                placeholder="enter encryption password..."
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <button
         className="btn btn-primary"
@@ -213,6 +295,14 @@ export default function Analysis() {
           )}
         </div>
       )}
+
+      <ChatDialog
+        title="analysis assistant"
+        messages={chatMessages}
+        onSend={handleChatSend}
+        loading={chatLoading}
+        placeholder="ask about your analysis results..."
+      />
     </div>
   );
 }

@@ -9,7 +9,7 @@ embeddings and metadata for efficient vector search.
 import logging
 from typing import Optional
 
-from infrastructure.chromadb_client import get_vector_store
+from infrastructure.local_vector_store import get_vector_store
 from domain.knowledge_base.embedding_service import generate_embeddings
 from domain.ingestion.models import TextChunk, DocumentMetadata
 
@@ -128,3 +128,28 @@ def get_collection_stats() -> dict:
         "total_documents": len(doc_ids),
         "document_ids": doc_ids,
     }
+
+
+def update_chunk_metadata_field(chunk_id: str, field: str, value) -> None:
+    """update a single metadata field on a specific chunk.
+
+    uses chromadb's upsert to merge the new field value into the
+    existing metadata without touching the document text or embedding.
+
+    args:
+        chunk_id: the id of the chunk to update.
+        field: the metadata key to set.
+        value: the value to assign (must be a chroma-compatible type:
+            str, int, float, or bool).
+    """
+    store = get_vector_store()
+    existing = store.get(ids=[chunk_id])
+
+    if not existing["ids"]:
+        logger.warning("chunk %s not found, skipping metadata update", chunk_id)
+        return
+
+    meta = existing["metadatas"][0] if existing["metadatas"] else {}
+    meta[field] = value
+
+    store.update(ids=[chunk_id], metadatas=[meta])
