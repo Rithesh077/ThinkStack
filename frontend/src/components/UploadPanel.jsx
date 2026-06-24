@@ -98,13 +98,13 @@ export default function UploadPanel({ onUploadComplete }) {
               key={i}
               className="doc-item"
               style={{
-                borderColor: (r.status === 'success' || r.status === 'ingested')
+                borderColor: r.status === 'success'
                   ? 'rgba(52, 211, 153, 0.3)'
                   : 'rgba(248, 113, 113, 0.3)',
               }}
             >
               <div className="doc-icon">
-                {r.status === 'success' || r.status === 'ingested' ? (
+                {r.status === 'success' ? (
                   <CheckCircle size={18} color="var(--success)" />
                 ) : (
                   <AlertCircle size={18} color="var(--danger)" />
@@ -113,12 +113,12 @@ export default function UploadPanel({ onUploadComplete }) {
               <div className="doc-info">
                 <div className="doc-title">{r.filename}</div>
                 <div className="doc-meta">
-                  {r.status === 'success' || r.status === 'ingested'
+                  {r.status === 'success'
                     ? `${r.chunks_created} chunks created | ${r.metadata?.title || 'title extracted'}`
                     : r.error}
                 </div>
               </div>
-              <span className={`badge badge-${r.status === 'success' || r.status === 'ingested' ? 'success' : 'danger'}`}>
+              <span className={`badge badge-${r.status === 'success' ? 'success' : 'danger'}`}>
                 {r.status}
               </span>
             </div>

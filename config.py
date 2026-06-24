@@ -1,9 +1,9 @@
 """
-thinkstack configuration module.
+scholarlens configuration module.
 
 centralizes all application settings including paths, model names,
 chunking parameters, and server configuration. uses pydantic-settings
-for environment variable overrides with the THINKSTACK_ prefix.
+for environment variable overrides.
 """
 
 from pathlib import Path
@@ -18,23 +18,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path(__file__).parent / "data"
     papers_dir: Path = Path(__file__).parent / "data" / "papers"
     chroma_dir: Path = Path(__file__).parent / "data" / "vectorstore"
-    models_dir: Path = Path(__file__).parent / "data" / "models"
 
-    # llm runtime
-    llm_provider: str = "llama_cpp"
-    llm_model_path: Path = Path(__file__).parent / "data" / "models"
-    llm_ctx_size: int = 4096
-    # -1 offloads all model layers to the gpu. the ~3 gb gemma q4 model fits
-    # comfortably in the rtx 4050's 6 gb vram; override with
-    # SCHOLARLENS_LLM_GPU_LAYERS=0 to force cpu-only inference.
-    llm_gpu_layers: int = -1
-
-    # generation defaults for interactive chat (kept small for low latency)
-    chat_max_tokens: int = 512
-    chat_context_chunks: int = 5
-    chat_context_char_budget: int = 3000
-
-    # ollama (optional fallback runtime)
+    # ollama
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
     ollama_timeout: int = 120
@@ -56,7 +41,9 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
 
-    model_config = {"env_prefix": "THINKSTACK_"}
+
+
+    model_config = {"env_prefix": "SCHOLARLENS_"}
 
 
 settings = Settings()
