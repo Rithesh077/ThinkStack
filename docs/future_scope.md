@@ -14,10 +14,11 @@
 
 ## planned features
 
-### priority 1: ai-powered research paper writer (latex)
-**description:** the core feature for the desktop application. a text editor where the user writes plain english pseudo-code or ideas, and the fine-tuned ai model converts it into proper latex code using strict gbnf grammars.
-- built-in offline compiler (tectonic sidecar) to instantly compile the latex document into a pdf.
-- live split-pane preview.
+### ✅ implemented: ai-powered research paper writer (latex)
+**status:** shipped on `feature/paper-writer`. a text editor where the user writes plain english / pseudo-code, and the local slm converts it into compilable latex (`/api/papers/generate`).
+- offline compilation to pdf via `pdflatex` (the planned `tectonic` sidecar is still a future hardening step — see known issues).
+- project workspace with create / save / list / compile / download / delete.
+- **remaining:** live split-pane preview and bundling tectonic for a tex-free install.
 
 ### priority 2: secure authorized communication (p2p sharing)
 **description:** decentralized, trust-based networking using libp2p.

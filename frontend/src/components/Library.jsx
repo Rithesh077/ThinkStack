@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, Unlock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target } from 'lucide-react';
 import { documentsApi, encryptionApi } from '../utils/api';
 import UploadPanel from './UploadPanel';
+import LibraryChart from './charts/LibraryChart';
 
 /**
  * paper library component.
@@ -167,6 +168,8 @@ export default function Library() {
           <div className="stat-value">-</div>
         </div>
       </div>
+
+      {documents.length > 0 && <LibraryChart documents={documents} />}
 
       <div className="fade-up stagger-3">
         <UploadPanel onUploadComplete={loadDocuments} />

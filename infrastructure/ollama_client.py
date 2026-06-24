@@ -47,6 +47,37 @@ ws ::= ([ \t\n] ws)?
 """
 
 
+def _extract_json_text(raw: str) -> str:
+    """pull the json payload out of a raw model response.
+
+    even with the gbnf grammar, ollama or a grammar-load fallback can return
+    json wrapped in markdown fences or with a short preamble, which breaks
+    ``json.loads``. this strips ```...``` fences and narrows the string to the
+    outermost json object or array so downstream parsing succeeds.
+
+    args:
+        raw: the raw text returned by the model.
+
+    returns:
+        the best-effort json substring (unchanged if nothing to strip).
+    """
+    s = (raw or "").strip()
+
+    # strip a fenced code block: ```json ... ``` or ``` ... ```
+    if "```" in s:
+        match = re.search(r"```(?:json)?\s*(.*?)```", s, re.DOTALL)
+        if match:
+            s = match.group(1).strip()
+
+    # narrow to the outermost object/array
+    if "{" in s and "}" in s:
+        s = s[s.find("{"): s.rfind("}") + 1]
+    elif "[" in s and "]" in s:
+        s = s[s.find("["): s.rfind("]") + 1]
+
+    return s
+
+
 class OllamaClient:
     """async client for local llm runtimes (ollama or llama.cpp)."""
 
@@ -207,9 +238,9 @@ class OllamaClient:
     ) -> str:
         llama = self._get_llama()
 
-        # fold the system prompt into the user turn. some chat templates
-        # (e.g. gemma) do not define a separate system role, so prepending
-        # the instructions keeps generation model-agnostic.
+        # build the chat messages; create_chat_completion applies the model's
+        # own chat template, so a dedicated system turn is handled correctly.
+        messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
@@ -298,7 +329,7 @@ class OllamaClient:
             raw json string from the model.
         """
         if self.provider == "llama_cpp":
-            return await self._generate_llama_cpp(
+            raw = await self._generate_llama_cpp(
                 prompt=prompt,
                 system=system,
                 temperature=temperature,

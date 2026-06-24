@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare, Lock, Eye, EyeOff, Search, ArrowRight } from 'lucide-react';
 import { documentsApi, gapsApi, chatApi } from '../utils/api';
 import ChatDialog from './ChatDialog';
+import GapSeverityChart from './charts/GapSeverityChart';
 
 /**
  * research gap analysis component.
@@ -258,6 +259,10 @@ export default function GapAnalysis() {
 
       {result && (
         <>
+          {result.gaps && result.gaps.length > 0 && (
+            <GapSeverityChart gaps={result.gaps} />
+          )}
+
           {result.gaps && result.gaps.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {result.gaps.map((gap, i) => {

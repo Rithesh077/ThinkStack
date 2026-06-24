@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search as SearchIcon, FileText, Sparkles } from 'lucide-react';
 import { searchApi } from '../utils/api';
+import SearchScoreChart from './charts/SearchScoreChart';
 
 /**
  * search interface component.
@@ -75,6 +76,10 @@ export default function Search() {
         <div className="toast error" style={{ position: 'static', marginBottom: '1rem' }}>
           {error}
         </div>
+      )}
+
+      {results && results.results.length > 0 && (
+        <SearchScoreChart results={results.results} />
       )}
 
       {results && (

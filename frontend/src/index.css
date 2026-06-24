@@ -1,56 +1,150 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@400..700&display=swap');
 
+/* ============================================================
+   THEME SYSTEM
+   :root holds the LIGHT theme + all theme-independent tokens.
+   [data-theme="dark"] (set on <html>) overrides only colors.
+   Legacy variable names used across components are defined once
+   as var(--design-token) so they follow whichever theme is active.
+   ============================================================ */
 :root {
-  /* deep cinematic dark theme */
-  --bg-primary: #050507;
-  --bg-secondary: rgba(14, 15, 19, 0.5);
-  --bg-tertiary: rgba(22, 24, 30, 0.4);
-  --bg-card: rgba(22, 24, 32, 0.45);
-  --bg-card-hover: rgba(30, 34, 46, 0.6);
-
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  
-  /* rich gold/amber */
-  --text-accent: #f59e0b;
-  --accent-primary: #d97706;
-  --accent-secondary: #f59e0b;
-  --accent-glow: rgba(245, 158, 11, 0.25);
-  --accent-gradient: linear-gradient(135deg, #d97706 0%, #fbbf24 50%, #fef3c7 100%);
-
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.1);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.1);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.1);
-  --info: #3b82f6;
-  --info-bg: rgba(59, 130, 246, 0.1);
-
-  /* ultra-subtle glass borders */
-  --border-subtle: rgba(255, 255, 255, 0.03);
-  --border-light: rgba(255, 255, 255, 0.08);
-  --border-accent: rgba(245, 158, 11, 0.2);
-
-  --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.18);
-  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.25);
-  --shadow-glow: 0 0 32px var(--accent-glow);
-
+  /* ---- theme-independent ---- */
   --radius-sm: 8px;
   --radius-md: 16px;
   --radius-lg: 24px;
   --radius-xl: 32px;
 
   --font-base: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-display: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
+  --font-display: 'Anton', Impact, Haettenschweiler, sans-serif;
   --font-cursive: 'Caveat', cursive;
-  
+
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 300ms cubic-bezier(0.16, 1, 0.3, 1);
   --transition-slow: 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- design tokens: LIGHT (warm cream) ---- */
+  --bg: #f5f4f0;
+  --bg-soft: #efede7;
+  --surface: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --surface-2: rgba(255, 255, 255, 0.55);
+  --surface-hover: rgba(255, 255, 255, 0.95);
+  --inset: rgba(40, 30, 18, 0.04);
+  --input-bg: rgba(40, 30, 18, 0.03);
+
+  --text: #221e18;
+  --text-2: #6c645a;
+  --text-3: #a39a8d;
+
+  --accent: #c2620a;
+  --accent-2: #ea9a1a;
+  --accent-soft: rgba(217, 119, 6, 0.10);
+  --accent-border: rgba(217, 119, 6, 0.30);
+  --on-accent: #ffffff;
+
+  --border: rgba(40, 30, 18, 0.09);
+  --border-2: rgba(40, 30, 18, 0.15);
+
+  --success: #16a34a;
+  --success-bg: rgba(22, 163, 74, 0.11);
+  --warning: #c2620a;
+  --warning-bg: rgba(217, 119, 6, 0.13);
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.10);
+  --info: #2563eb;
+  --info-bg: rgba(37, 99, 235, 0.10);
+
+  --shadow-sm: 0 1px 2px rgba(40, 30, 18, 0.05), 0 1px 3px rgba(40, 30, 18, 0.05);
+  --shadow-md: 0 4px 14px rgba(40, 30, 18, 0.07), 0 2px 5px rgba(40, 30, 18, 0.05);
+  --shadow-lg: 0 22px 48px rgba(40, 30, 18, 0.12), 0 8px 16px rgba(40, 30, 18, 0.07);
+  --glow: 0 10px 34px rgba(217, 119, 6, 0.14);
+
+  --btn-bg: #221e18;
+  --btn-text: #fdfbf7;
+  --orb-1: rgba(234, 154, 26, 0.20);
+  --orb-2: rgba(217, 119, 6, 0.14);
+
+  /* ---- legacy aliases (follow the active theme automatically) ---- */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--bg-soft);
+  --bg-card: var(--surface-glass);
+  --bg-card-hover: var(--surface-hover);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --text-accent: var(--accent);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--accent-2);
+  --accent-glow: var(--accent-soft);
+  --accent-gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 60%, #fef3c7 100%);
+  --border-subtle: var(--border);
+  --border-light: var(--border-2);
+  --border-accent: var(--accent-border);
+  --shadow-glow: var(--glow);
+}
+
+/* ---- design tokens: DARK (slate) ---- */
+[data-theme="dark"] {
+  --bg: #16181d;
+  --bg-soft: #1c1f25;
+  --surface: #23262d;
+  --surface-glass: rgba(42, 46, 54, 0.55);
+  --surface-2: rgba(255, 255, 255, 0.04);
+  --surface-hover: rgba(52, 57, 67, 0.62);
+  --inset: rgba(0, 0, 0, 0.25);
+  --input-bg: rgba(0, 0, 0, 0.30);
+
+  --text: #f4f6fa;
+  --text-2: #97a1b0;
+  --text-3: #5a6271;
+
+  --accent: #f59e0b;
+  --accent-2: #fbbf24;
+  --accent-soft: rgba(245, 158, 11, 0.11);
+  --accent-border: rgba(245, 158, 11, 0.24);
+  --on-accent: #1a1305;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-2: rgba(255, 255, 255, 0.14);
+
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.12);
+
+  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 10px 22px rgba(0, 0, 0, 0.42), 0 4px 8px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 26px 50px rgba(0, 0, 0, 0.55), 0 12px 18px rgba(0, 0, 0, 0.32);
+  --glow: 0 0 34px rgba(245, 158, 11, 0.22);
+
+  --btn-bg: #f4f6fa;
+  --btn-text: #0a0a0c;
+  --orb-1: rgba(245, 158, 11, 0.17);
+  --orb-2: rgba(217, 119, 6, 0.14);
+}
+
+/* smooth cross-fade when the theme flips (Apple-like) */
+body, .sidebar, .card, .stat-card, .gap-card, .chat-side-panel,
+.chat-collapsed-tab, .doc-item, .input, .btn, .result-item, .badge {
+  transition: background-color 380ms var(--ease-spring),
+              color 380ms var(--ease-spring),
+              border-color 380ms var(--ease-spring),
+              box-shadow 380ms var(--ease-spring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 *,
@@ -1135,4 +1229,154 @@ input::-webkit-credentials-auto-fill-button {
   color: var(--text-muted);
   margin-top: 0.75rem;
   justify-content: flex-end;
+}
+
+/* ============================================================
+   THEME RECONCILIATION
+   re-skin elements that hard-coded light-on-dark colors so they
+   read correctly in BOTH themes. these come last, so they win,
+   and they reference tokens so they follow the active theme.
+   ============================================================ */
+.stat-value { color: var(--text); }
+.page-header h2 { text-shadow: none; }
+
+.ambient-bg { background: var(--bg); }
+.orb-1 { background: var(--orb-1); }
+.orb-2 { background: var(--orb-2); }
+
+/* inputs / inset panels */
+.input { background: var(--input-bg); }
+.input:focus { background: var(--input-bg); box-shadow: 0 0 0 4px var(--accent-soft); }
+.chat-input { background: var(--input-bg); }
+.chat-input:focus { background: var(--input-bg); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-panel-footer { background: var(--inset); }
+.gap-suggestions { background: var(--inset); border-color: var(--border); }
+
+/* upload zone */
+.upload-zone { background: var(--surface-2); }
+.upload-zone::after { border-color: var(--border-2); }
+.upload-zone:hover,
+.upload-zone.dragover { background: var(--accent-soft); box-shadow: inset 0 0 40px var(--accent-soft); }
+.upload-zone-icon-wrapper { background: var(--surface-2); border-color: var(--border); }
+.upload-zone:hover .upload-zone-icon-wrapper { background: var(--accent-soft); }
+
+/* inverted accent buttons: correct text color per theme */
+.upload-browse-btn { color: var(--on-accent); }
+.chat-message-user .chat-bubble { color: var(--on-accent); }
+.chat-send-btn { color: var(--on-accent); }
+
+/* raised surfaces / hovers that were hard-coded white */
+.card::before { background: linear-gradient(90deg, transparent, var(--border-2), transparent); }
+.doc-item:hover { background: var(--surface-2); }
+.stat-card:hover { border-color: var(--border-2); }
+.gap-card:hover { border-color: var(--border-2); }
+.btn-primary { box-shadow: var(--shadow-sm); }
+.btn-primary:hover:not(:disabled) { box-shadow: var(--shadow-md); }
+.btn-secondary { background: var(--surface-2); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); }
+.btn-icon:hover { background: var(--surface-hover); }
+.upload-zone-icon-wrapper { color: var(--text-2); }
+.chat-header-btn:hover { background: var(--surface-hover); }
+.chat-message-assistant .chat-bubble { background: var(--surface); }
+.chat-avatar { background: var(--surface); }
+.chat-side-panel { box-shadow: var(--shadow-lg); }
+
+::-webkit-scrollbar-thumb { background: var(--border-2); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ---- brand subtitle ---- */
+.brand-subtitle {
+  font-size: 0.66rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 0.55rem;
+  font-weight: 500;
+}
+
+/* ---- sidebar footer + theme toggle ---- */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 11px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--text-2);
+  font-family: inherit;
+  transition: border-color var(--transition-base), background var(--transition-base);
+}
+
+.theme-toggle:hover { border-color: var(--accent-border); }
+
+.theme-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.theme-toggle-label svg { color: var(--accent); }
+
+.theme-switch {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  flex-shrink: 0;
+}
+
+.theme-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: left 240ms var(--ease-spring);
+}
+
+[data-theme="dark"] .theme-knob { left: 21px; }
+
+.status-meta {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  color: var(--text-3);
+}
+
+/* ---- charts (Recharts) ---- */
+.chart-card {
+  padding: 1.4rem 1.6rem;
+}
+
+.chart-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.recharts-default-tooltip {
+  border-radius: 12px !important;
+}
+
+.recharts-text,
+.recharts-cartesian-axis-tick-value {
+  font-family: var(--font-base);
 }
