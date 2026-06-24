@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Target, Compass, FileText, AlertTriangle, TrendingUp } from 'lucide-react';
-import { documentsApi, gapsApi } from '../utils/api';
+import { Target, Compass, FileText, AlertTriangle, TrendingUp, MessageSquare, Lock, Eye, EyeOff } from 'lucide-react';
+import { documentsApi, gapsApi, chatApi } from '../utils/api';
+import ChatDialog from './ChatDialog';
 
 /**
  * research gap analysis component.
@@ -8,6 +9,7 @@ import { documentsApi, gapsApi } from '../utils/api';
  * orchestrates the full gap analysis pipeline across selected papers.
  * displays identified gaps with severity levels and actionable
  * research direction suggestions.
+ * includes an AI chat dialog for interactive Q&A about gaps.
  */
 export default function GapAnalysis() {
   const [documents, setDocuments] = useState([]);
@@ -15,6 +17,12 @@ export default function GapAnalysis() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     const loadDocs = async () => {
@@ -52,12 +60,56 @@ export default function GapAnalysis() {
     setResult(null);
 
     try {
-      const data = await gapsApi.analyze(selectedDocs);
+      const data = await gapsApi.analyze(selectedDocs, password);
       setResult(data);
     } catch (err) {
       setError(err.message);
     }
     setLoading(false);
+  };
+
+  const handleChatSend = async (text) => {
+    const userMsg = { role: 'user', content: text };
+    const history = [...chatMessages];
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatLoading(true);
+
+    try {
+      // ground the assistant in the current gap-analysis results, if any
+      let context = '';
+      if (result) {
+        if (result.gaps?.length) {
+          context = `Identified gaps: ${result.gaps
+            .map((g) => `${g.description} (${g.severity})`)
+            .join('; ')}`;
+        }
+        if (result.suggestions?.length) {
+          context += `\nSuggested directions: ${result.suggestions
+            .map((s) => `${s.title}: ${s.description}`)
+            .join('; ')}`;
+        }
+      }
+
+      const response = await chatApi.send(text, {
+        docIds: selectedDocs,
+        history,
+        context,
+      });
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: response.answer },
+      ]);
+    } catch (err) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Sorry, I encountered an error: ${err.message}. Make sure the backend is running and papers are uploaded.`,
+        },
+      ]);
+    }
+    setChatLoading(false);
   };
 
   const severityIcon = (severity) => {
@@ -112,13 +164,43 @@ export default function GapAnalysis() {
                   />
                 </label>
                 <div className="doc-info">
-                  <div className="doc-title">{doc.metadata?.title || doc.filename}</div>
+                  <div className="doc-title">{doc.filename}</div>
                   <div className="doc-meta">{doc.chunks} chunks</div>
                 </div>
               </div>
             ))}
           </div>
         )}
+
+        {(() => {
+          const encryptedSelectedDocs = documents.filter(d => 
+            selectedDocs.includes(d.doc_id) && (d.metadata?.is_encrypted === 'true' || d.metadata?.is_encrypted === true)
+          );
+          
+          if (encryptedSelectedDocs.length === 0) return null;
+          
+          return (
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--warning)' }}>
+                <Lock size={14} />
+                <span>password required for: <strong>{encryptedSelectedDocs.map(d => d.filename).join(', ')}</strong></span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="chat-input"
+                  style={{ width: '300px', background: 'var(--bg-tertiary)', padding: '0.5rem 0.75rem', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
+                  placeholder="enter encryption password..."
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button className="btn-icon" onClick={() => setShowPassword(!showPassword)} title="toggle visibility">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ marginTop: '1rem' }}>
           <button
@@ -260,6 +342,14 @@ export default function GapAnalysis() {
           </p>
         </div>
       )}
+
+      <ChatDialog
+        title="gap finder assistant"
+        messages={chatMessages}
+        onSend={handleChatSend}
+        loading={chatLoading}
+        placeholder="ask about research gaps and directions..."
+      />
     </div>
   );
 }

@@ -23,19 +23,21 @@ router = APIRouter()
 class AnalysisRequest(BaseModel):
     """request body for analysis endpoints."""
     doc_ids: list[str] = Field(..., min_length=1)
+    password: str | None = None
 
 
-def _get_doc_text(doc_id: str) -> str:
+def _get_doc_text(doc_id: str, password: str | None = None) -> str:
     """retrieve the full concatenated text for a document.
 
     args:
         doc_id: the document identifier.
+        password: password to decrypt the full text if encrypted.
 
     returns:
-        concatenated text of all document chunks.
+        concatenated text of all document chunks or decrypted full text.
 
     raises:
-        HTTPException: if no chunks are found for the document.
+        HTTPException: if no chunks are found for the document or password wrong.
     """
     chunks = get_chunks_by_doc_id(doc_id)
     if not chunks["ids"]:
@@ -43,6 +45,22 @@ def _get_doc_text(doc_id: str) -> str:
             status_code=404,
             detail=f"no chunks found for document {doc_id}",
         )
+
+    first_meta = chunks["metadatas"][0] if chunks["metadatas"] else {}
+    is_enc = first_meta.get("is_encrypted")
+    if is_enc == "true" or is_enc is True:
+        if not password:
+            raise HTTPException(status_code=403, detail=f"document is encrypted. password required.")
+        from domain.encryption.vault import decrypt_paper, WrongPasswordError
+        from domain.encryption.envelope import EnvelopeFormatError
+        envelope = first_meta.get("encrypted_envelope")
+        try:
+            return decrypt_paper(envelope, password)
+        except WrongPasswordError:
+            raise HTTPException(status_code=403, detail="incorrect password")
+        except EnvelopeFormatError:
+            raise HTTPException(status_code=422, detail="corrupted envelope")
+
     return " ".join(chunks["documents"])
 
 
@@ -60,13 +78,13 @@ async def summarize(request: AnalysisRequest):
         generated summaries with key points.
     """
     if len(request.doc_ids) == 1:
-        text = _get_doc_text(request.doc_ids[0])
+        text = _get_doc_text(request.doc_ids[0], request.password)
         summary = await summarize_single(request.doc_ids[0], text)
         return asdict(summary)
     else:
         texts = {}
         for doc_id in request.doc_ids:
-            texts[doc_id] = _get_doc_text(doc_id)
+            texts[doc_id] = _get_doc_text(doc_id, request.password)
         summary = await summarize_multiple(request.doc_ids, texts)
         return asdict(summary)
 
@@ -86,7 +104,7 @@ async def claims(request: AnalysisRequest):
     """
     all_claims = []
     for doc_id in request.doc_ids:
-        text = _get_doc_text(doc_id)
+        text = _get_doc_text(doc_id, request.password)
         doc_claims = await extract_claims(doc_id, text)
         all_claims.extend([asdict(c) for c in doc_claims])
 
@@ -118,7 +136,7 @@ async def themes(request: AnalysisRequest):
 
     texts = {}
     for doc_id in request.doc_ids:
-        texts[doc_id] = _get_doc_text(doc_id)
+        texts[doc_id] = _get_doc_text(doc_id, request.password)
 
     result_themes = await cluster_by_themes(texts)
     return {
