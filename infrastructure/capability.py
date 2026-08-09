@@ -283,28 +283,35 @@ class MachineCapability:
                 "inference engine was built without Metal support, so "
                 "everything runs on the CPU."
             )
-        if not p.unified_memory and p.vram_gb >= 2 and not self.engine_offload:
+        # Two independent detectors answer "is there a GPU here", and they
+        # disagree. `vram_gb` comes from nvidia-smi, which exists only where
+        # NVIDIA's proprietary driver is installed; `accelerable_device` comes
+        # from Vulkan, which reaches AMD, Intel and open NVIDIA drivers too.
+        #
+        # Gating on vram_gb meant an AMD, Intel or Mesa/NVK machine reported
+        # 0.0 GB and this sentence never printed -- while the Bench card beside
+        # it offered them the graphics download anyway. The offer appeared with
+        # nothing explaining why anyone would want it, on exactly the machines
+        # the Vulkan work was done to reach.
+        #
+        # So ask the detector that can actually see them, and keep vram_gb only
+        # as the fallback for a machine where Vulkan told us nothing but
+        # nvidia-smi found a card.
+        usable = self.accelerable_device
+        has_gpu = bool(usable) or p.vram_gb >= 2
+        if not p.unified_memory and has_gpu and not self.engine_offload:
             # The original wording -- "the installed inference engine is a
             # CPU-only build and cannot use it" -- was accurate and useless. It
             # named an internal component, gave no reason, and offered nothing,
             # so a tester with an RTX 4050 read it as a defect rather than as a
             # deliberate trade.
             #
-            # Two things this must NOT do, both found by rewriting it badly first:
-            #
-            # 1. Promise what we cannot deliver. The offer is a CUDA build, so
-            #    only an NVIDIA card can take it. Saying "can be added" to
-            #    someone with a Radeon is a worse failure than saying nothing.
-            # 2. State a size. Whether the NVIDIA maths libraries are already on
-            #    the machine changes the download from ~400 MB to ~1 GB, and
-            #    this function cannot see the filesystem. The real figure is
-            #    measured by acceleration.plan() and shown where the button is.
-            # Whether the offer is real is a question about Vulkan, not about
-            # the vendor. An earlier draft gated this on gpu_vendor == "nvidia"
-            # -- correct while the plan was CUDA, and wrong the moment it became
-            # Vulkan, which reaches AMD and Intel too. Ask what can actually be
-            # used rather than inferring it from a brand.
-            usable = self.accelerable_device
+            # It must not promise what we cannot deliver, and must not state a
+            # size: the real figure is measured by acceleration.plan() and shown
+            # where the button is. Whether the offer is real is a question about
+            # Vulkan, not about the vendor -- an earlier draft gated it on
+            # gpu_vendor == "nvidia", correct while the plan was CUDA and wrong
+            # the moment it became Vulkan.
             if usable:
                 out.append(
                     f"{usable} is not being used yet. ThinkStack ships with "

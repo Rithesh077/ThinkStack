@@ -292,3 +292,61 @@ class TestItNeverCrashesOnNonsense:
 
     def test_a_negative_size_model_does_not_produce_nonsense_layers(self):
         assert MachineCapability(RTX, True).gpu_layers(-1.0) in (-1, 0)
+
+
+class TestTheAdviceMustSeeTheGpusVulkanCanSee:
+    """The bug: two detectors disagreed, and the advice asked the wrong one.
+
+    `vram_gb` comes from nvidia-smi, which exists only where NVIDIA's
+    proprietary driver is installed. `accelerable_device` comes from Vulkan,
+    which reaches AMD, Intel and open NVIDIA drivers as well.
+
+    Gating the "your GPU is not being used" sentence on vram_gb meant every
+    AMD, Intel and Mesa/NVK machine reported 0.0 GB and the sentence never
+    printed -- while the Bench card beside it offered them the graphics
+    download anyway. The offer appeared with nothing explaining why anyone
+    would want it, on exactly the machines Vulkan was chosen to reach.
+    """
+
+    # Vulkan sees a card; nvidia-smi is not installed, so vram_gb stays 0.0.
+    AMD = machine(gpu_name="", gpu_vendor="none", vram_gb=0.0)
+
+    def test_an_amd_machine_is_told_its_gpu_is_idle(self):
+        c = MachineCapability(self.AMD, engine_offload=False,
+                              accelerable_device="AMD Radeon RX 7600")
+        assert any("AMD Radeon RX 7600 is not being used yet" in a for a in c.advice())
+
+    def test_an_intel_igpu_machine_is_told_too(self):
+        c = MachineCapability(self.AMD, engine_offload=False,
+                              accelerable_device="Intel(R) UHD Graphics")
+        assert any("Intel(R) UHD Graphics is not being used yet" in a for a in c.advice())
+
+    def test_an_nvidia_card_behind_the_open_driver_is_not_missed(self):
+        # the development laptop: NVK reports the 3050 Ti, nvidia-smi does not
+        c = MachineCapability(self.AMD, engine_offload=False,
+                              accelerable_device="NVIDIA GeForce RTX 3050 Ti (NVK)")
+        assert any("RTX 3050 Ti (NVK) is not being used yet" in a for a in c.advice())
+
+    def test_nvidia_smi_still_counts_when_vulkan_saw_nothing(self):
+        # the fallback: a card nvidia-smi found but Vulkan could not reach --
+        # the honest answer is "found, but no driver we can use"
+        p = machine(gpu_name="RTX 4050", gpu_vendor="nvidia", vram_gb=6.0)
+        c = MachineCapability(p, engine_offload=False, accelerable_device=None)
+        assert any("no graphics driver ThinkStack can use" in a for a in c.advice())
+
+    def test_a_machine_with_no_gpu_at_all_is_told_nothing_about_gpus(self):
+        c = MachineCapability(machine(), engine_offload=False, accelerable_device=None)
+        assert not any("not being used yet" in a for a in c.advice())
+        assert not any("graphics driver" in a for a in c.advice())
+
+    def test_nothing_is_offered_once_the_engine_can_already_offload(self):
+        c = MachineCapability(self.AMD, engine_offload=True,
+                              accelerable_device="AMD Radeon RX 7600")
+        assert not any("not being used yet" in a for a in c.advice())
+
+    def test_a_mac_still_gets_the_metal_sentence_not_this_one(self):
+        c = MachineCapability(M1_8GB, engine_offload=False,
+                              accelerable_device="Apple M1")
+        joined = " ".join(c.advice())
+        assert "without Metal support" in joined
+        assert "not being used yet" not in joined
