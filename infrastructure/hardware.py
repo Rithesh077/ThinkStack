@@ -1,10 +1,7 @@
-"""
-hardware profiler module.
+"""What this machine has, and what that allows.
 
-detects system ram, cpu cores, and gpu vram to classify the machine
-into a performance tier and recommend safe model loading parameters.
-prevents oom crashes by ensuring the llm context size and gpu offload
-are tuned to the available resources.
+Sizing the context and the offload against real memory is what keeps a large
+model from taking the process down on a small machine.
 """
 
 import json
@@ -42,14 +39,11 @@ class HardwareProfile:
 
 
 def _detect_ram() -> tuple[float, float]:
-    """return (total_gb, available_gb) using psutil.
+    """(total_gb, available_gb).
 
-    a failure here is not cosmetic: 0.0 total ram classifies the machine as the
-    "low" tier, which pins context size and model choice to the most
-    conservative settings for the life of the process. so it is logged at error
-    level with the real exception -- the previous warning said only "psutil not
-    installed", which was a guess that sent the packaged-build investigation
-    after the wrong cause.
+    Failing here is not cosmetic: 0.0 total pins the machine to the "low" tier
+    for the life of the process, so the real exception is logged rather than a
+    guess about its cause.
     """
     try:
         import psutil
@@ -73,26 +67,16 @@ def _detect_cpu_cores() -> int:
 
 
 def _detect_gpu() -> tuple[str, str, float, bool, bool]:
-    """return (gpu_name, gpu_vendor, vram_gb, has_cuda, unified_memory).
+    """(gpu_name, gpu_vendor, vram_gb, has_cuda, unified_memory).
 
-    FALLBACK ONLY. The packaged app gets this from the tauri shell, which
-    diagnoses natively and cheaply. This path exists for the backend run
-    standalone or in dev.
+    FALLBACK ONLY -- the packaged app gets this natively from the Tauri shell.
 
-    Deliberately does NOT import torch. Torch is in the bundle for embeddings
-    (sentence-transformers), not for inference -- the SLMs run on llama.cpp --
-    and asking torch about the GPU is both slow (0.82s to import, against 0.18s
-    here) and the wrong question: torch having CUDA says nothing about whether
-    the llama.cpp build we ship can offload. See engine_supports_gpu_offload()
-    for the question that matters.
+    Must not import torch: it is bundled for embeddings, not inference, and
+    whether torch sees CUDA says nothing about whether our llama.cpp build can
+    offload. That question is engine_supports_gpu_offload().
 
-    This replaced a torch probe that Aditya had just fixed a real bug in: it
-    read `total_mem` instead of `total_memory`, raising an AttributeError that
-    nothing caught, so on a machine that genuinely HAS CUDA the probe crashed
-    its caller rather than degrading to "no gpu". That class of failure is gone
-    with the dependency, but the lesson stands -- a detection path must never
-    be able to take down the thing that called it, which is why every branch
-    below returns rather than raises.
+    Every branch returns rather than raises. A detection path that can take
+    down its caller turns "no GPU" into a crash.
     """
     # nvidia-smi is the cheapest reliable CUDA probe and needs no python deps.
     try:
@@ -116,16 +100,12 @@ def _detect_gpu() -> tuple[str, str, float, bool, bool]:
 
 
 def engine_supports_gpu_offload() -> bool:
-    """Can the llama.cpp build we actually ship put layers on the GPU?
+    """Can the llama.cpp build we ship put layers on the GPU?
 
-    This is a fact about the BINARY, not the machine, and it is the only thing
-    that decides whether n_gpu_layers > 0 will work. A CUDA-capable machine
-    running a CPU-only wheel cannot offload; an Apple Silicon Mac running a
-    Metal wheel can, even though it reports 0 GB of VRAM.
-
-    Guessing this from the machine is how every Mac ended up pinned to CPU:
-    the check was `has_cuda && vram >= 2`, which Apple Silicon can never
-    satisfy no matter what the engine supports. Ask the engine instead.
+    A fact about the BINARY, not the machine, and the only thing that decides
+    whether n_gpu_layers > 0 will work. A CUDA machine on a CPU-only wheel
+    cannot offload; an Apple Silicon Mac on a Metal wheel can, while reporting
+    0 GB of VRAM. Never infer this from the hardware.
     """
     try:
         from llama_cpp import llama_supports_gpu_offload
@@ -152,14 +132,10 @@ def _classify_tier(total_ram_gb: float, vram_gb: float) -> str:
 
 
 def _profile_from_env() -> HardwareProfile | None:
-    """rebuild the profile from THINKSTACK_HW_PROFILE, set by the tauri shell.
+    """The profile the Tauri shell measured, or None if it did not.
 
-    the desktop app diagnoses the machine natively (src-tauri/src/diagnosis.rs)
-    before spawning this backend and passes the result as json. preferring it
-    means the packaged app never imports torch or probes cuda just to size the
-    model — that probe is slow and can stall on a broken driver. returns none
-    when the var is absent (e.g. the backend run standalone / in dev), so the
-    caller falls back to local detection.
+    Preferring it keeps the packaged app from probing CUDA on startup, which is
+    slow and can stall outright on a broken driver.
     """
     raw = os.environ.get("THINKSTACK_HW_PROFILE")
     if not raw:
@@ -188,15 +164,10 @@ def _profile_from_env() -> HardwareProfile | None:
 
 
 def profile_system() -> HardwareProfile:
-    """detect hardware and return a typed profile.
+    """The machine profile. Cached after the first call.
 
-    this is the primary entry point. results are cached in-module after the
-    first call. prefers the native profile supplied by the desktop shell via
-    THINKSTACK_HW_PROFILE; only when that is absent does it detect locally
-    (which probes nvidia-smi and the platform, never torch).
-
-    returns:
-        a populated HardwareProfile instance.
+    Hardware does not change while the app runs, and probing on every question
+    would slow every question. POST /api/system/diagnose clears the cache.
     """
     global _cached_profile
     if _cached_profile is not None:
@@ -244,32 +215,17 @@ _cached_profile: HardwareProfile | None = None
 
 
 def recommended_ctx_size(tier: str | None = None) -> int:
-    """return a safe context size for the given tier.
-
-    args:
-        tier: performance tier string. if none, auto-detects.
-
-    returns:
-        recommended n_ctx value (2048, 4096, or 8192).
-    """
+    """A context size the tier can hold: 2048, 4096 or 8192."""
     if tier is None:
         tier = profile_system().tier
     return {"low": 2048, "medium": 4096, "high": 8192}.get(tier, 2048)
 
 
 def recommended_gpu_layers(vram_gb: float | None = None, model_size_gb: float = 1.0) -> int:
-    """compute how many layers to offload to the gpu.
+    """Layers to offload. 0 is CPU-only, -1 is all of them.
 
-    a rough heuristic: each layer of a typical 1-3b model uses ~30-60 mb
-    of vram. we leave 0.5 gb headroom for the kv-cache and cuda overhead.
-
-    args:
-        vram_gb: available gpu memory. if none, auto-detects.
-        model_size_gb: approximate model file size on disk.
-
-    returns:
-        number of gpu layers to offload. 0 means cpu-only,
-        -1 means offload all layers.
+    A layer of a 1-3B model costs ~30-60 MB of VRAM; 0.5 GB is held back for
+    the KV cache and driver overhead.
     """
     if vram_gb is None:
         vram_gb = profile_system().vram_gb
@@ -292,17 +248,10 @@ def max_safe_model_size_gb(
     available_ram_gb: float | None = None,
     vram_gb: float | None = None,
 ) -> float:
-    """compute the maximum model file size we can safely load.
+    """Largest model file this machine can load right now.
 
-    reserves 3 gb for the os, embedding model (~0.1 gb), python, and
-    the frontend. the model can live in ram, vram, or both.
-
-    args:
-        available_ram_gb: current free system ram.
-        vram_gb: total gpu vram.
-
-    returns:
-        maximum safe model size in gb.
+    3 GB is reserved for the OS, the embedding model, Python and the frontend.
+    The model may sit in RAM, VRAM, or both.
     """
     if available_ram_gb is None or vram_gb is None:
         profile = profile_system()
@@ -315,14 +264,7 @@ def max_safe_model_size_gb(
 
 
 def model_file_size_gb(model_path: Path) -> float:
-    """return the size of a model file in gb.
-
-    args:
-        model_path: path to the gguf file.
-
-    returns:
-        file size in gigabytes, or 0.0 if not found.
-    """
+    """Size of a GGUF in GB, or 0.0 when the file is missing."""
     try:
         return round(model_path.stat().st_size / (1024 ** 3), 2)
     except (OSError, FileNotFoundError):

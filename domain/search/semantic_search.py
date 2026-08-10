@@ -1,17 +1,9 @@
-"""
-semantic search module.
+"""Cosine similarity over locally generated embeddings.
 
-performs vector similarity search over the vector store using cosine
-distance on locally generated embeddings.
-
-this is the *only* search path in the app. an earlier build fused these
-results with bm25 keyword search via reciprocal rank fusion, which had two
-costs: a paraphrase query sharing no vocabulary with the passage that
-answers it got out-ranked by lexically similar noise, and neither leg ever
-looked at more than ``top_k`` chunks. cosine now decides the ordering
-outright, and the one thing bm25 was genuinely better at -- rare literal
-tokens like ``FedAvg`` or an author surname -- is preserved by a small
-exact-token bonus that can only break ties upward.
+The only search path in the app. BM25 and rank fusion were removed -- see
+docs/ADR.md -- leaving one thing to preserve: rare literal tokens like
+`FedAvg` or a surname, which the exact-token bonus can only nudge upward,
+never enough to outrank a better meaning match.
 """
 
 import logging
@@ -35,15 +27,7 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _exact_bonus(query_tokens: list[str], text: str) -> float:
-    """fraction of query tokens appearing verbatim in ``text``, scaled.
-
-    args:
-        query_tokens: tokenized query terms.
-        text: the chunk text to check against.
-
-    returns:
-        a bonus in [0, EXACT_TOKEN_BONUS].
-    """
+    """Fraction of query tokens appearing verbatim, in [0, EXACT_TOKEN_BONUS]."""
     if not query_tokens:
         return 0.0
     haystack = set(_tokenize(text))
@@ -52,17 +36,9 @@ def _exact_bonus(query_tokens: list[str], text: str) -> float:
 
 
 def semantic_search(query: SearchQuery) -> list[SearchResult]:
-    """search the knowledge base by meaning, over the whole corpus.
+    """Score the query against EVERY stored chunk, not a candidate pool.
 
-    embeds the query and scores it against *every* stored chunk rather than
-    a pre-truncated candidate pool, so a passage buried deep in a long paper
-    is as findable as one on its first page.
-
-    args:
-        query: search query with text, top_k, and optional filters.
-
-    returns:
-        list of search results sorted by descending score, capped at top_k.
+    That is what makes a passage on page 40 as findable as one in the abstract.
     """
     store = get_vector_store()
 
@@ -115,23 +91,11 @@ def semantic_search(query: SearchQuery) -> list[SearchResult]:
 
 
 def search_papers(query: SearchQuery) -> list[dict]:
-    """search, then roll chunk hits up to the papers that contain them.
+    """Papers rather than loose chunks, each carrying every chunk that matched.
 
-    the canvas asks a different question than a result list does: not "which
-    passage is best" but "which papers does this query touch, and where in
-    each". so the per-paper rollup keeps *every* qualifying chunk rather than
-    the single best one -- the reader pane needs them all to step between
-    matches within a paper.
-
-    ``top_k`` bounds the number of papers returned, not the number of chunks,
-    since one paper matching in twelve places is one result to the user.
-
-    args:
-        query: search query with text, top_k, and optional filters.
-
-    returns:
-        list of ``{doc_id, score, title, authors, year, hits: [...]}`` dicts,
-        sorted by best-chunk score descending.
+    The reader pane steps between matches within a paper, so keeping only the
+    best chunk would break it. `top_k` bounds papers, not chunks -- one paper
+    matching twelve times is one result to the user.
     """
     # score every chunk in the corpus; top_k applies to papers below, so the
     # per-chunk cap must not truncate the rollup first.

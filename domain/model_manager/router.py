@@ -1,20 +1,10 @@
-"""which gguf answers a given task, on this machine, right now.
+"""Which GGUF answers a given task, on this machine, right now.
 
-This is the decision that used to live inside ``OllamaClient`` as
-``_resolve_task_model_path``. Moving it out buys two things.
-
-**Testability.** Every dependency is passed in -- the registry, the manifest,
-the memory budget, the external-model finder. Nothing is imported and looked up.
-So routing can be exercised exhaustively with fake budgets and fake finders,
-with no hardware, no filesystem and no llama.cpp. Previously the only way to
-test a routing decision was to construct a real client and hope.
-
-**No import cycle.** ``infrastructure/ollama_client.py`` already reaches down
-into ``domain.model_manager``. If this module reached back up into
-``infrastructure.hardware`` for the budget, the two would import each other.
-Injection is what keeps the arrow pointing one way. It is the same pattern
-``infrastructure/capability.py`` uses for engine offload, and for the same
-reason.
+Every dependency is INJECTED -- registry, manifest, budget, external finder --
+for two reasons. It makes routing testable against fabricated machines with no
+hardware or llama.cpp present, and it stops an import cycle: ollama_client
+already reaches into domain.model_manager, so reaching back up into
+infrastructure.hardware would close the loop.
 
 Resolution order, strongest claim first::
 
@@ -56,13 +46,11 @@ class Candidate:
 
 @dataclass(frozen=True)
 class Resolution:
-    """the outcome of routing one task.
+    """The outcome of routing one task.
 
-    Carries the REASON, not just the path. ``_resolve_task_model_path`` put its
-    reasoning in a ``logger.info`` and threw it away, so when analysis quietly
-    ran on the 0.5B because the 1.5B did not fit, the UI had no way to say so --
-    the user just got worse summaries and no explanation. Bench needs that
-    sentence, so it has to be data.
+    Carries the REASON, not just the path. A downgrade the interface cannot
+    explain looks to the user like the app is simply worse, so the reasoning
+    has to be data rather than a log line.
     """
 
     path: Path | None
@@ -91,17 +79,15 @@ class Resolution:
 
 
 def _fits(size_gb: float, budget_gb: float) -> bool:
-    """whether a model of ``size_gb`` fits ``budget_gb``.
+    """Whether `size_gb` fits `budget_gb`.
 
-    A budget of 0 means "we could not measure this machine", which is treated
-    as no constraint. Refusing to load on an unknown budget would turn a failed
-    measurement into a broken app; attempting the load lets llama.cpp's own
-    failure path handle it, and that path now records the error on the entry.
+    A budget of 0 means "could not measure", and is treated as NO constraint.
+    Refusing to load on an unknown budget turns a failed measurement into a
+    broken app; attempting it lets llama.cpp fail properly instead.
 
-    Callers that HAVE a MachineCapability should pass ``fits_fn`` to ``resolve``
-    instead, so the answer -- and the sentence explaining it -- comes from
-    ``capability.plan_for_size`` rather than being derived a second time here.
-    This plain comparison is the fallback for callers that only have a number.
+    Callers holding a MachineCapability should pass `fits_fn` to `resolve` so
+    the answer comes from `capability.plan_for_size` rather than being derived
+    twice. This is the fallback for callers holding only a number.
     """
     if budget_gb <= 0:
         return True
@@ -109,17 +95,15 @@ def _fits(size_gb: float, budget_gb: float) -> bool:
 
 
 def _size_of(path: Path, declared: float) -> float:
-    """the model's size in GB, measured if possible, else as declared.
+    """Size in GB: measured when the file is readable, else as declared.
 
-    NOT ``hardware.model_file_size_gb``, which rounds to two decimals. This
-    value is compared against a memory budget, and rounding a comparison input
-    is how a model that does not fit gets approved: at 2 dp anything under
-    ~5 MB measures as 0.0 GB and passes any budget at all. Rounding belongs at
-    the point of DISPLAY. See tests/test_model_router.py::TestBudget.
+    NOT `hardware.model_file_size_gb`, which rounds to 2dp. This is compared
+    against a memory budget, and rounding a comparison input is how a model
+    that does not fit gets approved -- at 2dp anything under ~5 MB reads as
+    0.0 GB and passes any budget. Round at display time, never here.
 
-    The declared size comes from a registry entry or a manifest and can be
-    stale -- a user may have swapped the file for a different quantisation --
-    so it is only the fallback for a momentarily unreadable file.
+    The declared size can be stale if a user swapped the file, so it is only
+    the fallback.
     """
     try:
         return path.stat().st_size / (1024 ** 3)
@@ -136,12 +120,11 @@ def collect_candidates(
     external_finder: ExternalFinder | None = None,
     legacy_defaults: Sequence[str] = (),
 ) -> list[Candidate]:
-    """every model that claims ``task``, strongest claim first.
+    """Every model claiming `task`, strongest claim first.
 
-    Existence is checked here; the budget is not. Separating the two is what
-    lets the caller distinguish "nothing is set up for this task" from "what is
-    set up does not fit right now" -- two situations with completely different
-    remedies that a single filtered list would collapse into one.
+    Checks existence but NOT the budget. Keeping them separate is what lets a
+    caller tell "nothing is set up for this task" apart from "what is set up
+    does not fit right now" -- different problems with different remedies.
     """
     out: list[Candidate] = []
     seen: set[str] = set()
@@ -199,18 +182,14 @@ def resolve(
     ollama_lookup: Callable[[str], Optional[str]] | None = None,
     plan_for_size: Callable[[float], object] | None = None,
 ) -> Resolution:
-    """pick the model for ``task``.
+    """Pick the model for `task`. Never raises.
 
-    ``plan_for_size`` should be ``MachineCapability.plan_for_size``. When given,
-    it decides whether a model fits AND supplies the sentence explaining why
-    not, so the answer the router acts on is the same one the Diagnose screen
-    shows. Without it the router falls back to a plain size-vs-budget compare,
-    which is all a caller holding only a number can do.
+    `plan_for_size` should be `MachineCapability.plan_for_size`: it decides
+    whether a model fits AND supplies the sentence explaining why not, so the
+    router acts on the same answer Bench displays.
 
-    Returns a :class:`Resolution` describing both the choice and the reasoning.
-    Never raises: a task with nothing available resolves to the base model, and
-    a task with no base model resolves to nothing at all, which the caller
-    reports rather than crashes on.
+    Nothing available falls through to the base model; no base model resolves
+    to nothing, which the caller reports rather than crashes on.
     """
     candidates = collect_candidates(
         task,
