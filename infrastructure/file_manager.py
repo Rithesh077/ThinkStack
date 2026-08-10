@@ -25,15 +25,11 @@ def ensure_directories() -> None:
 
 
 def _reconcile_model_registry() -> None:
-    """bring the model registry in line with what this build ships.
+    """Record what this build ships, and retire what it supersedes.
 
-    Runs after seeding so the weights are already in the writable dir. Kept
-    separate from ``seed_bundled_models`` because seeding is a file operation
-    and this is a bookkeeping one: it records what is available, retires what
-    this build supersedes, and honours a user who removed the bundled model.
-
-    Best-effort by design -- ``reconcile_and_save`` swallows its own errors, so
-    a damaged registry degrades to "no user models" rather than blocking start.
+    Must run AFTER seeding, so the weights it records are already in place.
+    Best-effort: a damaged registry degrades to "no user models" rather than
+    blocking startup.
     """
     try:
         from domain.model_manager.reconcile import reconcile_and_save
@@ -44,14 +40,12 @@ def _reconcile_model_registry() -> None:
 
 
 def seed_bundled_models() -> None:
-    """copy gguf models shipped in the frozen bundle into the writable models dir.
+    """Copy bundled GGUF models into the writable models dir.
 
-    a frozen build ships its models under a read-only bundle dir
-    (``settings.bundled_models_dir``), but the app loads models from the
-    writable ``settings.models_dir`` (STATE_DIR/models). without this, a freshly
-    installed app would start with no model. only seeds files that are missing,
-    so user-added or already-copied models are never overwritten. a no-op in a
-    source checkout, where the two dirs are the same path.
+    A frozen build ships models read-only but loads them from a writable dir, so
+    without this a fresh install starts with no model. Only copies what is
+    missing, so a user's own files are never overwritten. No-op in a source
+    checkout, where both paths are the same.
     """
     src = settings.bundled_models_dir
     dst = settings.models_dir
@@ -69,18 +63,10 @@ def seed_bundled_models() -> None:
 
 
 def save_uploaded_pdf(filename: str, content: bytes) -> tuple[str, Path]:
-    """save an uploaded pdf file to the papers directory.
+    """Store an uploaded PDF. Returns `(doc_id, path)`.
 
-    generates a unique document id and stores the file with that id
-    as a prefix to avoid naming collisions.
-
-    args:
-        filename: the original filename of the uploaded pdf.
-        content: the raw bytes of the pdf file.
-
-    returns:
-        a tuple of (document_id, file_path) where document_id is a
-        unique identifier and file_path is the absolute storage path.
+    The id prefixes the stored filename, so two uploads of the same name do not
+    collide.
     """
     doc_id = uuid.uuid4().hex[:12]
     safe_name = f"{doc_id}_{filename}"
@@ -91,14 +77,7 @@ def save_uploaded_pdf(filename: str, content: bytes) -> tuple[str, Path]:
 
 
 def get_pdf_path(doc_id: str) -> Path | None:
-    """find the stored pdf file for a given document id.
-
-    args:
-        doc_id: the unique document identifier.
-
-    returns:
-        the file path if found, none otherwise.
-    """
+    """The stored PDF for `doc_id`, or None."""
     for path in settings.papers_dir.iterdir():
         if path.name.startswith(doc_id):
             return path
@@ -106,14 +85,7 @@ def get_pdf_path(doc_id: str) -> Path | None:
 
 
 def delete_pdf(doc_id: str) -> bool:
-    """delete the stored pdf for a given document id.
-
-    args:
-        doc_id: the unique document identifier.
-
-    returns:
-        true if the file was found and deleted, false otherwise.
-    """
+    """Delete the stored PDF. False when there was nothing to delete."""
     path = get_pdf_path(doc_id)
     if path and path.exists():
         path.unlink()
@@ -123,11 +95,7 @@ def delete_pdf(doc_id: str) -> bool:
 
 
 def list_stored_pdfs() -> list[dict]:
-    """list all pdf files currently stored in the papers directory.
-
-    returns:
-        list of dictionaries with doc_id, filename, and size_bytes.
-    """
+    """Every stored PDF as `{doc_id, filename, size_bytes}`."""
     results = []
     if not settings.papers_dir.exists():
         return results

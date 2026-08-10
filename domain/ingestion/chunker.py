@@ -1,9 +1,11 @@
-"""
-text chunker module.
+"""Split document text into overlapping chunks for embedding.
 
-splits extracted document text into overlapping chunks suitable for
-embedding and retrieval. uses a recursive character splitting strategy
-that respects paragraph and sentence boundaries.
+A chunk is the unit of retrieval -- search returns chunks, never whole papers.
+Bigger chunks are not safer, they are blurrier: one vector has to represent
+everything in it, so a long chunk covering five topics scores weakly on all
+five. `chunk_size` is that trade-off.
+
+Overlap exists so a sentence spanning a boundary is still findable.
 """
 
 import logging
@@ -15,31 +17,18 @@ logger = logging.getLogger(__name__)
 
 
 def _estimate_tokens(text: str) -> int:
-    """estimate token count using a word-based approximation.
-
-    args:
-        text: input text string.
-
-    returns:
-        estimated token count (roughly 1.3 tokens per word).
-    """
+    """Roughly 1.3 tokens per word. Approximate on purpose: the real tokeniser
+    is the embedding model's, and loading it here to count would cost more than
+    the imprecision does."""
     words = len(text.split())
     return int(words * 1.3)
 
 
 def _split_by_separators(text: str, separators: list[str]) -> list[str]:
-    """recursively split text using a hierarchy of separators.
+    """Split on the first separator that actually divides the text.
 
-    tries each separator in order, splitting on the first one that
-    produces multiple segments. this preserves document structure by
-    preferring paragraph breaks over sentence breaks over word breaks.
-
-    args:
-        text: the text to split.
-        separators: ordered list of separator strings to try.
-
-    returns:
-        list of text segments.
+    Ordered widest-first (paragraph, then sentence, then word) so a chunk
+    breaks at the coarsest boundary available rather than mid-sentence.
     """
     if not separators:
         return [text]
@@ -62,21 +51,7 @@ def chunk_text(
     chunk_size: int = settings.chunk_size,
     chunk_overlap: int = settings.chunk_overlap,
 ) -> list[TextChunk]:
-    """split document text into overlapping chunks for embedding.
-
-    uses a recursive character splitting strategy that respects natural
-    text boundaries (paragraphs, sentences, words). chunks are created
-    with configurable size and overlap to ensure context continuity.
-
-    args:
-        text: the full document text to chunk.
-        doc_id: the parent document identifier.
-        chunk_size: target token count per chunk.
-        chunk_overlap: number of overlapping tokens between chunks.
-
-    returns:
-        list of TextChunk objects with unique ids and positional info.
-    """
+    """Chunks of about `chunk_size` tokens, overlapping by `chunk_overlap`."""
     # empty / whitespace-only input yields no chunks. without this guard the
     # splitter bottoms out at [""] and emits a single empty chunk, which would
     # then be embedded and stored as a junk zero-vector.
@@ -135,20 +110,10 @@ def chunk_pages(
     chunk_size: int = settings.chunk_size,
     chunk_overlap: int = settings.chunk_overlap,
 ) -> list[TextChunk]:
-    """chunk text while preserving page number information.
+    """As chunk_text, but each chunk remembers which page it came from.
 
-    processes each page individually and then merges small page chunks
-    to reach the target chunk size, tracking which page each chunk
-    originates from.
-
-    args:
-        pages: list of dicts with page_number and text keys.
-        doc_id: the parent document identifier.
-        chunk_size: target token count per chunk.
-        chunk_overlap: number of overlapping tokens between chunks.
-
-    returns:
-        list of TextChunk objects with page numbers set.
+    The page number is what lets a search result point at a place in the PDF
+    rather than at a paper, so it has to survive the merging of small pages.
     """
     full_text = "\n\n".join(p["text"] for p in pages)
     chunks = chunk_text(full_text, doc_id, chunk_size, chunk_overlap)

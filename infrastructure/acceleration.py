@@ -1,58 +1,27 @@
-r"""GPU acceleration as something the user can switch on, not something we ship.
+r"""GPU acceleration as something the user switches on, not something we ship.
 
-ThinkStack ships a CPU-only build of llama.cpp -- deliberately, because a GPU
-build that most users cannot use is an installer nobody downloads. That is why
-an RTX 4050 owner was told, correctly, that the engine could not use their card,
-and then offered nothing at all. This module is the "and then".
+ThinkStack ships a CPU-only llama.cpp: a GPU build most users cannot use is an
+installer nobody downloads. This module is the offer that follows.
 
-── Why Vulkan rather than CUDA ──
+What is downloaded is NOT drivers -- it is our own GPU build:
 
-CUDA was the obvious choice and the wrong one. It reaches NVIDIA cards only, and
-only through NVIDIA's proprietary stack: prebuilt wheels exist, so it *looked*
-cheapest, but it needs another ~557 MB of NVIDIA maths libraries on any machine
-without the CUDA toolkit.
+    libvulkan.so.1     the LOADER.  Theirs, ships with the driver. Never ours.
+    libggml-vulkan.so  the KERNELS. Ours. Exists on no machine anywhere.
 
-Vulkan reaches NVIDIA, AMD, Intel and integrated graphics through the loader
-that ships **with the graphics driver**. The laptop this was written on has no
-NVIDIA packages installed at all, and Vulkan already reports:
+Two mechanisms worth knowing before changing anything here:
 
-    Intel(R) UHD Graphics (TGL GT1)                 integrated
-    NVIDIA GeForce RTX 3050 Ti Laptop (NVK GA107)   discrete
-    llvmpipe (LLVM 22.1.8)                          software  <- excluded
+**LLAMA_CPP_LIB_PATH, not file replacement.** `llama_cpp` loads its shared
+libraries from that path, so the download lives in the user's writable data
+directory. Nothing inside the installation is touched -- on Linux that is a
+read-only AppImage mount, on macOS a signed bundle.
 
-Both real devices are reachable today, with nothing installed. CUDA would have
-reached neither. See infrastructure/vulkan.py.
+**A subprocess decides whether it worked.** A library that downloads cleanly can
+still fail to load: driver too old, missing dependency, unsupported CPU. Finding
+that out inside the running backend means the backend is already damaged. The
+probe runs in a process allowed to crash; the override is committed only if it
+survives.
 
-The cost is honest: Vulkan is slower than CUDA on an NVIDIA card. It is far
-faster than the processor on every card, which is the comparison that matters
-when the alternative is no acceleration at all.
-
-── What is actually downloaded ──
-
-Not drivers. **Our own program's GPU build.** The distinction is the whole
-answer to "why can you not use the drivers I already have":
-
-    libvulkan.so.1     the LOADER.   Theirs. Ships with the driver. Never ours.
-    libggml-vulkan.so  the KERNELS.  OURS. llama.cpp's own GPU code, which
-                                     exists on no machine anywhere.
-
-Only the second is downloaded, and no NVIDIA runtime is needed at all.
-
-── Why an environment variable rather than replacing files ──
-
-`llama_cpp` reads `LLAMA_CPP_LIB_PATH` and loads its shared libraries from
-there, so the download lives in the user's writable data directory and is
-pointed at. Nothing inside the installation is touched -- on Linux that is a
-read-only AppImage mount, and on macOS a signed bundle.
-
-── Why a subprocess decides whether it worked ──
-
-A library that downloads cleanly can still fail to load: a driver too old, a
-missing dependency, a CPU without the instructions the build assumes. Finding
-that out inside the running backend means the backend is already damaged, on a
-machine where this app is the only thing that can read the user's papers. So the
-probe happens in a process that is allowed to crash, and the override is
-committed only if that process reports success.
+See docs/ADR.md for why Vulkan rather than CUDA.
 """
 
 from __future__ import annotations
