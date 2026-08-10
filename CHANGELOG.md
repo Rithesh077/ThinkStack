@@ -2,7 +2,20 @@
 
 All notable changes to ThinkStack, newest first.
 
-Versions follow [semantic versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
+Versions read `MAJOR.MINOR.PATCH` but this is **not** semantic versioning, and
+does not pretend to be. Under semver, MAJOR means "we broke your code", which is
+meaningless for a desktop application nobody imports. The number here says how
+far a build has drifted from the current one:
+
+- **Z** advances on its own for anything that lands, and is unbounded
+- **Y** moves only when a human declares a feature release, and carries into X
+  at **twenty** — so `1.19.4` is followed by `2.0.0`, never `1.20.0`
+- **X** moving resets both columns below it
+
+Ordering is preserved either way, which is the property that actually matters:
+the updater compares versions and must never be offered a number lower than the
+one already installed. See `scripts/next_version.py`.
+
 A version exists only once it has been **tagged and published** — every entry
 below corresponds to a real release with installers on the
 [releases page](https://github.com/get-thinkstack/ThinkStack/releases).
@@ -10,6 +23,142 @@ below corresponds to a real release with installers on the
 Channels: **stable** (`vX.Y.Z`, what users get), **beta**
 (`vX.Y.Z-beta.N`, opt-in testers), **nightly** (rolling, unversioned).
 See [scripts/README.md](scripts/README.md) for how releases are cut.
+
+---
+
+## [2.1.10] — 2026-08-09
+
+### Fixed
+- **Bench told AMD, Intel and open-driver machines nothing about their GPU.**
+  Two detectors answer "is there a GPU here" and they disagree: `vram_gb` comes
+  from `nvidia-smi`, which exists only where NVIDIA's proprietary driver is
+  installed, while `accelerable_device` comes from Vulkan, which reaches AMD,
+  Intel and Mesa/NVK as well. The advice was gated on `vram_gb >= 2`, so those
+  machines reported 0.0 GB and the sentence explaining that their GPU was idle
+  never printed — while the card beside it offered them the graphics download
+  anyway. The offer appeared with nothing saying why anyone would want it, on
+  exactly the machines the Vulkan work was done to reach. Now the advice asks
+  the detector that can see them, keeping `vram_gb` as the fallback for a card
+  `nvidia-smi` found but Vulkan could not reach.
+
+### Added
+- **`scripts/ship.sh`** — beta → main → published in one command. Promoting used
+  to be a merge *and* a separate workflow dispatch, and the gap between them was
+  not theoretical: the merge was done, the dispatch was not, and main sat
+  un-released while everyone assumed it had shipped. Refuses a dirty tree, a
+  failed fetch, a beta that is not ahead of main, a beta whose own build did not
+  succeed, a version not ahead of what is published, and a tag that already
+  exists. Afterwards it asserts the outcome: not a draft, not a prerelease,
+  `latest.json` attached, four installers present, `/releases/latest` resolving
+  to the new tag.
+- **`scripts/rollback.sh`** — shaped by the fact that you cannot un-ship. The
+  updater only moves forward, so an app that already updated will never move
+  back and deleting a release does not reach it. Marking the bad release a
+  prerelease makes `/releases/latest` fall back to the previous one within
+  seconds, which fixes every download and update check that has not happened
+  yet; `--reship` publishes the previous tree under a *higher* number, which is
+  the only way to reach anyone who already updated. `--undo` reverses the first
+  half.
+
+### Changed
+- **Y now carries into X at twenty rather than ten.** Ten made a major version
+  arrive after ten features, which can be one quiet quarter, so X climbed for
+  reasons no user could feel.
+- `release.yml` refuses a version lower than the published one. The override
+  input was accepted with no ordering check at all, so `-f version=1.0.0` would
+  have tagged it, published it as "latest", and presented every user with a
+  downgrade their updater would silently ignore. The guard existed in
+  `release.sh`, which is not on the dispatch path anyone uses; it now lives in
+  `ship.sh` **and** in the workflow, because a dispatch can be run from the
+  GitHub UI or a phone.
+
+---
+
+## [2.1.9] — 2026-08-08
+
+### Fixed
+- **Scribe and LitGraph looked like their dividers were broken.** They were not:
+  `.main-content` carried `max-width: 1400px` for every screen, so on a 1920px
+  window the panes resized correctly inside a 1400px box and left 500px of dead
+  space beside them. Dragging worked and simply ran out of room early, which
+  reads as a bug rather than a limit. A page now declares whether it is a
+  document or a workspace in `features.js`; workspaces take the whole window and
+  drop their padding from 4rem to 2rem, while Library and Bench keep a measure,
+  because prose set 1900px wide is unreadable.
+
+---
+
+## [2.1.8] — 2026-08-08
+
+### Fixed
+- **A beta release built correctly, uploaded every asset, reported every job
+  green — and stayed a draft.** A draft is invisible and its assets 404, and the
+  updater maps 404 to "up to date", so testers were told they were current while
+  the release sat there unreachable, and the download page 404d for the same
+  reason. `draft: false` is a request, not a guarantee, so the publish is now
+  asserted after the fact and republished with retries if it is wrong.
+
+---
+
+## [2.1.7] — 2026-08-08
+
+### Fixed
+- **The graphics engine build had never once run.** `workflow_dispatch` can only
+  be registered from the default branch, so its first execution was in
+  production, and it failed twice for unrelated reasons. On Linux there is no
+  `glslc` package on jammy at all — the shader compiler llama.cpp's Vulkan
+  backend needs — so it now comes from LunarG's own repository. On Windows,
+  `--no-binary :all:` meant *every* package in the tree, so pip tried to compile
+  numpy from source and died; only `llama-cpp-python` needs building, since
+  compiling it with `-DGGML_VULKAN=on` is the entire point.
+- **The build then failed its own verification.** The step asserted
+  `llama_supports_gpu_offload()` and got `False` on a 49 MB Vulkan library that
+  was perfectly good. llama.cpp loads backends *dynamically*, so that function
+  reports whether a GPU backend successfully **registered**, not whether one was
+  compiled in — and a CI runner has the SDK but no driver. It now asserts what a
+  build can prove: the library exists, is large enough to hold compiled shaders,
+  and links against the Vulkan loader.
+
+### Changed
+- Dependabot groups minor and patch upgrades into one pull request per
+  ecosystem. The first time the config reached the default branch it opened
+  sixteen PRs in sixty seconds, and sixteen is a queue nobody works through —
+  an unreviewed upgrade is the same silent drift that broke the nltk build,
+  wearing a PR number. Majors stay ungrouped, because those need someone reading
+  a changelog.
+
+---
+
+## [2.1.6] — 2026-08-08
+
+First release of the 2.x line. Carries everything listed under **1.x
+accumulated** below, plus:
+
+### Added
+- **Graphics acceleration is now actually available.** The Vulkan engine is
+  built and published to the rolling `accel-latest` release, so the offer Bench
+  makes can be fulfilled. Before this the app correctly detected the hardware,
+  correctly quoted a size, and then failed with "the graphics engine is not
+  published for this platform yet" — because it never had been.
+
+---
+
+## [1.10.5] — 2026-08-08
+
+### Fixed
+- **The sidebar ate the click that collapsed it.** Any press inside the page
+  collapses the sidebar, and it collapsed *during* the press: the sidebar is
+  220px wide and the page is offset by it, so the whole page slid 220px left
+  over 180ms while the button was still held down. A click is not something the
+  page sends — it is a conclusion the browser draws when mousedown and mouseup
+  land on the same element, and moving the element between them means the
+  conclusion is never drawn. The sidebar shut and the action never ran. The
+  press now *arms* the collapse and the gesture ending applies it.
+- **"Update app" found the new version, installed nothing, and reported "Up to
+  date".** Tauri's webview does not implement `window.confirm`: it returns
+  `undefined`, not a boolean, and the updater read that as "the user declined".
+  The confirm is now a real dialog, and three outcomes replace two — "could not
+  ask" is an error, "declined" is `declined`, and neither is "current".
 
 ---
 

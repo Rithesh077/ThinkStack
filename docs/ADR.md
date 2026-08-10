@@ -369,6 +369,126 @@ it never opened. Papers can now be split across section files and keep a `.bib`
 beside them. Build artefacts are hidden from the tree; they are regenerated and
 mean nothing to an author.
 
+## 2026-08-09: the advice asks Vulkan, not nvidia-smi
+
+**Context.** Two detectors answer "is there a GPU here". `vram_gb` comes from
+`nvidia-smi`, which exists only where NVIDIA's proprietary driver is installed.
+`accelerable_device` comes from Vulkan, which reaches AMD, Intel and Mesa/NVK
+too. The Bench advice was gated on `vram_gb >= 2`.
+
+**Decision.** Gate on `accelerable_device`, keeping `vram_gb` as the fallback
+for a card `nvidia-smi` found but Vulkan could not reach.
+
+**Consequences.** Every AMD, Intel and open-driver machine reported 0.0 GB, so
+the sentence explaining that their GPU was idle never printed -- while the card
+beside it offered them the graphics download anyway. The endpoint's own
+docstring says it returns one payload so the panel can never render two halves
+that disagree; this was the two halves disagreeing, on exactly the machines the
+Vulkan work was done to reach. It was invisible here because the development
+laptop reaches its RTX 3050 Ti through NVK, so `nvidia-smi` is absent and the
+sentence had never once appeared.
+
+## 2026-08-09: Y carries into X at twenty
+
+**Context.** The version scheme carried Y into X at ten, so a tenth feature
+produced a major version.
+
+**Decision.** Carry at twenty. Both lower columns still reset when X moves.
+
+**Consequences.** Ten features can be one quiet quarter, so X climbed for
+reasons no user could feel. Twenty is still an arbitrary line, but it falls
+roughly where the application really has become a different one. Ordering is
+unaffected, which is the only property the updater depends on.
+
+## 2026-08-09: merging and publishing are one intention
+
+**Context.** Promoting to production was `promote.sh release` to merge, then a
+separate `gh workflow run release.yml` to publish. Both were needed; only the
+first was memorable.
+
+**Decision.** `scripts/ship.sh` does both, and asserts the result afterwards --
+not a draft, not a prerelease, `latest.json` attached, four installers present,
+`/releases/latest` resolving to the new tag.
+
+**Consequences.** The gap was not theoretical: the merge was done, the dispatch
+was not, and main sat un-released while everyone assumed it had shipped. The
+assertions are there because each one has been wrong in a real release, and
+because a broken release is indistinguishable from a working one from outside --
+a draft is invisible, its assets 404, and the updater reads 404 as "up to date".
+
+## 2026-08-09: a version may never go backwards, checked where the decision lands
+
+**Context.** `release.yml` accepted a `version` override with no ordering check
+at all. `-f version=1.0.0` would have tagged it and published it as "latest".
+
+**Decision.** Refuse a version not ahead of the published one, in `ship.sh`
+**and** in the workflow.
+
+**Consequences.** The updater only moves forward, so a lower number is invisible
+to everyone who already has the higher one, and nothing about the release says
+so. The guard already existed in `release.sh`, which is not on the dispatch path
+anyone uses -- duplicating it is deliberate, because a dispatch can be run from
+the GitHub UI or a phone, which is exactly when no script is involved.
+
+## 2026-08-09: rollback is two problems, because you cannot un-ship
+
+**Context.** A bad release reaches two populations: people who have not updated
+yet, and people who have.
+
+**Decision.** `scripts/rollback.sh` marks the bad release a prerelease, which
+makes `/releases/latest` fall back to the previous one within seconds. `--reship`
+publishes the previous tree under a *higher* number.
+
+**Consequences.** The updater only ever moves forward, so an app that already
+updated will never move back and deleting the release does not reach it --
+forward is the only direction that exists. Marking rather than deleting keeps
+the assets for diagnosis and makes the first half reversible with `--undo`.
+
+## 2026-08-08: a page declares whether it is a document or a workspace
+
+**Context.** `.main-content` carried one `max-width: 1400px` for every screen.
+
+**Decision.** A feature declares `fills: true` in `features.js`; workspaces take
+the whole window, reading pages keep a measure.
+
+**Consequences.** On a 1920px window Scribe's panes resized correctly inside a
+1400px box and left 500px of dead space, so the dividers looked broken when they
+were only out of room. The cap is right for reading -- prose set 1900px wide is
+unreadable -- and wrong for working, and which one a page is belongs to the page.
+Declared in the registry rather than matched on a path in CSS, for the same
+reason as the nav, routes, marks and guides: a rewritten shell still reads it.
+
+## 2026-08-08: the press arms the collapse; the gesture ending applies it
+
+**Context.** Any press inside the page collapses the sidebar, and it collapsed
+during the press.
+
+**Decision.** `pointerdown` still triggers it, but the state change is deferred
+to the end of the gesture. Keyboard stays immediate.
+
+**Consequences.** The sidebar is 220px wide and the page is offset by it, so
+collapsing slid the page 220px left while the button was still held. A click is
+not something the page sends -- it is a conclusion the browser draws when
+mousedown and mouseup land on the same element -- so moving the element between
+them meant the sidebar shut and the action never ran. `pointerdown` remains the
+trigger because LitGraph's lasso may never produce a click at all. Keyboard is
+exempt because activating a focused control does not depend on where it is.
+
+## 2026-08-08: a release asserts that it published
+
+**Context.** A beta release built correctly, uploaded fifteen assets, reported
+every job green, and stayed a draft.
+
+**Decision.** After creating the release, assert it is not a draft and that the
+manifest the updater fetches returns 200. Publish and retry if not.
+
+**Consequences.** `draft: false` is a request, not a guarantee. A draft is
+invisible and its assets 404, and the updater maps 404 to "up to date" -- so
+testers were told they were current while the release sat there unreachable.
+Checking the outcome beats predicting it; the suspected cause (`--cleanup-tag`)
+was deliberately kept, because the rolling tag has to move to the new commit and
+leaving it behind would strand beta on an older one.
+
 ## 2026-08-07: filenames arriving from the webview are untrusted
 
 **Context.** The file API is reachable from the webview, which Tauri treats as
