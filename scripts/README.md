@@ -69,10 +69,52 @@ prompt. It refuses to start from a dirty tree, fast-forwards each target from
 origin first, aborts cleanly on a merge conflict, and picks the next
 `-beta.N` counter for you.
 
-Rollback: a bad beta is just a new beta tag. A bad stable is fixed by
-`scripts/promote.sh fix <next-patch>` — installed apps auto-update to whatever
-`latest` points at. Don't delete a published tag or release: installed apps
-follow `latest`, and yanking it strands anyone mid-update.
+### Shipping to production — use `ship.sh`
+
+`promote.sh release` merges beta into main but **does not publish**: `release.yml`
+owns the tag, and it only runs when dispatched. Doing one without the other is
+how main ends up merged and un-released while everyone assumes it shipped, so
+prefer:
+
+```bash
+scripts/ship.sh              # version derived from what landed on beta
+scripts/ship.sh 2.2.0        # or state it
+scripts/ship.sh --dry-run    # every step, nothing changed
+```
+
+It merges, dispatches, watches the build, and then **verifies the result** — not
+a draft, not a prerelease, `latest.json` attached, all four installers present,
+`/releases/latest` resolving to the new tag. Each of those has been wrong in a
+real release, and a broken release looks exactly like a working one from
+outside: a draft is invisible, its assets 404, and the updater reads 404 as "up
+to date".
+
+It refuses to start when the tree is dirty, when origin is unreachable (stale
+refs would make every check below it meaningless), when beta is not ahead of
+main, when **beta's own build did not succeed**, when the version is not ahead
+of what is published, or when the tag already exists.
+
+### Rollback
+
+A bad beta is just a new beta build. A bad **stable** needs `rollback.sh`, and
+the shape of it follows from one fact: **you cannot un-ship.** The updater only
+moves forward, so an app that already updated will never move back, and deleting
+the release does not reach it either.
+
+```bash
+scripts/rollback.sh            # hide it; /releases/latest falls back in seconds
+scripts/rollback.sh --reship   # also reach people who already updated
+scripts/rollback.sh --undo     # false alarm
+```
+
+The default marks the bad release a **prerelease** rather than deleting it, so
+`/releases/latest` skips it and every download and update check gets the
+previous version within seconds — while the assets stay put for diagnosis.
+`--reship` publishes the previous tree under a *higher* number, which is the
+only way forward-only updates can reach anyone already on the bad one.
+
+Never delete a published tag or release by hand: installed apps follow `latest`,
+and yanking it strands anyone mid-update.
 
 ### Beta testing a build
 
@@ -127,8 +169,11 @@ warning fires past 90%.
 | `build.sh` | local production build (freeze backend, build frontend, compile Tauri) |
 | `package-appimage.sh` | package the Tauri AppDir into an AppImage |
 | `compose-updater-manifest.sh` | build the signed `latest.json` updater manifest |
-| `promote.sh` | move work dev→beta→main and ship that channel's installers |
+| `promote.sh` | move work dev→beta→main (merges only; does not publish stable) |
+| `ship.sh` | **beta → main → published, in one command, then verifies it** |
+| `rollback.sh` | get users off a bad stable release |
 | `release.sh` | cut a release: bump version, tag the channel, push |
+| `next_version.py` | work out the next version (Y carries into X at twenty) |
 | `set-repo.sh` | retarget the project at a different GitHub owner/repo |
 
 ## preflight.sh

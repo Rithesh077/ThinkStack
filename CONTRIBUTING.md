@@ -318,8 +318,21 @@ Only once the installer in `local/` has been validated:
 scripts/promote.sh feature     # dev -> beta,   next MINOR
 scripts/promote.sh fix         # dev -> beta AND main, next PATCH
 scripts/promote.sh major       # dev -> beta,   next MAJOR
-scripts/promote.sh release     # beta -> main,  what beta validated
+
+scripts/ship.sh                # beta -> main AND published, then verified
 ```
+
+**Use `ship.sh` for production, not `promote.sh release`.** The latter merges
+but does not publish — `release.yml` owns the tag and only runs when dispatched
+— so doing one without the other leaves `main` merged and un-released while
+everyone assumes it shipped. That has happened. `ship.sh` does both and then
+checks the release is real: not a draft, `latest.json` attached, all four
+installers present, `/releases/latest` pointing at the new tag.
+
+If a stable release turns out bad, `scripts/rollback.sh` — and read its header
+first, because you cannot un-ship: the updater only moves forward, so reaching
+anyone who already updated means publishing the old code under a *higher*
+number.
 
 **You do not pass a version.** It is derived from the newest published stable
 tag, so nobody has to remember the rule or look it up:
