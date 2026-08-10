@@ -100,24 +100,15 @@ def _extract_json_text(raw: str) -> str:
 
 
 def _repair_json(s: str) -> str:
-    """Make a best effort to parse JSON a small model did not finish writing.
+    """Parse JSON a small model did not finish writing. Unchanged if it parses.
 
-    Two failure modes account for essentially every parse error we see, and
-    neither is the model being wrong about the content:
+    Repairs two failure modes, which account for nearly every parse error:
 
-    1. A raw newline inside a string. JSON forbids literal control characters
-       in strings, but a model wrapping a long sentence emits one, and the
-       parser stops at "Invalid control character".
-    2. Truncation. The generation hits its token limit mid-string, so the
-       string, and every enclosing array and object, is left open. The parser
-       stops at "Unterminated string".
+        raw newline in a string  -> escape it     ("Invalid control character")
+        truncated mid-string     -> close what is open, drop the fragment
+                                    ("Unterminated string")
 
-    Both are recoverable: escape the control characters, then close whatever is
-    still open, discarding a trailing fragment that cannot be completed. A
-    summary missing its last bullet is worth far more to the reader than an
-    error message where the summary should be.
-
-    Returns the input unchanged if it already parses.
+    A summary missing its last bullet beats an error where the summary goes.
     """
     if not s:
         return s
@@ -501,23 +492,14 @@ class OllamaClient:
             logger.debug("could not record the load error: %s", e)
 
     def _route(self, task_type: str, base: Optional[Path] = None):
-        """Ask domain.model_manager.router which model answers this task.
+        """Ask the router which model answers this task.
 
-        Routing moved OUT of this class. It now lives in a module whose every
-        dependency is passed in, so the precedence rules can be tested against
-        fabricated registries and budgets with no llama.cpp, no filesystem and
-        no hardware -- none of which was possible while the decision was tangled
-        up with the loader.
+        The seam between the loader and routing policy: supplies the runtime
+        facts the router cannot know -- model directory, memory budget,
+        external-runtime naming, legacy TASK_MODEL_MAP.
 
-        This method is the seam. It supplies the runtime facts the router
-        cannot know: where our models live, what this machine can take, how to
-        find the same weights under another runtime's naming, and the legacy
-        TASK_MODEL_MAP that a tester's .env may still be overriding.
-
-        An EMPTY registry must produce exactly the routing this class did
-        before -- tests/test_model_router.py::TestRegressionAgainstTodaysBehaviour
-        is the guard on that, and it is why the extraction was safe to land with
-        a beta in testers' hands.
+        An EMPTY registry must route exactly as this class did before the
+        extraction. Guarded by test_model_router.py.
         """
         from domain.model_manager.manifest import BundledManifest
         from domain.model_manager.registry import Registry
@@ -556,18 +538,13 @@ class OllamaClient:
         return self._cap
 
     def _compute_load_params(self, model_path: Path) -> tuple[int, int]:
-        """(n_ctx, n_gpu_layers) for loading this model on this machine.
+        """(n_ctx, n_gpu_layers) for this model on this machine.
 
-        Both numbers now come from infrastructure.capability, which is the one
-        place that turns hardware facts into decisions. This method used to
-        derive them itself from three separate helpers, while diagnosis.rs
-        derived its own answers for the same questions -- two policies, one
-        silently winning, and an Apple Silicon Mac pinned to CPU by neither of
-        them quite meaning to.
+        Both come from infrastructure.capability. Derive neither here -- two
+        places deciding this is what pinned every Apple Silicon Mac to CPU.
 
-        The explicit settings still win. THINKSTACK_LLM_GPU_LAYERS=0 has to
-        remain an escape hatch: it is what a user reaches for when offload
-        misbehaves on their machine.
+        Explicit settings still win: THINKSTACK_LLM_GPU_LAYERS=0 is the escape
+        hatch when offload misbehaves.
         """
         from infrastructure.hardware import model_file_size_gb
 
@@ -612,20 +589,12 @@ class OllamaClient:
         return self._capability().input_chars(self._effective_ctx, max_tokens)
 
     def _get_llama(self, task_type: str = "general"):
-        """lazily initialize llama.cpp model instance with hardware-aware loading.
+        """Load the model for `task_type`, lazily. EXACTLY ONE stays resident.
 
-        resolves the model for the requested task and keeps exactly one model
-        resident at a time. if a different model is already loaded (e.g. the
-        base model is resident but an analysis task needs the heavier model),
-        the current one is unloaded first so peak memory stays at a single
-        model - important on low-ram machines. same-model requests reuse the
-        resident instance with no reload.
+        A different model unloads the current one first, so peak memory is one
+        model, not two. Same model reuses the instance.
 
-        uses the hardware profiler to auto-detect safe gpu_layers and ctx_size.
-        catches oom/memory errors and retries with minimal settings.
-
-        args:
-            task_type: optional task type for model routing.
+        On OOM, retries with minimal settings rather than failing.
         """
         try:
             from llama_cpp import Llama
@@ -805,23 +774,11 @@ class OllamaClient:
         max_tokens: int = 2048,
         task_type: str = "general",
     ) -> str:
-        """generate text from the configured local llm runtime.
+        """Generate text. Runs on llama.cpp or Ollama, whichever is configured.
 
-        args:
-            prompt: the user prompt to send to the model.
-            system: optional system prompt for context setting.
-            temperature: sampling temperature, lower is more deterministic.
-            max_tokens: maximum number of tokens in the response.
-            task_type: task identifier for model routing. if a task-specific
-                gguf exists in data/models/, it is used instead of the base
-                model. one of 'latex_writer', 'gap_analysis', or 'general'.
-
-        returns:
-            the generated text response from the model.
-
-        supports:
-            - ollama via /api/generate
-            - llama.cpp via llama-cpp-python and a local gguf file
+        `task_type` selects the model. It defaults to "general", so a caller
+        that omits it silently ignores the user's choice for that job -- always
+        pass it.
         """
         if self.provider == "llama_cpp":
             # the user already has this task's model in ollama and we cannot load
@@ -857,19 +814,9 @@ class OllamaClient:
         max_tokens: int = 2048,
         task_type: str = "general",
     ) -> str:
-        """generate a response intended for json parsing.
+        """Generate with JSON output constrained by the grammar.
 
-        wraps the standard generate call with ollama's json format option
-        to produce structured output suitable for parsing.
-
-        args:
-            prompt: the user prompt, should instruct json output.
-            system: optional system prompt.
-            temperature: sampling temperature.
-            task_type: task identifier for model routing.
-
-        returns:
-            raw json string from the model.
+        Returns the raw string; the caller parses. See `_repair_json`.
         """
         if self.provider == "llama_cpp":
             via_ollama = self._task_needs_ollama(task_type)
@@ -918,25 +865,14 @@ class OllamaClient:
             logger.warning("could not persist model selection: %s", e)
 
     async def set_model(self, name: str) -> dict:
-        """select the active model, the global, crash-safe way.
+        """Select the active model. Persisted; applied live only when safe.
 
-        llama.cpp cannot reinitialise a cuda context in-process, so reloading
-        a different gguf while one is already resident on the gpu crashes the
-        runtime. to stay stable we therefore:
+        llama.cpp cannot reinitialise a CUDA context in-process, so swapping a
+        GGUF while one is resident on the GPU crashes the runtime. With a model
+        already loaded this returns `restart_required` and keeps serving the
+        current one.
 
-        * persist the selection so it is applied on the next startup;
-        * apply it live only when no model is loaded yet (a fresh load is
-          safe), otherwise report ``restart_required`` and keep serving the
-          currently loaded model.
-
-        args:
-            name: a gguf filename in the models directory, or a full path.
-
-        returns:
-            dict with the active model and whether a restart is needed.
-
-        raises:
-            FileNotFoundError: if the requested model cannot be located.
+        Raises FileNotFoundError if the model cannot be located.
         """
         if self.provider != "llama_cpp":
             # for ollama the model is just a tag name; ollama itself handles

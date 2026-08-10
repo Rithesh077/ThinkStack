@@ -1,31 +1,19 @@
-"""What graphics hardware this machine can actually compute on.
+"""What graphics hardware this machine can compute on, asked through Vulkan.
 
-Asked through Vulkan, because the Vulkan loader ships with the graphics driver
-rather than with a toolkit. On the machine this was written for -- a laptop with
-no NVIDIA packages installed at all -- it already reports:
+Vulkan because its loader ships with the graphics driver, not with a toolkit --
+so NVIDIA, AMD, Intel and Mesa/NVK are all reachable with nothing installed.
+See docs/ADR.md for why not CUDA.
 
-    Intel(R) UHD Graphics (TGL GT1)                 integrated GPU
-    NVIDIA GeForce RTX 3050 Ti Laptop (NVK GA107)   discrete GPU
-    llvmpipe (LLVM 22.1.8)                          CPU, software
+Two rules this file exists to enforce:
 
-That second line is the point. `NVK` is Mesa's open-source Vulkan driver for
-NVIDIA cards, so the discrete GPU is reachable without a single proprietary
-package. CUDA would have reached neither device on that machine; Vulkan reaches
-both, plus AMD, plus Intel, through drivers the user already has.
+    exclude llvmpipe   software rasteriser -- the CPU pretending to be a GPU.
+                       Offloading to it is SLOWER than the CPU path and
+                       reports success.
+    ignore heap size   devices report system RAM, not VRAM. A 4 GB card claims
+                       12.4 GB. `kind` decides usability, never memory.
 
-── Two things learned by running this rather than reasoning about it ──
-
-**llvmpipe must be excluded.** It is a software rasteriser: the CPU pretending
-to be a GPU. Offloading to it would be slower than the CPU path already in use
-while reporting success -- a thing that passes every check and does the wrong
-thing.
-
-**Reported memory is not VRAM.** Both real devices above claim 12.4 GB, which is
-system memory; the 3050 Ti has 4 GB. Heap size cannot decide whether a device is
-worth using, so `kind` does.
-
-Nothing here may raise. A machine with no loader, a broken driver, or a Vulkan
-version we do not expect must produce an empty list and leave the app on the CPU.
+Nothing here may raise. No loader, a broken driver, or an unexpected Vulkan
+version must yield an empty list and leave the app on the CPU.
 """
 
 from __future__ import annotations
