@@ -236,6 +236,7 @@ ThinkStack sizes itself to the machine it runs on.
 ThinkStack ships a processor-only inference engine so the installer stays small
 and works everywhere. If your machine has graphics hardware it can use, Bench
 offers to add the graphics engine — about **90 MB**, downloaded only if you ask.
+Linux and Windows builds are published and the offer can be fulfilled today.
 
 - **Vulkan, so it is not one vendor.** NVIDIA, AMD, Intel and integrated
   graphics all work, through the Vulkan loader that ships **with your graphics
@@ -257,7 +258,12 @@ offers to add the graphics engine — about **90 MB**, downloaded only if you as
   you are told why.
 - **Reversible.** "Go back to the processor" turns it off and keeps the files,
   so turning it on again is instant.
-- **macOS already has it** — Metal ships in the Mac build, so nothing to add.
+- **macOS is not covered yet.** The right path on a Mac is Metal, not Vulkan —
+  Vulkan only reaches macOS through MoltenVK, a translation layer over Metal,
+  which is slower than the native path and an extra dependency for a worse
+  result. The bundled engine is not built with Metal either, so a Mac currently
+  runs on the processor and Bench says so rather than offering something it
+  cannot deliver. A Metal build is separate work.
 - You can **change the active model** yourself; the choice persists across
   restarts.
 

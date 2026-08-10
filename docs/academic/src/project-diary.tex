@@ -766,6 +766,84 @@ asking whether that module was not supposed to be self-contained. It was, and
 the addition had quietly reintroduced exactly the class of assumption the module
 had been written to eliminate.
 
+\subsection{8 August: a check that tested for silence}
+
+Three failures in one day turned out to share a shape, and the shape is worth
+recording because it is not obvious until the third one.
+
+The graphics engine described in the previous entry was finally built and
+published. It failed twice before it succeeded, for unrelated reasons, and then
+failed a third time against its own verification step. That step asserted that
+the compiled library reported support for offloading work to the graphics
+processor. It reported that it did not. The library was correct: ninety
+megabytes of compiled shader code, exactly as intended. The function being
+asked, however, reports whether a graphics backend has \emph{registered at
+runtime}, not whether one was \emph{compiled in}, and the machine performing the
+build has the development libraries but no graphics driver. The assertion was
+testing the build machine rather than the artefact.
+
+The same day, a release built correctly, uploaded every file, reported every
+stage successful, and remained unpublished. An unpublished release is invisible;
+requests for its files return "not found"; and the update mechanism treats "not
+found" as "you are already up to date". Testers were therefore told they were
+current while the release sat unreachable. The instruction to publish had been
+given. It had simply not been obeyed, and nothing checked.
+
+The third instance was the most instructive because it is still in the
+application. Metadata extraction falls back to the language model when the
+faster method fails, and the condition guarding that fallback tests whether the
+extracted title is \emph{empty}. The faster method almost never returns an empty
+title. It returns a wrong one. The better path is therefore unreachable, not
+because it is broken, but because the broken path always reports success.
+
+The common form: a guard that checks for absence, protecting against a failure
+mode that is confident wrongness. Absence is easy to detect and rare. Confident
+wrongness is common and looks identical to success. Where a value can be
+legitimately empty --- zero, false, an empty string --- a check for emptiness
+cannot distinguish "no answer" from "a bad answer", and the second is the one
+that reaches the user.
+
+\subsection{9 August: refusing to build on a layer I could not vouch for}
+
+The next feature was citation support: allowing an author to cite a paper from
+their own collection, which the application can do and comparable tools cannot,
+because it has already read the paper. The entry it would generate is built from
+metadata extracted at ingestion, and that extraction was written by a
+collaborator. Rather than build on it, I asked to see it work.
+
+The instrument was a short script that follows one document through every stage
+and preserves the output of each, so the intermediate results could be examined
+rather than described. Three published papers of established standing were used,
+so that correct answers were known in advance.
+
+Not one of the three produced a usable author list. On the best known of them
+the extracted title was the copyright notice printed above it; on the others the
+title was correct but had authors' names attached to the end of it. In every
+case the author list contained institutions --- the employers named beneath the
+authors --- and in two cases the paper's own title appeared as an author. The
+publication year, taken as the first four-digit number appearing near the start
+of the document, was wrong for the most significant of the three.
+
+The cause is that the extractor receives the document as unstructured text. A
+document of this kind is not text; it is positioned glyphs, each carrying a size
+and an orientation, and the title of a paper is reliably the largest horizontal
+text near the top of the first page. That information exists in the file and is
+discarded before extraction begins. Restoring it, with two exceptions for a
+rotated identifier stamp printed down the margin of one archive's documents,
+identified all three titles exactly.
+
+Two things are worth separating here. The first is that the fault was not one of
+implementation quality but of information: a correct implementation of the wrong
+question. The second is that I had considered rewriting the component in a
+systems language for reliability, and measurement showed that the entire stage
+accounts for under one percent of processing time --- the remainder is the
+embedding model, which is already compiled native code. A rewrite would have
+reproduced the same wrong answer faster.
+
+This metadata labels every node of the literature map. The map has therefore
+been displaying copyright notices where paper titles were intended, in released
+software, for some weeks. It was not reported by anyone.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
