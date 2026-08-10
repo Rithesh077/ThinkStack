@@ -3,16 +3,16 @@
 # (the react frontend has its own deps:  cd frontend && npm install)
 
 # ── core framework ───────────────────────────────────────
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+python-multipart==0.0.32
 
 # ── pdf processing ───────────────────────────────────────
-pymupdf==1.28.0
+pymupdf==1.28.2
 pdfplumber==0.11.10
 
 # ── local embeddings (pulls in torch) ────────────────────
-sentence-transformers==5.6.1
+sentence-transformers==5.7.0
 
 # ── text ─────────────────────────────────────────────────
 # rank-bm25 removed with the hybrid/RRF search path: search is now purely
@@ -23,7 +23,7 @@ sentence-transformers==5.6.1
 # from a release, with no change on our side. The build is now reproducible
 # for this package; see PYTHONSAFEPATH in src-tauri/src/lib.rs for the fix
 # that makes newer versions safe too.
-nltk==3.10.0
+nltk==3.10.2
 
 # ── http client (ollama runtime) ─────────────────────────
 httpx==0.28.1
@@ -42,7 +42,7 @@ llama-cpp-python==0.3.34  # cpu fallback; see GPU note above
 # ── utilities ────────────────────────────────────────────
 numpy==2.5.1
 pydantic==2.13.4
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
 psutil==7.2.2
 
 # ── encryption (aes-256-gcm + argon2id kdf) ──────────────
