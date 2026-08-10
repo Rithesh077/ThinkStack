@@ -1,47 +1,27 @@
-"""model catalog.
+"""Models ThinkStack knows how to fetch, and which are worth offering here.
 
-The set of models ThinkStack knows how to fetch, which one ships inside the
-installer, and which are worth offering on a given machine for a given job.
+The baseline is BUNDLED so a fresh install works offline with no download and
+no account. Everything else is fetched only when the hardware can run it AND
+the user agrees.
 
-The baseline model is BUNDLED so a fresh install works completely offline with
-no download and no account -- that is the whole premise of the product. Every
-other entry is optional: fetched only when the hardware can run it AND the user
-explicitly agrees, because downloading a gigabyte of weights without asking is
-not something an offline-first app does.
+Three rules for anyone editing this file:
 
-Every URL here has been checked to return 200 with a plausible content-length.
-That is not pedantry: a wrong URL is a download that fails for every user who
-clicks it, and two of the first six candidates written for this file were dead.
-Re-check before adding one.
+**Check the URL.** A wrong one is a download that fails for every user who
+clicks it. Two of the first six written here were dead.
 
-REASONING MODELS CANNOT BE THE BASELINE
---------------------------------------
-``ollama_client`` constrains structured output with a GBNF grammar that permits
-only JSON, from the first token. A reasoning model -- Qwen3, and anything else
-that emits a ``<think>`` block before answering -- has nowhere to put that
-block, so it closes the object immediately and returns ``{}``.
+**No reasoning model in the bundled slot.** Structured output is constrained by
+a GBNF grammar permitting only JSON from the first token, so a model emitting a
+``<think>`` block has nowhere to put it and closes the object immediately,
+returning ``{}``. This passes every structural check -- verified URL, right
+size, valid GGUF, JSON that ``json.loads`` accepts -- and is empty. Only
+running a generation and READING THE OUTPUT catches it. Validity is not
+usefulness.
 
-This is invisible to every structural check. Qwen3 0.6B had a verified URL, the
-right size, valid GGUF magic, and returned JSON that ``json.loads`` accepted.
-The JSON was empty. Only running a generation and READING THE CONTENT caught
-it, and it would have shipped broken on gap finding and Scribe -- the two
-features the baseline is chosen for.
-
-Any model considered for the bundled slot must be run through
-``local/notes/`` bakeoff first. Validity is not usefulness.
-
-
-``tasks`` is AUTHORITATIVE, not descriptive
-------------------------------------------
-The registry seeds a model's task assignments from this field, so listing a task
-here means "this model should be CHOSEN for that job". It used to be loose
-metadata, and when the base model claimed ``latex_writer`` the 0.5B began
-outranking the 1.5B for Scribe -- silently undoing the deliberate routing
-documented at ``ollama_client.TASK_MODEL_MAP``.
-
-The rule: claim a task only if you are the best model here for it. The base
-model is the fallback for EVERYTHING and the router guarantees that, so it never
-needs to claim a task in order to be used for one.
+**``tasks`` is AUTHORITATIVE.** The registry seeds assignments from it, so
+listing a task means "choose this model for that job". When the base model
+claimed ``latex_writer``, the 0.5B silently outranked the 1.5B for Scribe.
+Claim a task only if you are the best model here for it -- the base model is
+the fallback for everything already, guaranteed by the router.
 """
 
 from dataclasses import dataclass
@@ -104,15 +84,11 @@ class ModelSpec:
     description: str = ""
 
     def speed_words(self, gpu_gb: float = 0.0) -> str:
-        """how long this feels to use on such a machine, in plain words.
+        """How long this feels to use, in plain words.
 
-        Deliberately vague. A precise figure would have to be measured, and
-        this is shown before anything is installed -- so it says what a user
-        can plan around ("a few seconds", "a minute or two") rather than a
-        number invented from a formula and then quietly wrong.
-
-        Replaced by a measured figure once the model has run once; see the
-        estimator work. Until then, honest imprecision beats false precision.
+        Deliberately vague: this is shown BEFORE anything is installed, so a
+        precise figure would be invented from a formula and quietly wrong.
+        Honest imprecision beats false precision.
         """
         accelerated = gpu_gb > 0 and self.size_gb <= gpu_gb
         if accelerated or self.size_gb <= 0.5:
@@ -128,14 +104,10 @@ class ModelSpec:
         return not self.good_on_tiers or tier in self.good_on_tiers
 
     def runs_well_on(self, gpu_gb: float = 0.0) -> bool:
-        """whether this will answer in a tolerable time on such a machine.
+        """Whether this answers in a tolerable time here.
 
-        ``gpu_gb`` is memory the ENGINE can actually offload to -- zero on a
-        CPU-only build, and zero on a machine whose GPU the shipped llama.cpp
-        cannot use, which are different situations with the same consequence.
-
-        A model that fits in that memory runs accelerated and its size stops
-        mattering much. One that does not runs on the processor, where size is
+        A model fitting in `gpu_gb` runs accelerated and its size stops
+        mattering much; one that does not runs on the processor, where size is
         the whole story.
         """
         if gpu_gb > 0 and self.size_gb <= gpu_gb:
@@ -290,18 +262,11 @@ def optional_models() -> list[ModelSpec]:
 
 
 def runnable_on(budget_gb: float) -> list[ModelSpec]:
-    """catalog entries this machine has the memory to run.
+    """Entries this machine has the memory to run.
 
-    args:
-        budget_gb: the hardware memory budget (available RAM minus headroom for
-            other apps, plus VRAM) -- see infrastructure.hardware.
-
-    returns:
-        every spec whose min_ram_gb fits the budget. a budget of 0 means
-        "unknown", in which case only the lightest model is considered safe --
-        it used to mean "the bundled one", but nothing is bundled now, and
-        answering "nothing runs" would leave a machine we simply failed to
-        measure with no options at all.
+    A budget of 0 means "could not measure", and yields only the lightest
+    model. Answering "nothing runs" would leave a machine we merely failed to
+    measure with no options at all.
     """
     if budget_gb <= 0:
         return bundled_models()
@@ -318,33 +283,21 @@ def _installed_key_match(spec: ModelSpec, installed: set[str]) -> bool:
 def suggested_upgrade(
     budget_gb: float, installed: set[str], tier: str = "", gpu_gb: float = 0.0
 ) -> ModelSpec | None:
-    """the best optional model worth offering ON THIS MACHINE, or None.
+    """The best optional model worth offering ON THIS MACHINE, or None.
 
-    Applies BOTH hardware constraints, because they answer different questions:
+    Applies BOTH constraints, because they are different questions:
+    `min_ram_gb` asks whether the weights fit, `good_on_tiers` whether running
+    them here is tolerable. A 4B model fits a 16 GB laptop and still produces
+    one summary every few minutes on it -- offering it because it *fits* is how
+    a user concludes the app is broken.
 
-        min_ram_gb    can this machine hold the weights at all?
-        good_on_tiers is running it here a good experience?
+    None when nothing better can run, or when everything that could is already
+    installed, so the interface only prompts on a real improvement.
 
-    A 4B model fits comfortably in a 16 GB machine's budget and is still a poor
-    suggestion for a low-tier laptop, where it would produce one summary every
-    few minutes. Offering it because it *fits* is how you get a user who
-    concludes the app is broken.
-
-    Returns None when the machine can run nothing better, or when everything it
-    could run is already present -- so the UI only prompts when there is a real,
-    actionable improvement available.
-
-    args:
-        budget_gb: hardware memory budget in gb.
-        installed: gguf filenames already available on this machine, from any
-            source (bundled, previously downloaded, Ollama, LM Studio).
-        tier: "low" | "medium" | "high" from the hardware profile. Empty means
-            unknown, which applies no tier constraint -- refusing to suggest
-            anything because we could not classify the machine is worse than
-            suggesting something slightly ambitious.
-        gpu_gb: memory the ENGINE can offload to, from
-            ``capability.usable_gpu_memory_gb``. Zero on a CPU-only build and
-            zero on a machine whose GPU the shipped llama.cpp cannot use.
+    An empty `tier` applies no tier constraint: suggesting something slightly
+    ambitious beats suggesting nothing because we could not classify the
+    machine. `gpu_gb` is what the ENGINE can offload to, which is zero both on
+    a CPU-only build and on a GPU our llama.cpp cannot use.
     """
     candidates = [
         s for s in optional_models()
@@ -374,17 +327,14 @@ def suggest_for_task(
     task: str, budget_gb: float, tier: str = "",
     installed: set[str] | None = None, gpu_gb: float = 0.0
 ) -> ModelSpec | None:
-    """the model this catalog would pick for ``task`` on this machine.
+    """What this catalog would pick for `task` here. ADVICE, not routing.
 
-    This is ADVICE, not routing. The router answers "what will actually run",
-    from what is installed; this answers "what should you get", from what
-    exists. Bench shows the second next to the first, which is how a user finds
-    out that their gap analysis could be better.
+    The router answers "what will actually run" from what is installed; this
+    answers "what should you get" from what exists. Bench shows them side by
+    side, which is how a user learns their gap analysis could be better.
 
-    Prefers a model that explicitly claims the task; falls back to the most
-    capable model that fits, since a stronger general model still helps.
-    Anything already installed is skipped -- suggesting what someone has is
-    noise.
+    Prefers a model claiming the task, else the most capable that fits.
+    Installed models are skipped -- suggesting what someone has is noise.
     """
     installed = installed or set()
     affordable = [
@@ -404,10 +354,7 @@ def suggest_for_task(
 
 
 def default_tasks_for(name: str) -> tuple[str, ...]:
-    """the jobs a freshly installed ``name`` should take on.
-
-    Used when a download completes, so a model the user just fetched starts
-    doing the work they fetched it for instead of sitting unassigned.
-    """
+    """Jobs a freshly downloaded model should take on, so it does the work it
+    was fetched for rather than sitting unassigned."""
     spec = by_name(name)
     return spec.tasks if spec else ()

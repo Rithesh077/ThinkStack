@@ -78,17 +78,10 @@ async def list_models():
 
 @router.post("/model")
 async def set_model(request: SetModelRequest):
-    """switch the active llm model at runtime (global for the app).
+    """Switch the active model, globally, at runtime.
 
-    for llama.cpp this releases the current model and loads the requested
-    gguf file on the next generation. use a model name returned by the
-    /models endpoint.
-
-    args:
-        request: the target model name (e.g. a gguf filename).
-
-    returns:
-        the now-active model and updated runtime status.
+    The current model is released and the new one loads on the next
+    generation, not here.
     """
     try:
         result = await ollama_client.set_model(request.model)
@@ -105,15 +98,11 @@ async def set_model(request: SetModelRequest):
 
 @router.get("/jobs")
 async def background_jobs():
-    """what the background analysis queue is doing right now.
+    """What the background analysis queue is doing right now.
 
-    the ui polls this to draw a determinate progress bar: ``done``/``total``
-    describe the current batch, so "analysing paper 2 of 5" is real rather than
-    a spinner that cannot say how far along it is. both are 0 when idle, which
-    is the client's cue to render nothing at all.
-
-    returns:
-        ``{running, label, queued, done, total, last_error}``.
+    `done`/`total` describe the current batch, so the interface can say
+    "analysing paper 2 of 5" rather than spin. Both are 0 when idle, which is
+    the cue to render nothing.
     """
     return job_queue.status()
 
@@ -130,14 +119,7 @@ async def system_stats():
 
 @router.get("/hardware")
 async def hardware_info():
-    """return detected hardware specifications.
-
-    reports the machine's ram, cpu cores, gpu, vram, and the
-    computed performance tier used for model loading decisions.
-
-    returns:
-        hardware profile with recommendations.
-    """
+    """The cached hardware profile and what it allows."""
     from dataclasses import asdict
     from infrastructure.hardware import max_safe_model_size_gb
 
@@ -151,21 +133,14 @@ async def hardware_info():
 
 @router.post("/diagnose")
 async def diagnose_machine():
-    """Re-examine this machine and report what it can do.
+    """Re-examine this machine, discarding the cached profile.
 
-    The app profiles the machine once at startup and caches it, which is right:
-    hardware does not change while the app runs, and probing on every launch
-    would slow every launch. But it means a user who adds memory, closes a
-    memory-hog, or installs a GPU-capable runtime has no way to make the app
-    look again -- and someone who upgraded from a build that predates this has
-    never been profiled by it at all.
+    The profile is cached at startup because hardware does not change while the
+    app runs -- but closing a memory hog or installing a driver does change
+    what it can do, and nothing else makes it look again.
 
-    POST rather than GET because it discards cached state. It reads nothing
-    the user owns and changes no setting: it only re-answers "what can this
-    machine do".
-
-    Returns the same structure the Diagnose screen renders, which is also what
-    the model picker will consume when the two are merged.
+    POST rather than GET because it discards cached state. It reads nothing the
+    user owns and changes no setting.
     """
     import infrastructure.hardware as hardware
     from infrastructure.capability import for_this_machine
@@ -287,13 +262,9 @@ async def acceleration_disable():
 
 @router.get("/training-stats")
 async def get_training_stats():
-    """return counts of collected training data pairs.
+    """Counts of collected training pairs, per task.
 
-    privacy-safe: returns only counts, never content.
-    the training data stays on the user's machine.
-
-    returns:
-        dictionary mapping task types to example counts.
+    Counts only, never content -- the data stays on the user's machine.
     """
     return {
         "task_counts": training_stats(),
