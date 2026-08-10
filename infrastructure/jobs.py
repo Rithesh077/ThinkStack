@@ -1,25 +1,14 @@
-"""background analysis queue.
+"""Background analysis queue.
 
-the local model is slow and there is exactly one of it. a gap scan measured
-133 s and a per-paper summary+claims pass 50 s on this machine, so any route
-that awaits one of those in the request handler is a route that appears to
-hang. worse, the work was being paid for at the moment the user wanted to
-*look* at something, which is the one moment it must not be.
+There is one local model and it is slow -- a gap scan measured 133 s, a
+per-paper pass 50 s -- so awaiting either in a request handler is a route that
+appears to hang. Analysis therefore happens off the request path: uploading
+enqueues it, and by the time LitGraph opens the summaries and hulls are there.
 
-so analysis moves off the request path entirely: uploading a paper enqueues
-its analysis, and finishing that enqueues the library-wide re-cluster. by the
-time the user opens LitGraph the summaries, claims and theme hulls are already
-there.
-
-deliberately not a job framework. there is one worker, one process, and a
-handful of jobs; ``asyncio.Queue`` plus a task is the whole implementation, and
-celery/rq/arq would each add a broker to run three functions in order.
-durability is not needed either -- every job is derived from state already on
-disk, so a job lost to a crash is recomputed on the next upload rather than
-mattering.
-
-ponytail: in-memory queue, single worker. a persistent queue only earns its
-keep if a lost job means lost user data, and here it never does.
+Deliberately NOT a job framework. One worker, one process, a handful of jobs.
+Durability is not needed because every job is derived from state already on
+disk, so one lost to a crash is recomputed on the next upload. A persistent
+queue only earns its keep when a lost job means lost user data.
 """
 
 import asyncio
@@ -123,11 +112,9 @@ class JobQueue:
     # ---- status ----
 
     def status(self) -> dict:
-        """what the progress strip needs, in one call.
+        """What the progress strip needs, in one call.
 
-        ``total`` is the size of the current batch and ``done`` how many of it
-        have finished, so the client can render a determinate bar. both are 0
-        when nothing is running, which is the client's cue to render nothing.
+        Both counts are 0 when idle, which is the cue to render nothing.
         """
         return {
             "running": self._current.kind if self._current else None,

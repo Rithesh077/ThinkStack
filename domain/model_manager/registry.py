@@ -1,27 +1,13 @@
-"""the user's model choices, persisted.
+"""The user's model choices, persisted. The only writable model source.
 
-`catalog.py` says what ThinkStack knows about; `discovery.py` says what happens
-to be on the machine. Neither is writable, so before this module a model the
-user supplied had nowhere to be recorded and no way to be selected for a task.
+Two flags carry the safety:
 
-This is that missing piece: a small JSON file listing every model available to
-this install, where its weights are, and which jobs it is allowed to do.
+    managed        we created this file -> we may delete it.
+                   Imported models are referenced in place, never copied.
+    user_assigned  a human chose these tasks -> a manifest must not overwrite.
 
-Two invariants carry most of the safety:
-
-  * ``managed`` says whether ThinkStack created the file. We only ever delete
-    weights we put there ourselves. An imported model is REFERENCED in place --
-    a 7 GB import must not cost 14 GB of disk on a machine we already know is
-    constrained -- so its file belongs to the user and is never touched.
-
-  * ``user_assigned`` says whether a human chose ``tasks``. A release manifest
-    may overwrite assignments a previous manifest made; it may never overwrite
-    a choice the user made. Without this, upgrading would silently undo the
-    routing someone deliberately set up.
-
-Status is deliberately NOT stored. Whether a model is missing or too large is a
-fact about right now -- a model that did not fit yesterday fits today if the
-user closed a browser -- and persisting it would only let the UI go stale.
+Status is computed, never stored: "missing" and "too large" are facts about
+right now.
 """
 
 from __future__ import annotations
@@ -77,14 +63,9 @@ _ID_STRIP = re.compile(r"[^a-z0-9]+")
 
 
 def pretty_name(filename: str) -> str:
-    """a readable name for a gguf, when nothing better is available.
+    """"Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" -> "Qwen2.5 1.5B Instruct Q4_K_M".
 
-    "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" -> "Qwen2.5 1.5B Instruct Q4_K_M"
-
-    A gguf filename is a build artefact -- lowercase, hyphenated, with the
-    quantisation welded on. Showing it raw in a sentence makes the UI read like
-    a log file. The catalog label is preferred wherever we recognise the model;
-    this is the fallback for one we have never seen.
+    Fallback only; the catalog label wins where we recognise the model.
     """
     stem = filename[:-5] if filename.lower().endswith(".gguf") else filename
     words = []
@@ -101,18 +82,10 @@ def pretty_name(filename: str) -> str:
 
 
 def make_id(name: str) -> str:
-    """a stable, filesystem-safe id derived from a model name or filename.
+    """Stable, filesystem-safe id. Punctuation must not change it.
 
-    Ids are compared, logged, and used as dict keys, so they must not vary with
-    punctuation: ``Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`` and
-    ``qwen2.5_1.5b_instruct_q4_k_m`` describe the same weights and must produce
-    the same id.
-
-    This is intentionally NOT ``discovery.model_key``. That function answers "are
-    these the same weights?" and deliberately discards the quantisation, because
-    re-downloading a q4 when you have a q8 is waste. Here the quantisation must
-    be KEPT: a user may register both quants and assign them to different tasks,
-    and collapsing them would make one silently overwrite the other.
+    Keeps the quantisation, unlike `discovery.model_key` which drops it.
+    A q4 and a q8 are separate entries with separate task assignments.
     """
     s = name.strip().lower()
     if s.endswith(".gguf"):
@@ -159,13 +132,10 @@ class ModelEntry:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ModelEntry":
-        """rebuild an entry from json, tolerating anything unexpected.
+        """Rebuild from JSON. Never raises.
 
-        A registry written by a future version, hand-edited, or truncated must
-        degrade to a usable entry rather than raising -- this file sits between
-        the user and every AI feature in the app, so a parse error here would
-        take down more than it fixes. Unknown keys are ignored; missing ones
-        take their default.
+        Unknown keys ignored, missing keys defaulted. A damaged registry must
+        not take down every AI feature.
         """
         tasks = d.get("tasks") or []
         if not isinstance(tasks, list):
@@ -191,15 +161,8 @@ class ModelEntry:
             return False
 
     def status(self, budget_gb: float = 0.0) -> str:
-        """what is true about this entry RIGHT NOW.
-
-        ``missing`` outranks everything: a file that is not there cannot be too
-        big, and telling the user to free memory when the real problem is a
-        deleted file would send them after the wrong fix.
-
-        A budget of 0 means "unknown", which is treated as no constraint --
-        better to attempt a load and let the loader's own fallback handle it
-        than to refuse a model that would have worked.
+        """Live status. `missing` outranks `too_large` -- an absent file is
+        not a memory problem. Budget 0 means unknown, so no constraint.
         """
         if not self.exists():
             return "missing"
@@ -212,12 +175,9 @@ class ModelEntry:
 
 @dataclass
 class Registry:
-    """every model available to this install, and what each may be used for.
+    """Every model available to this install, and what each may be used for.
 
-    Load with :meth:`load`, mutate through the methods, persist with
-    :meth:`save`. Mutations do not write to disk on their own: reconciliation
-    makes several changes in a row, and writing after each would leave the file
-    briefly describing a state that never really existed.
+    load() -> mutate -> save(). Mutations never write on their own.
     """
 
     models: list[ModelEntry] = field(default_factory=list)
@@ -236,13 +196,7 @@ class Registry:
 
     @classmethod
     def load(cls, models_dir: Path) -> "Registry":
-        """read the registry, degrading to empty on any problem.
-
-        A missing file is the normal first-run case. A corrupt one is not, but
-        the response is the same: start empty and log it. Refusing to start
-        because a JSON file is damaged would take every AI feature down over
-        something the user can fix by re-importing a model.
-        """
+        """Read the registry. Empty on missing or corrupt, never raises."""
         p = cls.path_for(models_dir)
         try:
             raw = json.loads(p.read_text(encoding="utf-8"))
@@ -305,13 +259,8 @@ class Registry:
         return None
 
     def by_path(self, path: str | Path) -> ModelEntry | None:
-        """find an entry by filesystem path, however it was spelled.
-
-        Resolved before comparing so ``~/models/x.gguf``, ``./models/x.gguf``
-        and an absolute path all match the same entry -- otherwise importing a
-        model twice by different routes would create two entries fighting over
-        the same file.
-        """
+        """Find by path. Resolved before comparing, so `~/x`, `./x` and an
+        absolute path are one entry."""
         # ValueError, not just OSError: a path containing a NUL byte raises
         # ValueError from os.path.realpath before the filesystem is ever
         # touched. A lookup is a question, not an action -- it answers "no"
@@ -329,13 +278,7 @@ class Registry:
         return None
 
     def for_task(self, task: str) -> list[ModelEntry]:
-        """entries assigned to ``task``, strongest claim first.
-
-        A model the user explicitly assigned outranks one a release manifest
-        assigned. That ordering is the whole reason ``user_assigned`` exists:
-        upgrading must never quietly re-route work away from the model somebody
-        chose on purpose.
-        """
+        """Entries for `task`, strongest claim first: user > manifest."""
         matching = [m for m in self.models if task in m.tasks]
         # user intent first, then the MORE CAPABLE model. Label is only the
         # final tiebreak, so the ordering is stable but never decided by it.
@@ -363,12 +306,7 @@ class Registry:
         return None
 
     def assign(self, model_id: str, tasks: list[str], *, by_user: bool = True) -> ModelEntry | None:
-        """set which jobs a model may do.
-
-        Unknown task names are dropped rather than rejected: the caller is a
-        JSON request body, and one bad name in a list of five should not lose
-        the other four.
-        """
+        """Set which jobs a model may do. Unknown names dropped, not rejected."""
         entry = self.get(model_id)
         if entry is None:
             return None
@@ -398,16 +336,9 @@ class Registry:
 
 
 def removal_warning(entry: ModelEntry, registry: Registry) -> str | None:
-    """what the user should understand before removing ``entry``, or None.
+    """What removing `entry` costs, or None. A warning, never a veto.
 
-    Deliberately a WARNING and never a veto. The user knows their machine and
-    their disk better than a heuristic does, and blocking a removal because our
-    budget estimate disagrees would be paternalistic about a decision that is
-    genuinely theirs.
-
-    What it does do is name the consequence in terms of the app's behaviour,
-    because that is the part they cannot see: "you will lose X" is actionable,
-    "are you sure?" is not.
+    Names the lost behaviour, not the risk: "you will lose X" is actionable.
     """
     orphaned = [
         task for task in entry.tasks
@@ -443,13 +374,10 @@ class ModelImportError(ValueError):
 
 
 def validate_gguf(path: str | Path) -> Path:
-    """check ``path`` is a real, readable GGUF file and return it resolved.
+    """Check `path` is a real, readable GGUF. Returns it resolved.
 
-    Every failure here is one the user can act on, so each raises with its own
-    message rather than a single "invalid file". Checking the magic bytes costs
-    one 4-byte read and converts a crash deep inside llama.cpp -- during a
-    summary, minutes later -- into an error at the moment of import, next to the
-    file picker that caused it.
+    Distinct message per failure -- each is user-fixable. The magic-byte read
+    moves the failure from mid-summary in llama.cpp to the file picker.
     """
     # ValueError catches a NUL byte in the path, which raises out of
     # os.path.realpath rather than as an OSError.
@@ -512,12 +440,9 @@ def entry_from_import(
 
 
 def _catalog_label(filename: str) -> str:
-    """the published name for these weights, if we ship or offer them.
+    """Published name, if we ship or offer these weights.
 
-    Preferred over ``pretty_name`` so a model the user imports by hand shows the
-    same name as the same model downloaded through the app -- otherwise Bench
-    lists "Qwen2.5 1.5B" and "Qwen2.5 1.5b Instruct q4_k_m" as if they were
-    different things.
+    Beats `pretty_name` so imported and downloaded copies read identically.
     """
     try:
         from domain.model_manager.catalog import by_name
@@ -528,11 +453,9 @@ def _catalog_label(filename: str) -> str:
 
 
 def _catalog_quality(filename: str) -> int:
-    """the catalog's capability rank for these weights, or 0 if unknown.
+    """Catalog capability rank; 0 when unknown.
 
-    A model the user supplied themselves is usually not in the catalog, and 0
-    is the honest answer there: we have no basis for ranking it. It still wins
-    any task the user assigns it, because user intent sorts ahead of capability.
+    Rank never overrides assignment -- user intent sorts first.
     """
     try:
         from domain.model_manager.catalog import by_name
