@@ -1,13 +1,9 @@
-"""
-litgraph graph builder.
+"""The spatial map, derived entirely from state that already persists.
 
-assembles the spatial map of a library out of state that already persists.
-nothing here calls the language model: positions come from the embeddings
-written at ingest, themes and gaps come from analysis runs the user has
-already paid for, and summaries and claims come from the per-document
-analysis cache. the graph is derived, cheap, and rebuilt on every request.
+Nothing here calls the language model. It is cheap enough to rebuild on every
+request, which is why there is no graph state to invalidate.
 
-the layout rules the canvas depends on:
+The layout rules the canvas depends on:
 
   * position encodes meaning   -- PCA over per-document embedding centroids
   * an edge encodes similarity -- cosine between those centroids
@@ -61,17 +57,12 @@ SEPARATION_PASSES = 24
 
 
 def _collect() -> tuple[list[str], np.ndarray, dict]:
-    """one pass over the store: centroid, chunk count and metadata per doc.
+    """ONE unfiltered pass over the store. The filtered form scans every entry
+    per document, so calling it per doc is O(docs x chunks) -- fine at seven
+    papers, visibly slow at two hundred.
 
-    deliberately a single unfiltered read. the filtered form scans every entry
-    once per document, so calling it per doc is O(docs x chunks) -- fine at
-    seven papers, visibly slow at two hundred.
-
-    returns:
-        (doc ids, centroid matrix of shape (n, d), {doc_id: {chunks, meta}}).
-        documents with no stored vectors are dropped rather than given a zero
-        row, which would park them at the origin and invent a similarity to
-        everything else sitting there.
+    Documents with no vectors are dropped, not given a zero row: a zero row
+    parks at the origin and invents similarity to everything else there.
     """
     got = get_vector_store().get_embeddings()
     if got["embeddings"] is None or len(got["ids"]) == 0:
@@ -122,22 +113,19 @@ def _normalise(coords: np.ndarray) -> np.ndarray:
 
 
 def _separate(coords: np.ndarray) -> np.ndarray:
-    """push crowded nodes apart, towards a centre-to-centre gap of ``MIN_SEP``.
+    """Push crowded nodes towards a centre-to-centre gap of `MIN_SEP`.
 
-    seeded by the PCA positions and run for a fixed number of passes, so this
-    stays a pure function of the input: the same library always draws the same
-    map. a force layout with a convergence test would not -- and a map that
-    rearranges itself between two visits is one you cannot learn.
+    A FIXED number of passes, never a convergence test, so the same library
+    always draws the same map -- one that rearranges itself between visits
+    cannot be learned.
 
-    each pass sums the push from every crowding neighbour at once rather than
-    resolving pairs one at a time, which settles a tight cluster in far fewer
-    passes than sequential relaxation.
+    Each pass sums the push from every neighbour at once, which settles a
+    cluster in far fewer passes than resolving pairs one at a time.
 
-    the pass cap means crowded libraries are improved rather than guaranteed:
-    60 papers reach the full gap, 200 get from 0.003 to 0.026 -- the padded
-    square cannot hold much more than 230 nodes at this spacing anyway. Ten
-    times the separation is what stops two papers reading as one; chasing the
-    last of it would cost time on every graph build.
+    The cap improves crowded libraries rather than guaranteeing them: 60 papers
+    reach the full gap, 200 get from 0.003 to 0.026. Ten times the separation
+    is what stops two papers reading as one; the rest is not worth paying for
+    on every build.
     """
     n = coords.shape[0]
     if n < 2:
@@ -186,15 +174,11 @@ def _separate(coords: np.ndarray) -> np.ndarray:
 
 
 def _project(matrix: np.ndarray) -> np.ndarray:
-    """project embedding centroids to 2D positions in the unit square.
+    """Centroids to 2D, by PCA via SVD -- numpy is already here, and a full
+    decomposition over a handful of documents costs nothing.
 
-    uses PCA via SVD -- numpy already ships with the app, and this is a
-    handful of documents, so a full decomposition costs nothing and avoids
-    taking on sklearn for one function.
-
-    fewer than three documents cannot define two principal axes, so those
-    cases fall back to a circle: it is honest about carrying no information,
-    and it still gives the camera something to frame.
+    Under three documents cannot define two axes, so they fall back to a
+    circle: honest about carrying no information, and still framable.
     """
     n = matrix.shape[0]
 
@@ -229,15 +213,7 @@ def _project(matrix: np.ndarray) -> np.ndarray:
 
 
 def _edges(ids: list[str], matrix: np.ndarray) -> list[dict]:
-    """similarity edges between document centroids.
-
-    args:
-        ids: document ids, aligned with the rows of ``matrix``.
-        matrix: centroid matrix of shape (n, d).
-
-    returns:
-        list of ``{source, target, weight}``, each pair appearing once.
-    """
+    """Similarity edges as `{source, target, weight}`, each pair once."""
     n = len(ids)
     if n < 2:
         return []
@@ -288,11 +264,10 @@ def _latest_themes() -> list[dict]:
 
 
 def _latest_gaps() -> list[dict]:
-    """gaps from the most recent scan, each carrying its own suggestions.
+    """Gaps from the most recent scan, each carrying its own suggestions.
 
-    the ui used to match suggestions to gaps by position, which silently
-    mismatched them; the backend links them by ``related_gaps``, so that is
-    what is resolved here -- once, on the server, rather than in the client.
+    Linked by `related_gaps`, never by position -- matching by position
+    silently mismatched them.
     """
     live = set(get_all_doc_ids())
     runs = gap_history.list()
@@ -324,12 +299,10 @@ def _latest_gaps() -> list[dict]:
 
 
 def build_graph() -> dict:
-    """assemble the full graph payload for the canvas.
+    """The full canvas payload.
 
-    returns:
-        dict with ``nodes``, ``edges``, ``themes``, ``gaps`` and ``stats``.
-        every list is present even when empty, so the client renders an empty
-        state per layer rather than having to distinguish absent from off.
+    Every list is present even when empty, so the client renders an empty state
+    per layer instead of distinguishing absent from off.
     """
     ids, matrix, info = _collect()
     coords = _project(matrix)

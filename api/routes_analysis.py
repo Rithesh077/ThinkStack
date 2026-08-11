@@ -43,17 +43,10 @@ class AnalysisRequest(BaseModel):
 
 
 def _get_doc_text(doc_id: str, password: str | None = None) -> str:
-    """retrieve the full concatenated text for a document.
+    """Full text for a document, decrypting first if it is encrypted.
 
-    args:
-        doc_id: the document identifier.
-        password: password to decrypt the full text if encrypted.
-
-    returns:
-        concatenated text of all document chunks or decrypted full text.
-
-    raises:
-        HTTPException: if no chunks are found for the document or password wrong.
+    Raises HTTPException when the document has no chunks, or the password is
+    wrong.
     """
     chunks = get_chunks_by_doc_id(doc_id)
     if not chunks["ids"]:
@@ -82,17 +75,8 @@ def _get_doc_text(doc_id: str, password: str | None = None) -> str:
 
 @router.post("/summarize")
 async def summarize(request: AnalysisRequest):
-    """generate summaries for one or more documents.
-
-    produces single-paper summaries for individual documents or a
-    comparative summary when multiple documents are provided.
-
-    args:
-        request: list of document ids to summarize.
-
-    returns:
-        generated summaries with key points.
-    """
+    """Summarise. One document gives a single summary, several give a
+    comparative one."""
     if len(request.doc_ids) == 1:
         text = _get_doc_text(request.doc_ids[0], request.password)
         summary = await summarize_single(request.doc_ids[0], text)
@@ -113,17 +97,7 @@ async def summarize(request: AnalysisRequest):
 
 @router.post("/claims")
 async def claims(request: AnalysisRequest):
-    """extract key claims and findings from documents.
-
-    identifies structured claims including findings, methodology,
-    limitations, and future work directions.
-
-    args:
-        request: list of document ids to analyze.
-
-    returns:
-        list of extracted claims with types and confidence levels.
-    """
+    """Extract claims: findings, methodology, limitations and future work."""
     all_claims = []
     for doc_id in request.doc_ids:
         text = _get_doc_text(doc_id, request.password)
@@ -143,17 +117,7 @@ async def claims(request: AnalysisRequest):
 
 @router.post("/themes")
 async def themes(request: AnalysisRequest):
-    """cluster documents into thematic groups.
-
-    identifies common themes across the provided documents and
-    assigns each paper to one or more clusters.
-
-    args:
-        request: list of document ids to cluster.
-
-    returns:
-        list of thematic clusters with labels and descriptions.
-    """
+    """Cluster documents into themes. A paper may belong to more than one."""
     if len(request.doc_ids) < 2:
         raise HTTPException(
             status_code=400,

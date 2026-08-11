@@ -5,7 +5,7 @@ The rules, stated once:
 
     anything landing   -> X.Y.Z -> X.Y.(Z+1)      automatic, Z is unbounded
     --bump minor       -> X.Y.Z -> X.(Y+1).0      a decision, taken by a human
-    --bump minor at Y=9-> X.9.Z -> (X+1).0.0      Y carries into X at ten
+    --bump minor at Y=19> X.19.Z -> (X+1).0.0     Y carries into X at twenty
     --bump major       -> X.Y.Z -> (X+1).0.0      a decision, taken by a human
 
 X and Y are never inferred from a branch name. Deciding that a set of landings
@@ -142,24 +142,33 @@ def newest_tag() -> tuple[tuple[int, int, int], str | None]:
     return best[1], best[2]
 
 
-# Y never reaches 10. A tenth feature carries into X and resets Y, so 1.9.x
-# is followed by 2.0.0 rather than 1.10.0.
+# Y never reaches 20. A twentieth feature carries into X and resets Y, so
+# 1.19.x is followed by 2.0.0 rather than 1.20.0.
 #
 # This is NOT semantic versioning and does not pretend to be. Under semver, X
 # means "we broke your code", which is meaningless for a desktop application
 # nobody imports. What the number is actually for here is telling a user how
-# far their build has drifted from the current one, and a decimal odometer says
-# that at a glance: two digits apart is two digits apart, whichever column.
+# far their build has drifted from the current one.
+#
+# The carry was 10 first, and 10 was too eager: it made X move after ten
+# features, which can be one quiet quarter, so the major number climbed for
+# reasons no user could feel. Twenty is still an arbitrary line, but it falls
+# roughly where the application really has become a different one.
 #
 # Ordering is preserved either way, which is the property that actually
 # matters: the updater compares versions, and a build must never advertise a
-# number lower than one already installed. 2.0.0 > 1.9.9 under the same
-# comparison that gives 1.10.0 > 1.9.9.
-MINOR_RADIX = 10
+# number lower than one already installed. 2.0.0 > 1.19.9 under the same
+# comparison that gives 1.20.0 > 1.19.9.
+MINOR_RADIX = 20
 
 
 def bump_minor(major: int, minor: int) -> tuple[int, int, int]:
-    """A feature landed: Y+1, carrying into X at ten, and Z resets."""
+    """A feature landed: Y+1, and Z resets.
+
+    At MINOR_RADIX the carry moves X instead, and BOTH lower columns reset --
+    X changing means the thing below it is no longer the same series, so
+    keeping a Y or a Z from the old one would be meaningless.
+    """
     minor += 1
     if minor >= MINOR_RADIX:
         major, minor = major + 1, 0

@@ -1,9 +1,7 @@
-"""
-pdf parser module.
+"""PDF text extraction: PyMuPDF, falling back to pdfplumber.
 
-extracts text content from pdf files using pymupdf as the primary
-engine with pdfplumber as a fallback for documents where pymupdf
-produces poor results (scanned documents, complex layouts).
+Everything downstream sees only the text this produces. A scanned PDF with no
+text layer yields nothing, and no later stage can recover from that.
 """
 
 import logging
@@ -16,14 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def extract_text_pymupdf(file_path: str) -> list[dict]:
-    """extract text from a pdf using pymupdf (fitz).
-
-    args:
-        file_path: absolute path to the pdf file.
-
-    returns:
-        list of dicts with page_number and text for each page.
-    """
+    """Per-page `{page_number, text}`. Empty pages are skipped."""
     pages = []
     doc = fitz.open(file_path)
     for page_num in range(len(doc)):
@@ -39,17 +30,8 @@ def extract_text_pymupdf(file_path: str) -> list[dict]:
 
 
 def extract_text_pdfplumber(file_path: str) -> list[dict]:
-    """extract text from a pdf using pdfplumber.
-
-    serves as a fallback for pdfs where pymupdf produces insufficient
-    text, such as scanned documents or those with complex table layouts.
-
-    args:
-        file_path: absolute path to the pdf file.
-
-    returns:
-        list of dicts with page_number and text for each page.
-    """
+    """Same shape as extract_text_pymupdf. Slower, but reads scanned pages and
+    complex table layouts PyMuPDF returns blank."""
     pages = []
     with pdfplumber.open(file_path) as pdf:
         for i, page in enumerate(pdf.pages):
@@ -63,18 +45,10 @@ def extract_text_pdfplumber(file_path: str) -> list[dict]:
 
 
 def extract_text(file_path: str) -> tuple[list[dict], str]:
-    """extract text from a pdf, trying pymupdf first then pdfplumber.
+    """Returns `(pages, full_text)`.
 
-    attempts extraction with pymupdf. if the result has fewer than
-    100 characters total, falls back to pdfplumber which handles
-    certain pdf types better.
-
-    args:
-        file_path: absolute path to the pdf file.
-
-    returns:
-        tuple of (pages_list, full_text) where pages_list contains
-        per-page text and full_text is the concatenated result.
+    Under 100 characters from PyMuPDF means the page is almost certainly an
+    image, so pdfplumber gets a turn before giving up.
     """
     pages = extract_text_pymupdf(file_path)
     total_text = " ".join(p["text"] for p in pages)
@@ -94,14 +68,7 @@ def extract_text(file_path: str) -> tuple[list[dict], str]:
 
 
 def get_page_count(file_path: str) -> int:
-    """return the total number of pages in a pdf.
-
-    args:
-        file_path: absolute path to the pdf file.
-
-    returns:
-        integer page count.
-    """
+    """Page count, without extracting anything."""
     doc = fitz.open(file_path)
     count = len(doc)
     doc.close()

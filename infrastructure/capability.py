@@ -1,36 +1,20 @@
-"""
-What this machine can actually do.
+"""What this machine can actually do.
 
-ONE place that turns hardware facts into decisions. Everything that needs to
-know "can I run this model", "how big a context", "how many tokens may I ask
-for", "must I summarize in pieces" asks here and nowhere else.
+ONE place that turns hardware facts into decisions. Anything asking "can I run
+this model", "how big a context", "how many tokens may I ask for" comes here
+and derives nothing itself.
 
-Why this module exists
-----------------------
-Those decisions used to be made in about ten places, and two of them disagreed:
-`diagnosis.rs` classified the machine and picked GPU layers, and `hardware.py`
-did the same again in Python. The Rust answer silently won at runtime, so the
-Python one was dead code that still looked authoritative.
-
-The cost was not theoretical. Summarization asked for 6000 characters of paper
-plus 1024 tokens of output -- about 2650 tokens -- inside a window that is 2048
-tokens on a low-tier machine. It could not fit its own request, failed, and told
-the reader the model "returned a response that could not be read", which was
-untrue. Nothing owned the arithmetic, so nobody noticed it was wrong.
-
-The split
----------
-    Rust (diagnosis.rs)   FACTS about the machine. Fast, native, no python.
+    Rust (diagnosis.rs)   FACTS about the machine
     llama.cpp             ONE fact about the binary: can it offload at all?
-    this module           every DECISION derived from those facts.
-    callers               ask; never derive.
+    this module           every DECISION derived from those facts
+    callers               ask; never derive
 
-Decisions live in Python because they are policy, and policy has to be testable
-against machines nobody owns. Every test below fabricates a profile -- an 8 GB
-M1, a 64 GB workstation -- and asserts the decision, on any OS, with no GPU.
+Decisions live here because they are policy, and policy has to be testable
+against machines nobody owns -- every test fabricates a profile and asserts the
+decision, on any OS, with no GPU present.
 
-This module answers questions. It never acts: no downloads, no loading, no disk
-changes, no consent. Those belong to the layers above it.
+This module answers questions and never acts. No downloads, no loading, no disk
+changes, no consent: those belong above it.
 """
 
 from __future__ import annotations
@@ -83,25 +67,17 @@ class ModelPlan:
 
 
 class MachineCapability:
-    """Answers every hardware-derived question, from facts supplied to it.
+    """Answers every hardware-derived question, from facts SUPPLIED to it.
 
-    `engine_offload` is injected rather than looked up here on purpose. It is a
-    fact about the llama.cpp BINARY (was it built with CUDA/Metal?), not about
-    the machine, and keeping it separate is what makes this testable: a
-    fabricated Apple Silicon profile can be asserted both with and without
-    Metal, from Linux, with no Mac present.
+    Nothing here may look anything up. `engine_offload` is a fact about the
+    llama.cpp binary and `accelerable_device` about the graphics drivers, so
+    both are injected -- otherwise a fabricated profile produces advice about
+    the machine running the test rather than the machine described, which is
+    the guess this class exists to remove.
 
-    It is also the fix for a real bug. GPU layers used to be decided by
-    `has_cuda && vram_gb >= 2.0`. Apple Silicon reports no CUDA and 0 GB of
-    dedicated VRAM -- both true -- so every Mac was pinned to CPU regardless of
-    whether its engine could use Metal. Asking the engine removes the guess.
-
-    `accelerable_device` is injected for exactly the same reason, and was
-    briefly not. A version of this asked the Vulkan loader from inside
-    `advice()`, which meant a fabricated profile produced advice about the
-    machine running the test rather than the machine described -- reintroducing
-    the guess this class exists to remove. It is a fact about what the graphics
-    DRIVERS expose, so it is supplied, not discovered.
+    Both were once inferred from the hardware, and both went wrong: Apple
+    Silicon reports no CUDA and 0 GB of VRAM, so `has_cuda && vram >= 2` pinned
+    every Mac to CPU no matter what its engine supported.
     """
 
     def __init__(self, profile: HardwareProfile, engine_offload: bool = False,
@@ -121,13 +97,12 @@ class MachineCapability:
     def usable_gpu_memory_gb(self) -> float:
         """Memory the GPU may use for weights, in GB.
 
-        Discrete cards report it directly. Unified-memory machines (Apple
-        Silicon, integrated graphics) report 0 GB of VRAM because there is no
-        separate pool -- the GPU borrows system RAM. Treating that 0 as "no
-        GPU" is precisely the mistake that pinned every Mac to CPU.
+        Unified-memory machines report 0 GB of VRAM because there is no
+        separate pool -- the GPU borrows system RAM. Reading that 0 as "no GPU"
+        is the mistake that pinned every Mac to CPU.
 
-        Half of total RAM is deliberately conservative: the OS, the app, and
-        the embedding model are all living in the same pool.
+        Half of total RAM, deliberately conservative: the OS, the app and the
+        embedding model share that pool.
         """
         if not self.engine_offload:
             return 0.0
@@ -144,10 +119,9 @@ class MachineCapability:
     def output_tokens(self, ctx: int | None = None) -> int:
         """Tokens of REPLY this machine can afford to ask for.
 
-        A fixed number cannot suit both machines. Asking 1024 of a 2048 window
-        spends half the context on the answer and leaves the paper competing
-        for the rest -- which is how summarization stopped fitting its own
-        request. A quarter of the window, clamped at both ends.
+        A quarter of the window, clamped. Asking 1024 of a 2048 window spends
+        half the context on the answer and leaves the paper competing for the
+        rest, which is how summarization stopped fitting its own request.
         """
         ctx = ctx or self.context_size()
         return max(OUTPUT_FLOOR, min(OUTPUT_CEILING, ctx // 4))
@@ -283,28 +257,35 @@ class MachineCapability:
                 "inference engine was built without Metal support, so "
                 "everything runs on the CPU."
             )
-        if not p.unified_memory and p.vram_gb >= 2 and not self.engine_offload:
+        # Two independent detectors answer "is there a GPU here", and they
+        # disagree. `vram_gb` comes from nvidia-smi, which exists only where
+        # NVIDIA's proprietary driver is installed; `accelerable_device` comes
+        # from Vulkan, which reaches AMD, Intel and open NVIDIA drivers too.
+        #
+        # Gating on vram_gb meant an AMD, Intel or Mesa/NVK machine reported
+        # 0.0 GB and this sentence never printed -- while the Bench card beside
+        # it offered them the graphics download anyway. The offer appeared with
+        # nothing explaining why anyone would want it, on exactly the machines
+        # the Vulkan work was done to reach.
+        #
+        # So ask the detector that can actually see them, and keep vram_gb only
+        # as the fallback for a machine where Vulkan told us nothing but
+        # nvidia-smi found a card.
+        usable = self.accelerable_device
+        has_gpu = bool(usable) or p.vram_gb >= 2
+        if not p.unified_memory and has_gpu and not self.engine_offload:
             # The original wording -- "the installed inference engine is a
             # CPU-only build and cannot use it" -- was accurate and useless. It
             # named an internal component, gave no reason, and offered nothing,
             # so a tester with an RTX 4050 read it as a defect rather than as a
             # deliberate trade.
             #
-            # Two things this must NOT do, both found by rewriting it badly first:
-            #
-            # 1. Promise what we cannot deliver. The offer is a CUDA build, so
-            #    only an NVIDIA card can take it. Saying "can be added" to
-            #    someone with a Radeon is a worse failure than saying nothing.
-            # 2. State a size. Whether the NVIDIA maths libraries are already on
-            #    the machine changes the download from ~400 MB to ~1 GB, and
-            #    this function cannot see the filesystem. The real figure is
-            #    measured by acceleration.plan() and shown where the button is.
-            # Whether the offer is real is a question about Vulkan, not about
-            # the vendor. An earlier draft gated this on gpu_vendor == "nvidia"
-            # -- correct while the plan was CUDA, and wrong the moment it became
-            # Vulkan, which reaches AMD and Intel too. Ask what can actually be
-            # used rather than inferring it from a brand.
-            usable = self.accelerable_device
+            # It must not promise what we cannot deliver, and must not state a
+            # size: the real figure is measured by acceleration.plan() and shown
+            # where the button is. Whether the offer is real is a question about
+            # Vulkan, not about the vendor -- an earlier draft gated it on
+            # gpu_vendor == "nvidia", correct while the plan was CUDA and wrong
+            # the moment it became Vulkan.
             if usable:
                 out.append(
                     f"{usable} is not being used yet. ThinkStack ships with "

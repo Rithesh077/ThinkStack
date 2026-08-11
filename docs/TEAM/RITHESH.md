@@ -321,3 +321,63 @@ could reasonably have written: both are about what the *host* provides. The
 lesson is narrower than "test more". A desktop web view is not a browser, and
 the platform's absences are as much a part of the contract as its APIs. I had
 tested the code; I had not run the product.
+
+## Release engineering, and shipping to real users
+
+Everything above is code that runs on a user's machine. This is the part that
+gets it there, and it broke in more interesting ways than the app did.
+
+- `scripts/ship.sh`: beta to production in one command. It replaced a merge and
+  a separate workflow dispatch, and the reason is not tidiness — I did the merge
+  and not the dispatch, so `main` sat un-released while I believed it had
+  shipped. Two steps that must both happen are one step. Afterwards it asserts
+  the outcome rather than assuming it: not a draft, not a prerelease,
+  `latest.json` attached, four installers present, `/releases/latest` resolving
+  to the new tag. Each of those had been wrong in a real release.
+
+- `scripts/rollback.sh`: shaped entirely by a constraint I had not thought
+  through. **You cannot un-ship.** The updater compares versions and only moves
+  forward, so an app that already updated will never come back, and deleting the
+  release does not reach it. That splits rollback into two different problems.
+  Marking the bad release a prerelease makes `/releases/latest` fall back within
+  seconds, which fixes everyone who has not updated yet; reaching the rest means
+  publishing the *old* code under a *higher* number. Once I saw that, the design
+  was forced.
+
+- The downgrade hole: `release.yml` accepted a version override with no ordering
+  check at all, so `-f version=1.0.0` would have tagged it and published it as
+  "latest". The guard existed — in `release.sh`, which is not on the dispatch
+  path anyone uses. I put it in both the script and the workflow, because I had
+  just dispatched a release from my phone, which is exactly when no script is
+  involved.
+
+### The bug class I keep meeting
+
+Three separate failures in two days had the same shape: **a check that tests for
+silence, when the failure mode is confident wrongness.**
+
+`draft: false` was a request, not a guarantee — the release reported every job
+green and was invisible. `llama_supports_gpu_offload()` returned `False` on a
+perfectly good 49 MB Vulkan library, because it reports whether a backend
+*registered* at runtime, not whether one was *compiled in*, and a CI runner has
+the SDK but no driver; the build failed its own verification. And the worst one:
+
+```python
+if use_slm and (not metadata.title or not metadata.abstract):
+```
+
+There is a working SLM fallback for metadata extraction that can never fire,
+because the guard tests for an *empty* title and the regex always returns a
+*wrong* one. On *Attention Is All You Need* it returns Google's copyright
+notice, and on every paper we tried the author list contained the paper's own
+title and its authors' employers. That metadata labels every node on the
+LitGraph map.
+
+I found it by refusing to build citations on a layer I could not vouch for, and
+tracing one real PDF through every stage instead. The fix is not a rewrite: the
+title is the largest horizontal text near the top of page one, which PyMuPDF
+already knows and `extract_text()` throws away by flattening to a string. Fifteen
+lines got three of three published papers exactly right.
+
+The lesson I want to keep: **`0.0`, `False` and `""` are values, not absences.**
+Every one of these bugs was a guard that could not tell the difference.

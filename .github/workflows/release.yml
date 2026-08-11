@@ -162,6 +162,25 @@ jobs:
               # An explicit dispatch IS a request, so that still errors.
               if [ -n "$OVERRIDE" ]; then
                 V="$OVERRIDE"
+                # An override was accepted with NO ordering check, so
+                # `-f version=1.0.0` would tag it, publish it as "latest", and
+                # present every user with a downgrade. The updater only moves
+                # forward, so nobody on a higher version would ever see it --
+                # and nothing about the release would say anything was wrong.
+                #
+                # scripts/ship.sh checks this too. It lives here as well
+                # because the dispatch can be run from the GitHub UI or a
+                # phone, which is exactly when no script is involved.
+                PUB="$(gh release view --repo "$GITHUB_REPOSITORY" \
+                        --json tagName -q .tagName 2>/dev/null | sed 's/^v//' || true)"
+                if [ -n "$PUB" ] && [ "$V" != "$PUB" ]; then
+                  LOWEST="$(printf '%s\n%s\n' "$PUB" "$V" | sort -V | head -1)"
+                  if [ "$LOWEST" = "$V" ]; then
+                    echo "::error::refusing to publish $V: $PUB is already released."
+                    echo "::error::the updater only moves forward, so nobody on $PUB would see it."
+                    exit 1
+                  fi
+                fi
               elif [ -z "${BUMP:-}" ] || [ "${BUMP:-none}" = "none" ]; then
                 if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
                   echo "::notice::no release requested -- merging into main does not publish, by design."
