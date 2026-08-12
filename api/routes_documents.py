@@ -18,7 +18,7 @@ from infrastructure.file_manager import (
     delete_pdf,
     get_pdf_path,
 )
-from domain.ingestion.pdf_parser import extract_text, get_page_count
+from domain.ingestion.pdf_parser import extract_layout, extract_text, get_page_count
 from domain.ingestion.chunker import chunk_pages
 from domain.ingestion.metadata_extractor import extract_metadata
 from domain.analysis.precompute import schedule_for_new_document
@@ -65,7 +65,19 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="could not extract text from the pdf",
             )
 
-        metadata = await extract_metadata(full_text)
+        # Page 1 with font sizes and positions intact. The title and author
+        # list are only identifiable from that; full_text has flattened it.
+        # Guarded: layout is an upgrade, not a requirement. A PDF whose page
+        # tree PyMuPDF cannot walk still has text, and losing the document
+        # over a nicer title would be a bad trade -- extract_metadata falls
+        # back to the flat-text path when page is None.
+        try:
+            layout = extract_layout(str(file_path))
+        except Exception as e:  # noqa: BLE001 - layout is optional, ingest is not
+            logger.warning("layout extraction failed for %s: %s", file.filename, e)
+            layout = []
+
+        metadata = await extract_metadata(full_text, page=layout[0] if layout else None)
         metadata.pages = get_page_count(str(file_path))
         metadata.source = file.filename
 

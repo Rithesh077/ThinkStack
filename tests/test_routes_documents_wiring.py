@@ -26,8 +26,9 @@ def _stub_ingestion(monkeypatch, doc_id="docX"):
     monkeypatch.setattr(routes_documents, "extract_text",
                         lambda path: ([{"page_number": 1, "text": "body"}], "full paper text"))
     monkeypatch.setattr(routes_documents, "get_page_count", lambda path: 1)
+    monkeypatch.setattr(routes_documents, "extract_layout", lambda path: [])
 
-    async def fake_metadata(text):
+    async def fake_metadata(text, page=None):
         return DocumentMetadata()
     monkeypatch.setattr(routes_documents, "extract_metadata", fake_metadata)
     monkeypatch.setattr(routes_documents, "chunk_pages", lambda pages, did: ["chunk"])
