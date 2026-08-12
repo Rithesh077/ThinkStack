@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target } from 'lucide-react';
-import { documentsApi, encryptionApi } from '../utils/api';
+import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target, PenLine, Cpu } from 'lucide-react';
+import { documentsApi, encryptionApi, papersApi, registryApi } from '../utils/api';
 import UploadPanel from './UploadPanel';
 import PageHeader from './PageHeader';
 
@@ -19,6 +19,12 @@ export default function Library() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, total_chunks: 0 });
+
+  // Scribe projects
+  const [scribeProjects, setScribeProjects] = useState([]);
+
+  // Active Bench model
+  const [activeBenchModel, setActiveBenchModel] = useState(null);
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [docDetails, setDocDetails] = useState({});
 
@@ -43,9 +49,32 @@ export default function Library() {
     setLoading(false);
   }, []);
 
+  const loadScribeProjects = useCallback(async () => {
+    try {
+      const d = await papersApi.list();
+      setScribeProjects(d.projects || []);
+    } catch (err) {
+      console.error('failed to load scribe projects:', err);
+    }
+  }, []);
+
+  const loadBenchModel = useCallback(async () => {
+    try {
+      const snap = await registryApi.get();
+      const models = snap.models || [];
+      // pick the first model that is active/usable
+      const active = models.find((m) => m.status === 'ready') || models[0] || null;
+      setActiveBenchModel(active ? (active.label || active.id) : null);
+    } catch (err) {
+      console.error('failed to load bench model:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadDocuments();
-  }, [loadDocuments]);
+    loadScribeProjects();
+    loadBenchModel();
+  }, [loadDocuments, loadScribeProjects, loadBenchModel]);
 
   const handleDelete = async (docId) => {
     try {
@@ -140,36 +169,98 @@ export default function Library() {
         title="Library"
       />
 
-      <div className="stat-row fade-up stagger-2">
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Papers Ingested</span>
-            <FileText size={16} className="stat-card-icon" />
+      {/* ── Dashboard: 2×2 stat grid + Activity square ── */}
+      <div className="fade-up stagger-2" style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '1rem',
+        alignItems: 'stretch',
+        marginBottom: '1.5rem',
+      }}>
+        {/* 2×2 stat grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gridTemplateRows: 'auto auto',
+          gap: '1rem',
+        }}>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Papers Ingested</span>
+              <FileText size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total || '-'}</div>
           </div>
-          <div className="stat-value">{stats.total || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Knowledge Chunks</span>
-            <BarChart2 size={16} className="stat-card-icon" />
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Knowledge Chunks</span>
+              <BarChart2 size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total_chunks || '-'}</div>
           </div>
-          <div className="stat-value">{stats.total_chunks || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Analyses Run</span>
-            <Brain size={16} className="stat-card-icon" />
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Analyses Run</span>
+              <Brain size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">-</div>
           </div>
-          <div className="stat-value">-</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Gaps Found</span>
-            <Target size={16} className="stat-card-icon" />
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Gaps Found</span>
+              <Target size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">-</div>
           </div>
-          <div className="stat-value">-</div>
         </div>
+
+        {/* Two separate Activity blocks in a flex column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+          {/* Bench in Use — separate block */}
+          <div className="stat-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '0.6rem 0.85rem' }}>
+            <div className="stat-card-top">
+              <span className="stat-card-label">Bench in Use</span>
+              <Cpu size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value" style={{ fontSize: '0.9rem', fontWeight: 600, wordBreak: 'break-word', lineHeight: 1.3 }}>
+              {activeBenchModel || '-'}
+            </div>
+          </div>
+
+          {/* Papers Being Written — separate block */}
+          <div className="stat-card" style={{ flex: 3, display: 'flex', flexDirection: 'column', gap: '0.4rem', overflow: 'hidden', padding: '0.6rem 0.85rem' }}>
+            <div className="stat-card-top">
+              <span className="stat-card-label">Papers Being Written</span>
+              <PenLine size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value" style={{ fontSize: '0.9rem', fontWeight: 600 }}>{scribeProjects.length || '-'}</div>
+            {scribeProjects.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', overflowY: 'auto', flex: 1 }}>
+                {scribeProjects.map((proj) => (
+                  <div key={proj.project_id} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                    padding: '0.25rem 0.4rem',
+                    borderRadius: '0.3rem',
+                    background: 'var(--bg-tertiary)',
+                  }}>
+                    <PenLine size={10} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                      {proj.name || proj.project_id}
+                    </span>
+                    {proj.has_pdf && (
+                      <span className="badge badge-success" style={{ fontSize: '0.55rem', flexShrink: 0 }}>pdf</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
       </div>
+
 
       {documents.length > 0 && (
         <Suspense fallback={null}><LibraryChart documents={documents} /></Suspense>
