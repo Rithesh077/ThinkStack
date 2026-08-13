@@ -132,10 +132,7 @@ export default function Bench() {
 
   return (
     <div>
-      <PageHeader
-        className="fade-up stagger-1"
-        title="Bench"
-      >
+      <PageHeader className="fade-up stagger-1">
         <button className="btn btn-secondary" onClick={examine} disabled={examining}>
           <RefreshCw size={16} className={examining ? 'spin' : ''} />
           <span>{examining ? 'Examining…' : 'Re-examine'}</span>

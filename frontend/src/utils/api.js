@@ -152,6 +152,12 @@ export const documentsApi = {
 
   get: (docId) => request(`/documents/${docId}`),
 
+  // Extraction is right about 93% of the time, so roughly one paper in
+  // fourteen is filed under the wrong name -- and that name labels it
+  // everywhere, including every node on the LitGraph map.
+  rename: (docId, title) =>
+    request(`/documents/${docId}/title`, { method: 'PATCH', body: { title } }),
+
   delete: (docId) => request(`/documents/${docId}`, { method: 'DELETE' }),
 
   /** the originally uploaded pdf, served inline for the litgraph reader */

@@ -47,6 +47,19 @@ class DocAnalysisCache:
         entry = self._entries.get(doc_id)
         return dict(entry) if isinstance(entry, dict) else None
 
+    def count(self) -> int:
+        """How many documents have been analysed.
+
+        An entry can be half-filled -- `merge` creates one the moment claims
+        arrive, before the summary does -- so a document counts once it holds
+        either. Reaching into the dict from a route instead would tie that
+        judgement to whoever asked.
+        """
+        return sum(
+            1 for e in self._entries.values()
+            if isinstance(e, dict) and (e.get("summary") or e.get("claims"))
+        )
+
     def put(self, doc_id: str, summary: str, claims: list) -> None:
         """store the analysis for ``doc_id`` and persist it atomically."""
         self._entries[doc_id] = {"summary": summary, "claims": claims}
