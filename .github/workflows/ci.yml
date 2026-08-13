@@ -87,7 +87,7 @@ jobs:
           emit python    '\.py$|requirements.*\.txt|pytest\.ini|ruff\.toml'
           emit rust      '^src-tauri/'
           emit workflows '^\.github/workflows/'
-          emit frontend  '^frontend/'
+          emit frontend  '^(frontend|new-frontend)/'
 
   # -- workflows: authoritative GitHub Actions validation --
   # actionlint is what actually mirrors GitHub's own workflow validation. it is
@@ -206,10 +206,19 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    name: Frontend (lint + test + build)
+    # Two frontends, same checks. new-frontend/ is the finished Paper and Ink
+    # interface; frontend/ is what still ships. A matrix rather than a second
+    # job, so the two can never drift into being checked differently -- and
+    # without it new-frontend/ matches no path filter at all and would ship
+    # having never been linted, tested or built by anything but a laptop.
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [frontend, new-frontend]
+    name: Frontend (lint + test + build) - ${{ matrix.dir }}
     defaults:
       run:
-        working-directory: frontend
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -220,7 +229,7 @@ jobs:
           # only in CI. Keep this in step with frontend/package.json engines.
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
       - name: Install
         run: npm ci
       - name: Lint
