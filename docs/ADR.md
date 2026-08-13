@@ -369,6 +369,100 @@ it never opened. Papers can now be split across section files and keep a `.bib`
 beside them. Build artefacts are hidden from the tree; they are regenerated and
 mean nothing to an author.
 
+## 2026-08-12: a title is the biggest text on page 1, not the first line
+
+**Context.** `_extract_title` kept any of the first ten lines longer than ten
+characters, and `_extract_authors` matched two capitalised words. Both read
+`extract_text()`, which flattens a PDF into a string.
+
+**Decision.** `pdf_parser.extract_layout()` returns spans carrying size,
+position and baseline. The title is the largest horizontal text in the top of
+page 1; the authors are the rows beneath it.
+
+**Consequences.** A PDF has no title field -- 18 papers checked, every one
+carries only a creation date in its Info dictionary. What it has is glyphs
+with sizes, and the typesetter already encoded the answer in them. Flattening
+to a string throws away the only signal there was, which is why the old
+version returned Google's copyright notice as the title of *Attention Is All
+You Need* and 2014 as its year. No language change fixes that: the same regex
+returns `Google Brain` just as confidently in Rust. Measured cost of the whole
+pipeline is 6 ms extract, 1 ms metadata, against 3073 ms to embed.
+
+## 2026-08-12: geometry is a separate module from bibliography
+
+**Context.** The rules were accumulating inside two functions that both knew
+about fonts and about what a title is.
+
+**Decision.** `layout.py` turns spans into rows of cells and knows nothing
+about papers. `layout_metadata.py` decides what a title or an author is.
+
+**Consequences.** Three of the four worst bugs were geometry, not
+bibliography: rows grouped by bounding-box top instead of baseline split a
+small-caps title into `A : A M S O`; a font change mid-word inserted a space
+into `ADAM`; a loose accent glyph left `Doll ´ar` unsearchable. None of those
+are about papers, and none of them are visible while reading a function that
+is also deciding whether something is an author.
+
+## 2026-08-12: affiliations are removed by structure, never by naming employers
+
+**Context.** The obvious filter is a list of institutions. Google, Tsinghua,
+Mistral, NAVER -- a list that is always incomplete and always dating.
+
+**Decision.** Three rules, none naming a company. A *structural* word
+(university, institute, research) condemns a whole row. A short all-caps token
+beside ordinary words is an acronym, and disqualifies the candidate as a name.
+A phrase printed twice in the author band is an address, because a name
+appears once per paper.
+
+**Consequences.** The row-level test is what lets the word list stay small:
+attention.pdf's affiliation row is `Google Brain | Google Brain | Google
+Research | Google Research`, and only two of those four cells carry a listed
+word -- "Brain" is not in the list and never will be. The repetition rule
+needs no vocabulary at all, and is the only one that separates "United
+Kingdom" from "Kaiming He", which are identical to any test of spelling.
+Ablated: without the word list, 4 of 7 papers instead of 7 of 7, and it only
+ever admits extra rows -- it never loses a name.
+
+The acronym rule applies only to mixed-case text. A wholly capitalised
+candidate is a typesetting choice, not an abbreviation: acmart sets every
+byline that way, and `ANDREW CHU` was being read as an acronym.
+
+Tried and reverted, with the numbers kept in a comment so it is not re-added
+on the strength of the one case it helps: treating a bare acronym (`IEEE`) as
+an institution. It fixes `Wang, Senior Member, IEEE` and costs more elsewhere,
+85.7% down to 83.9% exact author lists.
+
+## 2026-08-12: a plausibility check, because the failure mode is not silence
+
+**Context.** An SLM fallback existed and was guarded on `not metadata.title`.
+It never once ran.
+
+**Decision.** `metadata_is_plausible()` replaces the emptiness test: a usable
+result needs a title that is not boilerplate *and* at least one author.
+
+**Consequences.** The regex never returned empty. It returned wrong, and
+confidently. A guard that tests for silence cannot catch that, so the better
+path was unreachable on exactly the papers it existed to rescue. This is the
+third bug of the same shape found in a month -- the graphics advice gated on
+`vram_gb`, the updater reading a missing `window.confirm` as "user declined",
+and this. When the model does run it is handed font sizes rather than the flat
+text, because a model given the same evidence makes the same mistake.
+
+## 2026-08-12: the extractor is scored on papers nobody here chose
+
+**Context.** A curated test set proves the rules match the papers the rules
+were written against.
+
+**Decision.** `local/eval_metadata.py` samples papers across 15 arXiv
+categories through the API and scores against arXiv's own metadata.
+
+**Consequences.** The curated 18 were 100%; the random 56 were 62.5%, and the
+gap was entirely templates nobody had looked at -- RevTeX spacing wide enough
+to read as columns, APS running from affiliations into an unlabelled abstract,
+and a margin cutoff that was deleting the first line of any centred title.
+Fixing those took the sample to 92.9% titles and 85.7% exact author lists. A
+number from papers you picked measures your test set, not your extractor.
+
 ## 2026-08-09: the advice asks Vulkan, not nvidia-smi
 
 **Context.** Two detectors answer "is there a GPU here". `vram_gb` comes from
