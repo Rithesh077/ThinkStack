@@ -442,6 +442,39 @@ body::after {
 .main-content.is-workspace {
   max-width: none;
   padding: 2rem 2rem 1.5rem;
+
+  /* The workspace IS the viewport, and its own scroll container. This exists
+     so a pane can say `flex: 1` instead of `calc(100vh - 11rem)` -- a constant
+     that had to be re-guessed whenever the padding or the page header changed,
+     and was silently wrong the moment the title was removed. */
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A page that fills gets the leftover height rather than measuring for it.
+   The height has to be handed down every step: <main> -> .page-frame (the
+   route transition wrapper) -> .lg-page / .pw-page. Miss one link and
+   `flex: 1` at the bottom resolves against nothing and the page collapses to
+   the height of its own content.
+
+   Library also fills, but only to use the WIDTH. Its content keeps its natural
+   height and <main> scrolls, which is why .page-frame carries no flex-grow of
+   its own -- only the two pages that ask for it do. */
+.main-content.is-workspace > .page-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content.is-workspace > .page-frame > .pw-page,
+.main-content.is-workspace > .page-frame > .lg-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* page header */
@@ -790,6 +823,370 @@ body::after {
   font-family: var(--font-display);
   position: relative;
   z-index: 2;
+}
+
+/* First run: what happens when you add a paper.
+   Replaces the dashboard while the library is empty, because four cards
+   reading "-" and a chart with no data teach nothing on the one visit that
+   matters most. */
+.library-start {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  padding: 2rem 2.25rem;
+  margin-bottom: 3rem;
+}
+
+.library-start h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.library-start-lede {
+  margin: 0 0 1.5rem;
+  max-width: 56ch;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.library-start-steps {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  counter-reset: step;
+}
+
+.library-start-steps li {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding-left: 1.75rem;
+  position: relative;
+  counter-increment: step;
+}
+
+.library-start-steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.library-start-step {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.library-start-then {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Knowledge base heading, with the filter beside it rather than above: the
+   list is what the filter acts on, so they belong on the same line. */
+.kb-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.kb-heading .section-heading {
+  margin: 0;
+}
+
+.kb-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 260px;
+  max-width: 420px;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.kb-search:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.kb-search-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.kb-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.kb-search input::placeholder {
+  color: var(--text-secondary);
+}
+
+.kb-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.kb-progress-label {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-progress-count {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* "What's here": the other features, named and explained, on the page every
+   launch opens. Collapsible and remembered -- worth reading once. */
+.library-tour {
+  margin-bottom: 1.5rem;
+}
+
+.library-tour-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  transition: color var(--transition-base);
+}
+
+.library-tour-toggle:hover {
+  color: var(--text-primary);
+}
+
+.library-tour-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.library-tour-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color var(--transition-base), transform var(--transition-base);
+}
+
+.library-tour-item:hover {
+  border-color: var(--border-2, rgba(255,255,255,0.14));
+  transform: translateY(-2px);
+}
+
+.library-tour-icon {
+  color: var(--accent-secondary);
+  grid-row: 1 / span 2;
+  align-self: start;
+  margin-top: 0.15rem;
+}
+
+.library-tour-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.library-tour-summary {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.panel-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  position: relative;
+  z-index: 2;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* library overview: counts on the left, live panels on the right.
+
+   auto-fit rather than a fixed column count, so the two halves stack instead
+   of being squeezed when the window is narrow. The app is resizable and this
+   is the first thing on the page. */
+/* Two rows, not two columns.
+
+   It was a 2x2 of counts beside a stack of panels, and the two sides are never
+   the same height -- whichever is shorter leaves a dead rectangle, and adding
+   content to fill it just makes the other side taller. Rows cannot do that:
+   the counts take the full width and wrap evenly, the panels do the same
+   underneath. */
+.library-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 3.5rem;
+}
+
+.library-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1.5rem;
+}
+
+/* The 2rem padding and the 2.5rem gap under the label were sized for cards
+   holding one number across the full width of the page. */
+.library-counts .stat-card { padding: 1.35rem 1.5rem; }
+.library-counts .stat-card-top { margin-bottom: 1.25rem; }
+.library-counts .stat-value { font-size: 2.2rem; }
+
+.library-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  /* stretch, not start: three panels on one row look broken when only the
+     one with a list is full height. They are the same height and each list
+     scrolls inside its own card. */
+  align-items: stretch;
+}
+
+/* A panel is a stat-card holding a list rather than one number, so it drops
+   the large padding and the gap under the heading that a single figure wants. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.35rem;
+  min-height: 0;
+}
+
+.panel .stat-card-top {
+  margin-bottom: 0.85rem;
+}
+
+.panel-grow {
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+}
+
+.panel-list-scroll {
+  overflow-y: auto;
+  flex: 1;
+  /* Capped so forty drafts scroll inside the card rather than running the page
+     off the bottom, and so all three panels agree on a height. */
+  max-height: 13rem;
+  min-height: 8rem;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm, 0.35rem);
+  background: var(--bg-tertiary);
+  position: relative;
+  z-index: 2;
+}
+
+.panel-row-icon {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.panel-row-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.panel-row-meta {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* document list */
@@ -1408,8 +1805,8 @@ input::-webkit-credentials-auto-fill-button {
   grid-template-columns: var(--ft-w, 200px) 5px 1fr 5px var(--pv-w, 42%);
   gap: 0;
   align-items: stretch;
-  /* the header is ~2.1rem of title plus its margin; everything else is padding */
-  height: calc(100vh - 11rem);
+  /* Takes the height it is given instead of guessing at it. */
+  flex: 1;
   min-height: 420px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2962,7 +3359,7 @@ input::-webkit-credentials-auto-fill-button {
   display: grid;
   grid-template-columns: var(--ft-w, 200px) 1fr 1fr;
   gap: 0;
-  height: calc(100vh - 11rem);
+  flex: 1;
   min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -3221,3 +3618,95 @@ input::-webkit-credentials-auto-fill-button {
   color: var(--text-2);
 }
 .accel-progress-row span { display: flex; align-items: center; gap: 5px; }
+
+/* Correcting a title. Extraction is ~93% right, so roughly one paper in
+   fourteen is filed under the wrong name, and Library is the only place a
+   user can fix it. */
+.doc-rename {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.doc-rename input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm, 0.35rem);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.doc-rename-btn {
+  border: none;
+  background: none;
+  padding: 0.15rem;
+  margin-left: 0.4rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-base), color var(--transition-base);
+  vertical-align: middle;
+}
+
+/* Hidden until the row is hovered: every paper carries one, and fifty pencils
+   down the page is noise. Focus-visible keeps it reachable by keyboard. */
+.doc-item:hover .doc-rename-btn,
+.doc-rename-btn:focus-visible {
+  opacity: 1;
+}
+
+.doc-rename-btn:hover {
+  color: var(--accent-primary);
+}
+
+.doc-title .badge {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+}
+
+.doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.doc-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 32ch;
+}
+
+/* The "needs attention" note sits above its button, not under a list. */
+.panel-note-top {
+  margin: 0 0 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* An empty state for the worklist filter, so "show only these" never lands on
+   a blank card with no way back. */
+.kb-filter-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}

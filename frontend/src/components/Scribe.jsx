@@ -4,7 +4,6 @@ import {
   Save, Play, Download, Sparkles, FileText, Loader2, BookOpen, ChevronDown,
 } from 'lucide-react';
 import { papersApi, documentsApi, projectFilesApi, useLlmBusy } from '../utils/api';
-import PageHeader from './PageHeader';
 import FileTree from './FileTree';
 import { isImage, isPdf } from '../utils/filekind';
 import useSplitter from '../utils/useSplitter';
@@ -475,11 +474,7 @@ export default function Scribe() {
   };
 
   return (
-    <div>
-      <PageHeader
-        title="Scribe"
-      />
-
+    <div className="pw-page">
       {error && (
         <div className="toast error" style={{ position: 'static', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>
           {error}

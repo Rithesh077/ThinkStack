@@ -435,3 +435,53 @@ publisher cover pages, submissions too new to carry a stamp. More rules will not
 clear it. The established answer is a classifier over the same layout features —
 which is what GROBID does, and is where I would stop expecting this approach to
 improve.
+
+## Supporting work on Library
+
+**Library is Jitvan's module** — the screen, the document list, the encryption
+controls and the overview panels are his. This section records what I changed
+underneath them, because the faults were in layers I own (the model registry
+contract, the ingest queue, the shell's layout) rather than in his interface.
+
+The panel meant to show which model was in use did this:
+
+```js
+models.find((m) => m.status === 'ready') || models[0]
+```
+
+`'ready'` is not a status our backend emits — it says `'present'` — so the find
+never matched and it silently fell through to whichever model was first. But
+the deeper problem is that the question has no single answer. Routing is **per
+task**, and which entry serves a task depends on every other entry. The backend
+already computes that and had said so in a comment I wrote weeks earlier:
+*"computed here, not in the UI: duplicating that rule in javascript would let
+the two drift."* On my machine the 1.5B that actually serves Analysis was not
+in the `models` array at all. It reads `routing` now.
+
+Two of the four stat cards had been hardcoded `-` since they were written, and
+a lone `-` was also standing in for "loading" and for "the request failed". The
+same shape as the metadata guard from the day before: one value covering
+several distinct facts, so the one you need cannot be seen.
+
+The layout taught me something I did not expect. Scribe and LitGraph sized
+themselves with `calc(100vh - 11rem)`, commented *"the header is ~2.1rem of
+title plus its margin"*. That is a constant standing in for a measurement, and
+it went wrong the moment we removed the page titles — silently, as a strip of
+dead space. I replaced it with `flex: 1` and **broke it worse**, because there
+is an unclassed `motion.div` between `<main>` and the page and a flex chain
+dies at the first link that isn't a flex parent. Both pages collapsed to the
+height of their own content, and I only found out from a screenshot.
+
+The lesson is narrow and I want to keep it: **I swapped a mechanism without
+checking what it sat inside.** The old code was fragile, but it was fragile in
+a way that worked; my replacement was correct in principle and wrong in that
+DOM. Three rounds of the same mistake followed — filling a column whose
+neighbour then grew taller, then equalising panels with unequal content —
+before I stopped positioning things by assumption and made the layout flow.
+
+Also worth recording: the frontend unit tests froze the machine for an hour
+during a push. Not a big suite — 175 tests, five seconds. Vitest defaults to
+one worker per core, and on a 16-core laptop already running an editor that is
+sixteen node processes each with its own jsdom. `preflight.sh` now passes
+`--no-file-parallelism` locally; CI runners are small enough not to need it.
+The checks were never the problem, the concurrency was.
