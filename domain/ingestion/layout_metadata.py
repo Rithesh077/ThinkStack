@@ -19,10 +19,14 @@ from dataclasses import dataclass, field
 from domain.ingestion.layout import Row, content_rows
 from domain.ingestion.models import PageLayout
 
-MARGIN_FRACTION = 0.08   # left of this is margin furniture, not content
+# Left of this is margin furniture. Kept small on purpose: rotation already
+# excludes the arXiv stamp, and a centred title's first line is its widest, so
+# 0.08 was cutting the top line off titles that start at x0=43.8 on a 595pt page.
+MARGIN_FRACTION = 0.04
 TITLE_ZONE = 0.45        # below this, the biggest text is a section heading
 SIZE_TOLERANCE = 0.6     # points; within it, one visual block
 AUTHOR_ZONE = 0.6        # below this, body text -- backstop when "Abstract" is absent
+PROSE_WORDS = 12         # a nameless row this long, after the authors, is the abstract
 
 # Words that make a ROW an affiliation. Structural only: what an institution's
 # name is BUILT from, never an employer's name. Google/Tsinghua/Mistral is an
@@ -112,6 +116,9 @@ def _fold(word: str) -> str:
 
 
 def _names_an_institution(text: str) -> bool:
+    # Tried and reverted: treating a bare acronym ("IEEE") as an institution
+    # too. It fixes "Wang, Senior Member, IEEE" and costs more elsewhere --
+    # 85.7% -> 83.9% exact author lists over the 56-paper sample.
     return any(_fold(w) in AFFILIATION_WORDS for w in _WORDS.findall(text.lower()))
 
 
@@ -132,24 +139,35 @@ def _is_byline(parts: list[str]) -> bool:
             and any(_names_an_institution(p) for p in parts[1:]))
 
 
-def _names_in(row: Row) -> list[str]:
-    """Every name on a row, however that row separates them.
-
-    Three layouts, all real, all met in `local/testpapers/`:
-
-        Name | Name | Name        columns          resnet, attention
-        Name, Name, Name          one centred cell ieee_a
-        NAME, Institution, USA    one per row      acmart
-    """
+def _names_among(texts: list[str]) -> list[str]:
     found = []
-    for cell in row.cells:
-        parts = _parts(cell.text)
+    for text in texts:
+        parts = _parts(text)
         if _is_byline(parts):
             found.append(parts[0])
             continue
         found.extend(p for p in parts
                      if looks_like_name(p) and not _names_an_institution(p))
     return found
+
+
+def _names_in(row: Row) -> list[str]:
+    """Every name on a row, whichever way that row separates them.
+
+        Name | Name | Name        columns             resnet, llama2
+        Name, Name, Name          one centred cell    ieee_a
+        NAME, Institution, USA    one per row         acmart
+        Name and Name             wide word spacing   RevTeX
+
+    The last one is why both readings are tried. RevTeX sets a centred author
+    line with spacing wide enough to look like columns, so "Roo Dunnill and
+    Mina Doosti" arrives as five cells and no cell is a name. Read as one
+    string it splits on "and" into two. Whichever finds more names wins, and
+    no gap threshold has to be right for every template.
+    """
+    by_cell = _names_among([c.text for c in row.cells])
+    by_line = _names_among([row.text])
+    return by_line if len(by_line) > len(by_cell) else by_cell
 
 
 def _is_affiliation(row: Row) -> bool:
@@ -275,7 +293,16 @@ def walk(page: PageLayout) -> list[RowTrace]:
 
         names = _names_in(row)
         if not names:
-            trace.append(RowTrace(row, "skipped", "no cell is shaped like a name"))
+            # Prose after the authors is the abstract, whether or not the word
+            # is printed. RevTeX and APS templates run straight from the
+            # affiliations into the text, so waiting for an "Abstract" heading
+            # meant scanning down into the section headings and collecting
+            # "I. Introduction" as an author.
+            if band_size is not None and len(row.text.split()) > PROSE_WORDS:
+                stopped = True
+                trace.append(RowTrace(row, "stop", "prose -- the abstract, unlabelled"))
+            else:
+                trace.append(RowTrace(row, "skipped", "no cell is shaped like a name"))
             continue
 
         # The author row sets the size; a later row at another size is prose.
