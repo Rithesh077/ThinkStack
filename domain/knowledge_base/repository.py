@@ -129,6 +129,29 @@ def get_collection_stats() -> dict:
     }
 
 
+def update_document_metadata_field(doc_id: str, field: str, value) -> int:
+    """Set one metadata field on EVERY chunk of a document. Returns the count.
+
+    Bibliographic metadata is copied onto each chunk so a search hit can name
+    its paper without a second lookup. The cost is that correcting a title is
+    not one write: miss a chunk and the same paper answers to two titles
+    depending on which passage matched.
+    """
+    store = get_vector_store()
+    existing = store.get(where={"doc_id": doc_id})
+    ids = existing.get("ids") or []
+    if not ids:
+        return 0
+
+    metadatas = existing.get("metadatas") or [{} for _ in ids]
+    for meta in metadatas:
+        meta[field] = value
+
+    store.update(ids=ids, metadatas=metadatas)
+    logger.info("updated %s on %d chunks of %s", field, len(ids), doc_id)
+    return len(ids)
+
+
 def update_chunk_metadata_field(chunk_id: str, field: str, value) -> None:
     """Set one metadata field on one chunk, leaving text and embedding alone.
 

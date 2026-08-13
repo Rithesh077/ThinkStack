@@ -448,6 +448,86 @@ third bug of the same shape found in a month -- the graphics advice gated on
 and this. When the model does run it is handed font sizes rather than the flat
 text, because a model given the same evidence makes the same mistake.
 
+## 2026-08-13: the interface reads the backend's answer, never recomputes it
+
+**Context.** Library's "Bench in use" panel did
+`models.find((m) => m.status === 'ready') || models[0]`.
+
+**Decision.** Read `routing` from the registry payload, one row per task. The
+UI does not decide which model serves a request.
+
+**Consequences.** `'ready'` is not a status this backend emits -- it says
+`'present'` -- so the find never matched and every render silently fell through
+to `models[0]`. Worse, the question has no single answer: routing is per task,
+and which entry serves one depends on every other entry (assignment, size
+against the memory free right now, rank). `routes_registry.py:186` had already
+written this down: *"computed here, not in the UI: it depends on every other
+entry, and duplicating that rule in javascript would let the two drift."* On
+this machine the 1.5B that serves Analysis was not in `models` at all. Anything
+the backend computes from global state is read, not re-derived.
+
+## 2026-08-13: a dash is not a number, and three states are not one
+
+**Context.** Two of Library's four stat cards were hardcoded `-`. The other
+panels rendered `-` for "loading", for "nothing yet", and for "the request
+failed" alike.
+
+**Decision.** Counts come from the call Library already makes. Absent, empty
+and failed are rendered as three different things.
+
+**Consequences.** "Analyses Run" and "Gaps Found" had never displayed a number
+in any release, which reads as broken software on the first screen a user sees.
+`gaps` is the newest run rather than a running total: a scan covers the whole
+library and supersedes the one before it, so summing every run counts the same
+gap once per rescan and only ever climbs. This is the same shape as the
+metadata guard from the day before -- a single value standing in for several
+distinct facts, so the interesting one cannot be seen.
+
+## 2026-08-13: a pane takes the height it is given
+
+**Context.** Scribe and LitGraph sized themselves with `calc(100vh - 11rem)`
+and `calc(100vh - 3rem)`, commented "the header is ~2.1rem of title plus its
+margin".
+
+**Decision.** The workspace is the viewport and its own scroll container.
+Panes declare `flex: 1`, and the height is handed down `<main>` ->
+`.page-frame` -> the page.
+
+**Consequences.** A constant standing in for a measurement is wrong the moment
+anything above it changes, and it fails silently -- removing the page titles
+left a strip of dead space at the bottom of Scribe with nothing to indicate
+why. It also has to be re-guessed per page, which is why there were two
+different constants for the same idea.
+
+The route transition wrapper had to be given a class. It sits between `<main>`
+and the page, and `flex: 1` resolves against the nearest flex parent: with an
+unclassed block in the chain both pages collapsed to the height of their own
+content. The height has to be passed at every step, and a missing link is
+invisible until it is rendered.
+
+**Library declares `fills` as well**, reversing the 2.1.9 decision that it
+should keep a measure. That rule is about PROSE -- a line set 1900px wide is
+unreadable. Bench is read and keeps its measure; Library is counts, panels and
+a list, and capping it left a third of a wide window empty.
+
+## 2026-08-13: the page titles go, and Library introduces the others
+
+**Context.** Every screen carried a heading repeating the nav item that was
+already highlighted.
+
+**Decision.** No page titles. Library carries a collapsible list of what the
+other screens are for, generated from `features.js`.
+
+**Consequences.** "LitGraph" and "Scribe" mean nothing to someone who has just
+installed this, and each page's own "i" cannot help -- you have to already be
+there, and you will not open a screen whose name tells you nothing. Saying it
+once on the page everyone lands on is what lets the headings go, and Scribe
+gets that strip back for its editor. Generated from `features.js` so a new
+feature appears without anyone remembering, and so the wording cannot drift
+from the "i" guide reading the same field. It expands only for someone who has
+never run the app: introducing an existing user to their own workspace after an
+update reads as a regression.
+
 ## 2026-08-12: the extractor is scored on papers nobody here chose
 
 **Context.** A curated test set proves the rules match the papers the rules

@@ -15,14 +15,18 @@
 .lg-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 3rem);
+  /* Height comes from the workspace container, which is the viewport. It used
+     to be calc(100vh - 3rem): a constant that had to be re-guessed whenever
+     the padding or the page header changed. */
+  flex: 1;
+  min-height: 0;
 }
 
 .lg-root {
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
-  height: calc(100vh - 3rem);
+  min-height: 0;
 }
 
 .lg-page > .lg-root {

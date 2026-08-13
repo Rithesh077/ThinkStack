@@ -10,6 +10,7 @@ import logging
 from dataclasses import asdict
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 
 from infrastructure.file_manager import (
@@ -27,8 +28,10 @@ from domain.knowledge_base.repository import (
     get_chunks_by_doc_id,
     delete_chunks_by_doc_id,
     get_collection_stats,
+    update_document_metadata_field,
 )
 from infrastructure.analysis_cache import doc_analysis_cache
+from infrastructure.gap_history import gap_history
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -156,10 +159,18 @@ async def list_documents():
             "metadata": doc_metadata,
         })
 
+    # The library dashboard's other two figures, in the call it already makes.
+    # `gaps` is the newest run rather than a running total: a gap scan covers
+    # the whole library and supersedes the one before it, so summing every run
+    # would count the same gap once per rescan and only ever climb.
+    latest_gap_run = (gap_history.list() or [{}])[0]
+
     return {
         "documents": documents,
         "total": len(documents),
         "total_chunks": stats["total_chunks"],
+        "analyses": doc_analysis_cache.count(),
+        "gaps": latest_gap_run.get("total_gaps", 0),
     }
 
 
@@ -233,6 +244,32 @@ async def get_document_pdf(doc_id: str):
         filename=path.name,
         content_disposition_type="inline",
     )
+
+
+class TitleUpdate(BaseModel):
+    title: str
+
+
+@router.patch("/{doc_id}/title")
+async def rename_document(doc_id: str, body: TitleUpdate):
+    """Correct a paper's title.
+
+    Extraction is right about 93% of the time, which means roughly one paper
+    in fourteen is stored under something wrong -- and that title is what
+    labels the paper everywhere else, including every node on the LitGraph
+    map. This is the only place a user can repair it.
+    """
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title cannot be empty")
+    if len(title) > 300:
+        raise HTTPException(status_code=400, detail="title is too long")
+
+    updated = update_document_metadata_field(doc_id, "title", title)
+    if not updated:
+        raise HTTPException(status_code=404, detail="document not found")
+
+    return {"doc_id": doc_id, "title": title, "chunks_updated": updated}
 
 
 @router.delete("/{doc_id}")
