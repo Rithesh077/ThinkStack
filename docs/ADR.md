@@ -369,6 +369,180 @@ it never opened. Papers can now be split across section files and keep a `.bib`
 beside them. Build artefacts are hidden from the tree; they are regenerated and
 mean nothing to an author.
 
+## 2026-08-12: a title is the biggest text on page 1, not the first line
+
+**Context.** `_extract_title` kept any of the first ten lines longer than ten
+characters, and `_extract_authors` matched two capitalised words. Both read
+`extract_text()`, which flattens a PDF into a string.
+
+**Decision.** `pdf_parser.extract_layout()` returns spans carrying size,
+position and baseline. The title is the largest horizontal text in the top of
+page 1; the authors are the rows beneath it.
+
+**Consequences.** A PDF has no title field -- 18 papers checked, every one
+carries only a creation date in its Info dictionary. What it has is glyphs
+with sizes, and the typesetter already encoded the answer in them. Flattening
+to a string throws away the only signal there was, which is why the old
+version returned Google's copyright notice as the title of *Attention Is All
+You Need* and 2014 as its year. No language change fixes that: the same regex
+returns `Google Brain` just as confidently in Rust. Measured cost of the whole
+pipeline is 6 ms extract, 1 ms metadata, against 3073 ms to embed.
+
+## 2026-08-12: geometry is a separate module from bibliography
+
+**Context.** The rules were accumulating inside two functions that both knew
+about fonts and about what a title is.
+
+**Decision.** `layout.py` turns spans into rows of cells and knows nothing
+about papers. `layout_metadata.py` decides what a title or an author is.
+
+**Consequences.** Three of the four worst bugs were geometry, not
+bibliography: rows grouped by bounding-box top instead of baseline split a
+small-caps title into `A : A M S O`; a font change mid-word inserted a space
+into `ADAM`; a loose accent glyph left `Doll ´ar` unsearchable. None of those
+are about papers, and none of them are visible while reading a function that
+is also deciding whether something is an author.
+
+## 2026-08-12: affiliations are removed by structure, never by naming employers
+
+**Context.** The obvious filter is a list of institutions. Google, Tsinghua,
+Mistral, NAVER -- a list that is always incomplete and always dating.
+
+**Decision.** Three rules, none naming a company. A *structural* word
+(university, institute, research) condemns a whole row. A short all-caps token
+beside ordinary words is an acronym, and disqualifies the candidate as a name.
+A phrase printed twice in the author band is an address, because a name
+appears once per paper.
+
+**Consequences.** The row-level test is what lets the word list stay small:
+attention.pdf's affiliation row is `Google Brain | Google Brain | Google
+Research | Google Research`, and only two of those four cells carry a listed
+word -- "Brain" is not in the list and never will be. The repetition rule
+needs no vocabulary at all, and is the only one that separates "United
+Kingdom" from "Kaiming He", which are identical to any test of spelling.
+Ablated: without the word list, 4 of 7 papers instead of 7 of 7, and it only
+ever admits extra rows -- it never loses a name.
+
+The acronym rule applies only to mixed-case text. A wholly capitalised
+candidate is a typesetting choice, not an abbreviation: acmart sets every
+byline that way, and `ANDREW CHU` was being read as an acronym.
+
+Tried and reverted, with the numbers kept in a comment so it is not re-added
+on the strength of the one case it helps: treating a bare acronym (`IEEE`) as
+an institution. It fixes `Wang, Senior Member, IEEE` and costs more elsewhere,
+85.7% down to 83.9% exact author lists.
+
+## 2026-08-12: a plausibility check, because the failure mode is not silence
+
+**Context.** An SLM fallback existed and was guarded on `not metadata.title`.
+It never once ran.
+
+**Decision.** `metadata_is_plausible()` replaces the emptiness test: a usable
+result needs a title that is not boilerplate *and* at least one author.
+
+**Consequences.** The regex never returned empty. It returned wrong, and
+confidently. A guard that tests for silence cannot catch that, so the better
+path was unreachable on exactly the papers it existed to rescue. This is the
+third bug of the same shape found in a month -- the graphics advice gated on
+`vram_gb`, the updater reading a missing `window.confirm` as "user declined",
+and this. When the model does run it is handed font sizes rather than the flat
+text, because a model given the same evidence makes the same mistake.
+
+## 2026-08-13: the interface reads the backend's answer, never recomputes it
+
+**Context.** Library's "Bench in use" panel did
+`models.find((m) => m.status === 'ready') || models[0]`.
+
+**Decision.** Read `routing` from the registry payload, one row per task. The
+UI does not decide which model serves a request.
+
+**Consequences.** `'ready'` is not a status this backend emits -- it says
+`'present'` -- so the find never matched and every render silently fell through
+to `models[0]`. Worse, the question has no single answer: routing is per task,
+and which entry serves one depends on every other entry (assignment, size
+against the memory free right now, rank). `routes_registry.py:186` had already
+written this down: *"computed here, not in the UI: it depends on every other
+entry, and duplicating that rule in javascript would let the two drift."* On
+this machine the 1.5B that serves Analysis was not in `models` at all. Anything
+the backend computes from global state is read, not re-derived.
+
+## 2026-08-13: a dash is not a number, and three states are not one
+
+**Context.** Two of Library's four stat cards were hardcoded `-`. The other
+panels rendered `-` for "loading", for "nothing yet", and for "the request
+failed" alike.
+
+**Decision.** Counts come from the call Library already makes. Absent, empty
+and failed are rendered as three different things.
+
+**Consequences.** "Analyses Run" and "Gaps Found" had never displayed a number
+in any release, which reads as broken software on the first screen a user sees.
+`gaps` is the newest run rather than a running total: a scan covers the whole
+library and supersedes the one before it, so summing every run counts the same
+gap once per rescan and only ever climbs. This is the same shape as the
+metadata guard from the day before -- a single value standing in for several
+distinct facts, so the interesting one cannot be seen.
+
+## 2026-08-13: a pane takes the height it is given
+
+**Context.** Scribe and LitGraph sized themselves with `calc(100vh - 11rem)`
+and `calc(100vh - 3rem)`, commented "the header is ~2.1rem of title plus its
+margin".
+
+**Decision.** The workspace is the viewport and its own scroll container.
+Panes declare `flex: 1`, and the height is handed down `<main>` ->
+`.page-frame` -> the page.
+
+**Consequences.** A constant standing in for a measurement is wrong the moment
+anything above it changes, and it fails silently -- removing the page titles
+left a strip of dead space at the bottom of Scribe with nothing to indicate
+why. It also has to be re-guessed per page, which is why there were two
+different constants for the same idea.
+
+The route transition wrapper had to be given a class. It sits between `<main>`
+and the page, and `flex: 1` resolves against the nearest flex parent: with an
+unclassed block in the chain both pages collapsed to the height of their own
+content. The height has to be passed at every step, and a missing link is
+invisible until it is rendered.
+
+**Library declares `fills` as well**, reversing the 2.1.9 decision that it
+should keep a measure. That rule is about PROSE -- a line set 1900px wide is
+unreadable. Bench is read and keeps its measure; Library is counts, panels and
+a list, and capping it left a third of a wide window empty.
+
+## 2026-08-13: the page titles go, and Library introduces the others
+
+**Context.** Every screen carried a heading repeating the nav item that was
+already highlighted.
+
+**Decision.** No page titles. Library carries a collapsible list of what the
+other screens are for, generated from `features.js`.
+
+**Consequences.** "LitGraph" and "Scribe" mean nothing to someone who has just
+installed this, and each page's own "i" cannot help -- you have to already be
+there, and you will not open a screen whose name tells you nothing. Saying it
+once on the page everyone lands on is what lets the headings go, and Scribe
+gets that strip back for its editor. Generated from `features.js` so a new
+feature appears without anyone remembering, and so the wording cannot drift
+from the "i" guide reading the same field. It expands only for someone who has
+never run the app: introducing an existing user to their own workspace after an
+update reads as a regression.
+
+## 2026-08-12: the extractor is scored on papers nobody here chose
+
+**Context.** A curated test set proves the rules match the papers the rules
+were written against.
+
+**Decision.** `local/eval_metadata.py` samples papers across 15 arXiv
+categories through the API and scores against arXiv's own metadata.
+
+**Consequences.** The curated 18 were 100%; the random 56 were 62.5%, and the
+gap was entirely templates nobody had looked at -- RevTeX spacing wide enough
+to read as columns, APS running from affiliations into an unlabelled abstract,
+and a margin cutoff that was deleting the first line of any centred title.
+Fixing those took the sample to 92.9% titles and 85.7% exact author lists. A
+number from papers you picked measures your test set, not your extractor.
+
 ## 2026-08-09: the advice asks Vulkan, not nvidia-smi
 
 **Context.** Two detectors answer "is there a GPU here". `vram_gb` comes from

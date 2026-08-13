@@ -26,6 +26,86 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Every paper in the library had the wrong title, authors and year.** The
+  extractor read the document as flat text and kept any of the first ten lines
+  over ten characters as the title, then took any two capitalised words as an
+  author. On *Attention Is All You Need* the stored title was Google's copyright
+  notice, the author list contained "Google Brain" and the paper's own title, and
+  the year was 2014 — the first four-digit number on the page, three years before
+  the paper. That metadata labels every node on the LitGraph map.
+
+  A PDF is not text: it is glyphs carrying a size and a position, and the title
+  is the largest horizontal text at the top of page 1 with the authors on the
+  rows beneath it. `extract_text()` throws all of that away. Title and authors
+  are now read from the layout, the year comes from the arXiv identifier or a
+  stated copyright line, and a year the paper does not state is left **empty**
+  rather than guessed.
+
+  Measured against 56 papers sampled at random across 15 arXiv categories, with
+  arXiv's own metadata as ground truth: **92.9% of titles, 85.7% of author lists
+  exactly right (no extras), 92.9% of years**. Author lists no longer contain
+  employers, addresses, email fragments or the paper's own title.
+
+- **The fallback that could never run.** A small-language-model path existed for
+  papers the regex could not handle, guarded on the title being *empty*. The
+  regex never returned empty — it returned wrong — so the guard never fired on a
+  single paper it existed to rescue. A plausibility check replaces it: a usable
+  result needs a title that is not boilerplate *and* at least one author. When
+  the model does run it is now given the page's font sizes rather than the same
+  flat text that misled the regex, and it may fill a missing field but never
+  overwrite a good one.
+
+- **Ligatures and accents reached the search index.** "Efficient" is stored in a
+  PDF as the single glyph `U+FB01`, and TeX writes an accent as its own glyph
+  *before* its letter, so "Dollár" arrived as `Doll ´ar`. Both are normalised at
+  parse time; before this, neither surname nor title could be searched for.
+
+- **Library's overview reported things it did not know.** "Bench in use" read
+  the model list and took the first entry whose status was `ready` — a status
+  the backend does not emit; it says `present` — so it always fell through to
+  whichever model happened to be first. There is no active model: routing is
+  per task, and the 1.5B that actually serves Analysis was not in that array at
+  all. It now reads the routing table the backend already computes, one row per
+  task. "Analyses Run" and "Gaps Found" had been hardcoded to `-` since they
+  were written and now carry real counts. A lone `-` also meant three different
+  things — loading, empty, and *the request failed* — which are now told apart.
+
+- **Nothing showed that ingestion was still working.** Analysis is queued after
+  the upload responds, so a user was told "ingested", opened LitGraph, found it
+  empty, and had no way to know a model was still running. Library now shows the
+  queue and refreshes when it drains.
+
+- **A wrong title could not be corrected.** Rows showed the filename, so the
+  extracted title — which labels the paper everywhere else, including every
+  LitGraph node — was never even visible. It is now shown and editable, and
+  "Needs Attention" names the papers missing an author list or a year.
+
+### Changed
+
+- **Page titles are gone from all four screens.** The nav says where you are,
+  the brand mark follows it, and Library now introduces the others by name. A
+  heading reading "Scribe" above Scribe only cost the editor a strip of height.
+- **Scribe and LitGraph fill the window properly.** Both sized themselves with
+  `calc(100vh - 11rem)` — a guess at the chrome above them, which was silently
+  wrong the moment the title was removed. They now take the height they are
+  given. Library takes the full width too: the 1400px measure exists so prose is
+  not set 1900px wide, which is not a problem a dashboard has.
+
+### Known limitations
+
+- 43 of those 56 papers are exactly right on title, authors *and* year together.
+  Mathematics inside a title, publisher cover pages that precede the paper, and
+  submissions too new to carry an arXiv stamp still defeat it.
+- Library's ingestion progress is per *batch* ("analysing paper 2 of 5"), not
+  per document. Saying which row is being analysed needs the document id on the
+  job record.
+
+---
+
 ## [2.1.10] — 2026-08-09
 
 ### Fixed

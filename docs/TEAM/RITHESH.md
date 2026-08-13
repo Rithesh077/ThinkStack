@@ -376,8 +376,112 @@ LitGraph map.
 I found it by refusing to build citations on a layer I could not vouch for, and
 tracing one real PDF through every stage instead. The fix is not a rewrite: the
 title is the largest horizontal text near the top of page one, which PyMuPDF
-already knows and `extract_text()` throws away by flattening to a string. Fifteen
-lines got three of three published papers exactly right.
+already knows and `extract_text()` throws away by flattening to a string.
 
 The lesson I want to keep: **`0.0`, `False` and `""` are values, not absences.**
 Every one of these bugs was a guard that could not tell the difference.
+
+## Metadata extraction, and a number that was worth nothing
+
+I rebuilt the extractor to read the page rather than a string, and split it in
+two: one module that turns glyphs into rows of cells and knows nothing about
+papers, and one that decides what a title or an author is.
+
+The split earned itself immediately. Three of the four worst bugs were geometry,
+not bibliography — rows grouped by the top of their bounding box instead of the
+baseline they share, which turned a small-caps title into `A : A M S O`; a font
+change mid-word, which put a space inside `ADAM`; and an accent stored as its own
+glyph *before* its letter, leaving `Doll ´ar` where `Dollár` should be. None of
+those are about research papers, and none are visible inside a function that is
+also asking whether something is a name.
+
+I pushed back on one thing hard: the obvious way to drop employers from author
+lists is a list of employers. Google, Tsinghua, Mistral, NAVER — it is never
+finished and it dates. We used structure instead. A *structural* word
+(university, institute, research) condemns a whole row, not one cell, because
+attention.pdf's affiliation row is `Google Brain | Google Brain | Google Research
+| Google Research` and only half of those cells carry a word any list would hold.
+The rule I am most pleased with is mine: **a phrase printed twice in the author
+band is an address, because a name appears once per paper.** It needs no
+vocabulary at all, and it is the only thing that separates "United Kingdom" from
+"Kaiming He" — identical to any test of spelling.
+
+Then the part I did not expect. On our test papers it was perfect: every title,
+year and author exact. I asked for it to be tested on real papers we had not
+picked, so we sampled 56 across 15 arXiv categories through the API and scored
+against arXiv's own records. **62.5%.**
+
+Every point of that gap was a typesetting convention nobody had looked at. One
+physics template spaces a centred author line widely enough to read as columns,
+so two authors arrived as five fragments and none of them was a name. Another
+runs from affiliations straight into the abstract with no heading, so the search
+carried on into the body and collected `I. Introduction` as an author. And a
+margin cutoff I had added to kill an arXiv stamp was deleting the first line of
+any centred title wide enough to start left of it. Fixing those took it to
+**92.9% of titles and 85.7% of author lists exact**.
+
+Our test set was not dishonest. It was one field, and a template is a convention
+of a field. **A number measured over material you chose yourself describes your
+choice, not your method.** That is the thing I want to remember from this more
+than any of the rules.
+
+I also stopped a change that looked like a win: counting a bare acronym like
+`IEEE` as an institution fixes `Wang, Senior Member, IEEE` and costs more
+elsewhere — 85.7% down to 83.9%. It is reverted, with the numbers in a comment,
+so nobody re-adds it on the strength of the one case it helps.
+
+What is left is a long tail of the same kind: mathematics inside titles,
+publisher cover pages, submissions too new to carry a stamp. More rules will not
+clear it. The established answer is a classifier over the same layout features —
+which is what GROBID does, and is where I would stop expecting this approach to
+improve.
+
+## Supporting work on Library
+
+**Library is Jitvan's module** — the screen, the document list, the encryption
+controls and the overview panels are his. This section records what I changed
+underneath them, because the faults were in layers I own (the model registry
+contract, the ingest queue, the shell's layout) rather than in his interface.
+
+The panel meant to show which model was in use did this:
+
+```js
+models.find((m) => m.status === 'ready') || models[0]
+```
+
+`'ready'` is not a status our backend emits — it says `'present'` — so the find
+never matched and it silently fell through to whichever model was first. But
+the deeper problem is that the question has no single answer. Routing is **per
+task**, and which entry serves a task depends on every other entry. The backend
+already computes that and had said so in a comment I wrote weeks earlier:
+*"computed here, not in the UI: duplicating that rule in javascript would let
+the two drift."* On my machine the 1.5B that actually serves Analysis was not
+in the `models` array at all. It reads `routing` now.
+
+Two of the four stat cards had been hardcoded `-` since they were written, and
+a lone `-` was also standing in for "loading" and for "the request failed". The
+same shape as the metadata guard from the day before: one value covering
+several distinct facts, so the one you need cannot be seen.
+
+The layout taught me something I did not expect. Scribe and LitGraph sized
+themselves with `calc(100vh - 11rem)`, commented *"the header is ~2.1rem of
+title plus its margin"*. That is a constant standing in for a measurement, and
+it went wrong the moment we removed the page titles — silently, as a strip of
+dead space. I replaced it with `flex: 1` and **broke it worse**, because there
+is an unclassed `motion.div` between `<main>` and the page and a flex chain
+dies at the first link that isn't a flex parent. Both pages collapsed to the
+height of their own content, and I only found out from a screenshot.
+
+The lesson is narrow and I want to keep it: **I swapped a mechanism without
+checking what it sat inside.** The old code was fragile, but it was fragile in
+a way that worked; my replacement was correct in principle and wrong in that
+DOM. Three rounds of the same mistake followed — filling a column whose
+neighbour then grew taller, then equalising panels with unequal content —
+before I stopped positioning things by assumption and made the layout flow.
+
+Also worth recording: the frontend unit tests froze the machine for an hour
+during a push. Not a big suite — 175 tests, five seconds. Vitest defaults to
+one worker per core, and on a 16-core laptop already running an editor that is
+sixteen node processes each with its own jsdom. `preflight.sh` now passes
+`--no-file-parallelism` locally; CI runners are small enough not to need it.
+The checks were never the problem, the concurrency was.

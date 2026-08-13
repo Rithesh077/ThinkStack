@@ -551,7 +551,8 @@ api/               12 routers: documents, search, graph, analysis, gaps,
                    encryption, papers, paper_files, models, registry, hf,
                    system
 domain/            core logic, one package per capability:
-                     ingestion/       pdf_parser, chunker, metadata_extractor
+                     ingestion/       pdf_parser, layout, layout_metadata,
+                                      chunker, metadata_extractor
                      knowledge_base/  embedding_service, repository
                      search/          semantic search over chunk embeddings
                      analysis/        summarizer, claim_extractor, theme_clusterer
