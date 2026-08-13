@@ -900,6 +900,54 @@ classifier trained over layout features rather than a further accumulation of
 rules. That is what the mature tool in this area does, and it is the point at
 which this approach should be expected to stop improving.
 
+\subsection{13 August: an interface reporting what it had inferred}
+
+The collection screen is one member's work throughout, and it had been extended
+with panels summarising the state of the application: which model was in use,
+how many analyses had run, what was being written. Reviewing the layers beneath
+those panels found that two of the four figures had never displayed a value in
+any release --- they were fixed placeholders --- and that a third was inferred
+rather than read.
+
+The inference is the instructive one. The panel naming the model in use
+searched the list of installed models for the first whose status was
+\emph{ready}. No such status exists; the application reports \emph{present}.
+The search therefore never matched, and the panel silently displayed whichever
+model happened to be first in the list. Beneath that lay a larger error: there
+is no single model in use. Work is routed by task, and which model serves a
+task depends on every other model installed --- what it has been assigned, how
+much memory is free at that moment, and precedence between them. The backend
+computes that and records the reason in a comment written weeks earlier:
+duplicating the rule in the interface would let the two drift. On the
+development machine the larger model that actually performs analysis did not
+appear in the list being searched at all. The panel now reads the routing table
+the backend already produces.
+
+A related fault ran through the same screen: a single dash stood for three
+different facts --- not yet loaded, nothing to report, and the request failed.
+An outage was therefore indistinguishable from an empty library. This is the
+same shape as the extraction guard described above, and the third instance
+recorded this month of one value being asked to carry several meanings.
+
+Two further findings concerned the layout rather than the data. Both of the
+pane-based screens sized themselves by subtracting a constant from the height
+of the window, with a comment estimating the height of the page heading. That
+is a measurement replaced by a guess: when the headings were removed the
+constant was wrong, silently, and the panes stopped reaching the bottom of the
+window. Replacing it with a layout that fills the space it is given failed on
+the first attempt, because the property used to do so resolves against the
+nearest enclosing flexible container and an unclassed wrapper sat between the
+two. Both screens then collapsed to the height of their own contents. The
+correction was to pass the height explicitly at every level.
+
+The lesson recorded is not about the technique. A mechanism was replaced
+without first establishing what it sat inside; the original was fragile, but it
+worked, and the replacement was correct in principle and wrong in that
+structure. The same mistake recurred twice more in the same session ---
+filling a column whose neighbour then grew taller, and equalising panels whose
+contents were not equal --- before the layout was expressed as flow rather than
+as position.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
@@ -932,6 +980,9 @@ artefact validation, and the automated test suite \\
 Model management & Rithesh & hardware capability model, task routing, the
 model registry, and Hugging Face acquisition \\
 \midrule
+Library & Jitvan & the paper collection screen in full --- the document list,
+its expansion and deletion, the encryption controls, and the overview panels
+reporting collection size, the models in use and the drafts in progress \\
 Encryption & Jitvan & at-rest encryption and decryption of stored documents,
 with the key handling and interface around it \\
 Distribution site & Jitvan & the public landing and download page \\
