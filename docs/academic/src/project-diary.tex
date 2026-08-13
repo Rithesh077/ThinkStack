@@ -844,6 +844,62 @@ This metadata labels every node of the literature map. The map has therefore
 been displaying copyright notices where paper titles were intended, in released
 software, for some weeks. It was not reported by anyone.
 
+\subsection{12 August: a measurement that contradicted its own test set}
+
+The repair followed from the diagnosis. Extraction was rebuilt to read the
+positioned glyphs rather than the flattened text, separated into two components:
+one concerned only with page geometry, which groups glyphs into lines and divides
+each line at its column gaps, and one concerned with what a title or an author
+is. The separation was not tidiness. Three of the four most damaging faults were
+geometric and had nothing to do with scholarly documents --- lines grouped by the
+top of their bounding box rather than by the baseline they share, which split a
+title set in small capitals into single letters; a change of font within a word,
+which inserted a space into it; and an accent stored as a separate glyph before
+its letter, which left a surname unsearchable. None of these are visible while
+reading a procedure that is simultaneously deciding whether something is a name.
+
+Removing institutions from author lists was treated as a question of structure
+rather than of vocabulary. A list of employers is never complete and dates
+immediately. Three rules were used instead: a structural word such as
+\emph{university} or \emph{institute} disqualifies an entire line rather than a
+single entry, since a line of affiliations may name only some of them in terms a
+list would recognise; a short capitalised abbreviation standing beside ordinary
+words denotes an organisation; and a phrase printed more than once within the
+author region is an address rather than a person, because a shared address is
+printed once per author while a name is printed once per document. The third rule
+requires no vocabulary of any kind, and is the only one capable of distinguishing
+a country from a surname, the two being indistinguishable by spelling.
+
+The result on the documents used during development was complete: every title,
+year and author list exact. That number was then discovered to be worthless. A
+second measurement was constructed in which neither the documents nor the
+expected answers were chosen by the author: papers were sampled across fifteen
+subject classifications through a public archive interface, and the archive's own
+catalogue records were taken as the expected values. Accuracy on that sample was
+sixty-two percent, against one hundred on the development set.
+
+The entire difference lay in typesetting conventions that had not been examined.
+One physics template spaces a centred author line widely enough that the spacing
+is indistinguishable from column separation, so a line of two authors was read as
+five fragments and none of them as a name. Another runs from the affiliations
+directly into the abstract without printing a heading, so the search for authors
+continued into the body of the paper and collected section headings. A margin
+threshold, introduced to discard an archive's identifier stamp, was discarding
+the first line of any centred title wide enough to begin left of it. Correcting
+these raised the sample to ninety-three percent of titles and eighty-six percent
+of author lists exactly correct.
+
+The lesson is narrower than it first appears. The development set had not been
+chosen dishonestly; it had been chosen from a single field, and a template is a
+convention of a field. A measurement taken over material one has selected
+oneself describes the selection, not the method. The remaining failures ---
+mathematics within a title, publisher cover pages preceding the document, and
+submissions too recent to carry an identifier --- are a long tail of the same
+kind, and the established solution to a long tail of layout conventions is a
+classifier trained over layout features rather than a further accumulation of
+rules. That is what the mature tool in this area does, and it is the point at
+which this approach should be expected to stop improving.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
