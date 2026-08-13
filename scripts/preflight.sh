@@ -267,7 +267,14 @@ if changed_matches '^frontend/'; then
     if command -v npm >/dev/null 2>&1; then
         if [ -d frontend/node_modules ]; then
             run_check "frontend lint"  npm --prefix frontend run lint
-            run_check "frontend tests" npm --prefix frontend test
+            # --no-file-parallelism, which CI does not need and a laptop does.
+            # Vitest defaults to one worker per core; on a 16-core machine that
+            # is 16 node processes each with its own jsdom, and on a developer
+            # box already holding an editor it took the whole machine down --
+            # an hour of recovery to check a suite that takes five seconds in
+            # one thread. CI runners are small enough that the default is fine
+            # there, so this bounds the local run only.
+            run_check "frontend tests" npm --prefix frontend test -- --no-file-parallelism
             # The build is a check in its own right: it produces what ships, and
             # a broken import passes lint but fails here.
             run_check "frontend build" npm --prefix frontend run build
