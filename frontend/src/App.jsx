@@ -1,8 +1,8 @@
 import { useState, useEffect, Suspense, useSyncExternalStore, createElement } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Sun, Moon, RefreshCw, Check, AlertCircle } from 'lucide-react';
-import { systemApi } from './utils/api';
+import { RefreshCw, Check, AlertCircle } from 'lucide-react';
+import { systemApi, documentsApi, analysisApi, gapsApi } from './utils/api';
+import { applyEarned, earned, backfill } from './utils/pigments';
 import { checkForUpdatesInteractive, APP_VERSION } from './utils/updater';
 // Every feature is declared once, here, and the nav / routes / brand mark are
 // all rendered from it. The shell no longer names a single feature.
@@ -15,40 +15,28 @@ import PageGuide from './components/PageGuide';
 import ConfirmDialog from './components/ConfirmDialog';
 import './index.css';
 
-const THEME_KEY = 'ts-theme';
-
-/** resolve the initial theme: stored choice wins, else follow the OS. */
-function getInitialTheme() {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'light' || stored === 'dark') return { theme: stored, explicit: true };
-  } catch {
-    /* localStorage unavailable */
-  }
-  const prefersDark =
-    typeof window !== 'undefined' &&
-    window.matchMedia &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return { theme: prefersDark ? 'dark' : 'light', explicit: false };
-}
-
-/** spring fade+slide+blur applied to each routed page (Apple-like). */
-const pageMotion = {
-  initial: { opacity: 0, y: 16, filter: 'blur(6px)' },
-  animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-  exit: { opacity: 0, y: -12, filter: 'blur(6px)' },
-  transition: { type: 'spring', stiffness: 260, damping: 30, mass: 0.7 },
-};
-
 /**
- * The route transition wrapper.
+ * A page turns; it does not fly in.
  *
- * Classed because it sits between <main> and the page, so a workspace filling
- * the window has to pass its height THROUGH it. Without the class the chain
- * breaks here and `flex: 1` on the page below resolves against nothing.
+ * This used to animate opacity, y AND a blur(6px) filter on a spring. The blur
+ * was the expensive third of it -- a full-page compositing pass every frame of
+ * every navigation, on a machine that is also running a language model -- and
+ * it is the one part of the effect nobody could see.
+ *
+ * What is left is 90ms of opacity, which is a CSS animation (`.page-turn`).
+ * framer-motion drove it until it did not earn the ~100 kB it was adding to the
+ * entry chunk -- charged on first paint, on every route, for three cross-fades
+ * app-wide. The library is worth it for shared-layout transitions, drag physics
+ * or spring-following gestures; this app has none of those, and the one place
+ * with genuinely hard motion (the LitGraph camera) is its own rAF loop and
+ * never used it.
+ *
+ * The exit half goes with it. AnimatePresence held the outgoing page for its
+ * 90ms fade before mounting the next; CSS cannot wait like that, so the old
+ * page now leaves at once and the new one fades in. At 90ms nobody can tell.
  */
 function Page({ children }) {
-  return <motion.div className="page-frame" {...pageMotion}>{children}</motion.div>;
+  return <div className="page-turn">{children}</div>;
 }
 
 /** FirstRunNote needs the router, which only exists below BrowserRouter. */
@@ -60,22 +48,23 @@ function FirstRunBanner() {
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
-      {/* No spinner: a chunk off local disk arrives in a frame or two, and a
-          spinner that flashes for one frame reads as a glitch. */}
-      <Suspense fallback={null}>
-        <Routes location={location} key={location.pathname}>
-          {FEATURES.map(({ id, path, end, Component }) => (
-            <Route key={id} path={path} end={end} element={<Page><Component /></Page>} />
-          ))}
-          {/* Search, Analysis and Gap Finder all became LitGraph. This is a
-              desktop shell, so a stale deep link would otherwise be a dead end. */}
-          <Route path="/search" element={<Navigate to="/litgraph" replace />} />
-          <Route path="/analysis" element={<Navigate to="/litgraph" replace />} />
-          <Route path="/gaps" element={<Navigate to="/litgraph" replace />} />
-        </Routes>
-      </Suspense>
-    </AnimatePresence>
+    /* Keyed on the pathname, which is what remounts the tree on navigation --
+       and therefore what replays `.page-turn`. AnimatePresence used to need
+       this key too, so nothing here changed when it left. */
+    /* No spinner: a chunk off local disk arrives in a frame or two, and a
+       spinner that flashes for one frame reads as a glitch. */
+    <Suspense fallback={null}>
+      <Routes location={location} key={location.pathname}>
+        {FEATURES.map(({ id, path, end, Component }) => (
+          <Route key={id} path={path} end={end} element={<Page><Component /></Page>} />
+        ))}
+        {/* Search, Analysis and Gap Finder all became LitGraph. This is a
+            desktop shell, so a stale deep link would otherwise be a dead end. */}
+        <Route path="/search" element={<Navigate to="/litgraph" replace />} />
+        <Route path="/analysis" element={<Navigate to="/litgraph" replace />} />
+        <Route path="/gaps" element={<Navigate to="/litgraph" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -186,12 +175,37 @@ export default function App() {
   const collapsed = shell.userCollapsed || shell.focus;
   const toggleSidebar = shellStore.toggleSidebar;
 
-  const [{ theme, explicit }, setThemeState] = useState(getInitialTheme);
-
-  // apply the active theme to <html> so every token switches
+  // Paint whatever colour this install has earned, before anything renders.
+  //
+  // An install that predates earned colour has a full library and an empty
+  // earned set, and opening it to a grey app would read as a downgrade rather
+  // than a beginning -- so the first launch after upgrading grants what the
+  // library already proves. backfill() is inert once anything has been earned,
+  // which is why this can run on every start without fighting a real
+  // milestone. See utils/pigments.js.
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    applyEarned();
+    if (earned().length > 0) return;
+    (async () => {
+      try {
+        const [docs, analyses, gaps] = await Promise.all([
+          documentsApi.list(),
+          analysisApi.history(),
+          gapsApi.history(),
+        ]);
+        const gapRuns = gaps.runs || [];
+        backfill({
+          papers: docs.total ?? (docs.documents || []).length,
+          analyses: (analyses.runs || []).length,
+          // A scan that ran but found nothing has not earned the red pen.
+          gaps: gapRuns.reduce((n, r) => n + (r.total_gaps ?? 0), 0),
+        });
+      } catch {
+        /* offline or backend not up yet: the app is simply grey, and the
+           first real milestone will colour it anyway */
+      }
+    })();
+  }, []);
 
   // No update check on launch, deliberately. ThinkStack's premise is that
   // nothing leaves the device; reaching out to GitHub unprompted on every start
@@ -234,27 +248,6 @@ export default function App() {
     setUpdateState(result);
   };
 
-  // track the OS appearance until the user makes an explicit choice
-  useEffect(() => {
-    if (explicit || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e) =>
-      setThemeState((s) => (s.explicit ? s : { theme: e.matches ? 'dark' : 'light', explicit: false }));
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [explicit]);
-
-  const toggleTheme = () =>
-    setThemeState((s) => {
-      const next = s.theme === 'dark' ? 'light' : 'dark';
-      try {
-        localStorage.setItem(THEME_KEY, next);
-      } catch {
-        /* ignore */
-      }
-      return { theme: next, explicit: true };
-    });
-
   useEffect(() => {
     const checkHealth = async () => {
       try {
@@ -269,19 +262,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const isDark = theme === 'dark';
-
   return (
     <>
       {/* The first-run "your machine can run a better model" modal is gone.
           It interrupted whatever the user was doing to offer a model Bench
           already lists, kept its own localStorage record of what had been
           declined, and reappeared during page load after the model it was
-          offering had been dealt with elsewhere. Bench is the one place. */}
-      <div className="ambient-bg">
-        <div className="ambient-orb orb-1"></div>
-        <div className="ambient-orb orb-2"></div>
-      </div>
+          offering had been dealt with elsewhere. Bench is the one place.
+
+          The two blurred orbs that used to sit behind everything are gone too.
+          The paper is the background now. */}
       <BrowserRouter>
         <div className={`app-layout ${collapsed ? 'is-collapsed' : ''}`}>
           <ReleaseFocusOnNavigate />
@@ -320,25 +310,15 @@ export default function App() {
             </nav>
 
             <div className="sidebar-footer">
-              <button
-                className="theme-toggle"
-                onClick={toggleTheme}
-                title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-                aria-label="Toggle color theme"
-              >
-                <span className="theme-toggle-label">
-                  {isDark ? <Moon size={16} /> : <Sun size={16} />}
-                  {isDark ? 'Dark' : 'Light'}
-                </span>
-                <span className="theme-switch">
-                  <span className="theme-knob" />
-                </span>
-              </button>
 
               <div className="status-indicator">
                 <div className={`status-dot ${llmStatus !== 'connected' ? 'disconnected' : ''}`} />
+                {/* "local · slm" used to sit here with margin-left: auto,
+                    which in a 196px margin pushed it onto a line of its own.
+                    It is also not news: everything in this app runs locally,
+                    and the first-run note says so once. The dot and the words
+                    are the whole signal. */}
                 <span>{llmStatus === 'connected' ? 'System Online' : `LLM: ${llmStatus}`}</span>
-                <span className="status-meta">local · slm</span>
               </div>
 
               {/* The model prompt is asked once, so there has to be a way back

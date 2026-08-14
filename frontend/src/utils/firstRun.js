@@ -36,8 +36,8 @@ const TOUR_KEY = 'thinkstack.library.tour';
  * has already found LitGraph and Scribe, and greeting them with an
  * introduction to their own workspace reads as a regression -- which is why
  * this asks `firstRunNoteSeen()` rather than defaulting to open. That flag is
- * set the moment the first-run banner is dismissed, so the two agree on who
- * is new without keeping separate records of it.
+ * set the moment the first-run note is dismissed, so the two agree on who is
+ * new without keeping separate records of it.
  *
  * Once the user opens or closes it themselves, that choice wins forever.
  */

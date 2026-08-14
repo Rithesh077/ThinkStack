@@ -146,7 +146,7 @@ export default function HuggingFaceBrowser({ tasks, budgetGb, busy, onDownloaded
               <div className="hf-file-main">
                 <span className="hf-file-name">
                   {f.quant || f.filename}
-                  {f.filename === repo.recommended && <em className="catalog-badge">recommended</em>}
+                  {f.filename === repo.recommended && <em className="catalog-badge">Recommended</em>}
                 </span>
                 <span className="hf-file-meta">
                   {f.size_gb ? `${f.size_gb.toFixed(2)} GB` : 'size unknown'}

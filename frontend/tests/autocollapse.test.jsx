@@ -49,7 +49,17 @@ async function mountApp() {
   el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await new Promise((r) => { root.render(<StrictMode><App /></StrictMode>); setTimeout(r, 120); });
+  root.render(<StrictMode><App /></StrictMode>);
+  // The routes are lazy(), so the first mount of a run waits on a real dynamic
+  // import before React commits anything. A fixed sleep raced that: the early
+  // tests in the file got a null <main> and the later ones passed off the
+  // warm module cache, which read as a flake. Wait for the thing we need.
+  const deadline = Date.now() + 5000;
+  while (!el.querySelector('.main-content') && Date.now() < deadline) await flush();
+  // ...then let the route settle: it mounts ReleaseFocusOnNavigate, whose
+  // effect clears the focus collapse. Pressing before that lands means the
+  // collapse under test is undone a tick later by the app's own startup.
+  await new Promise((r) => setTimeout(r, 120));
   return root;
 }
 
@@ -145,10 +155,9 @@ describe('what the collapse is worth', () => {
     expect(shellStore.isCollapsed()).toBe(false);
   });
 
-  // The floating .sidebar-peek button that used to do this is gone. It existed
-  // because the sidebar collapsed to zero width and left nothing to click; it
-  // now collapses to a 64px rail, so the brand logo is still on screen and is
-  // the one control. One affordance, in one place, whatever the state.
+  // The floating .sidebar-peek button is gone. It existed because the sidebar
+  // collapsed to zero width and left nothing to click; it collapses to a 64px
+  // rail now, so the brand mark is still on screen and is the one control.
   //
   // The undo has to survive the action it was undoing. You reopen the nav in
   // order to use the page, so collapsing again on the next press made bringing

@@ -154,3 +154,4 @@ litgraph-app.png
 # and stays tracked.
 /*.png
 .playwright-mcp/
+screenshots/
