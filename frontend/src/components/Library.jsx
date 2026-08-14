@@ -8,6 +8,7 @@ import { libraryTourOpen, setLibraryTourOpen } from '../utils/firstRun';
 import UploadPanel from './UploadPanel';
 import PageHeader from './PageHeader';
 import ConfirmDialog from './ConfirmDialog';
+import { splitAuthors } from '../utils/authors';
 
 // Everything except Library itself: this list sits ON Library, and a page does
 // not introduce itself. Read from FEATURES so a new feature appears here
@@ -47,7 +48,8 @@ export default function Library() {
   const [page, setPage] = useState(0);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [renamingDoc, setRenamingDoc] = useState(null);
-  const [renameValue, setRenameValue] = useState('');
+  const [renameValue, setRenameValue] = useState({ title: '', authors: '', year: '' });
+  const [renameError, setRenameError] = useState('');
 
   // Analysis is queued AFTER the upload responds, so without this the reader is
   // told "read", opens LitGraph, finds it empty, and concludes it is broken.
@@ -136,23 +138,35 @@ export default function Library() {
 
   const startRename = (doc) => {
     setRenamingDoc(doc.doc_id);
-    setRenameValue(doc.metadata?.title || doc.filename || '');
+    setRenameValue({
+      title: doc.metadata?.title || doc.filename || '',
+      authors: doc.metadata?.authors || '',
+      year: doc.metadata?.year || '',
+    });
+    setRenameError('');
   };
 
   const submitRename = async (docId) => {
-    const title = renameValue.trim();
-    if (!title) return;
+    const title = renameValue.title.trim();
+    if (!title) {
+      setRenameError('A paper needs a title.');
+      return;
+    }
+    const authors = splitAuthors(renameValue.authors);
+    const year = renameValue.year.trim();
+
     // Optimistic: the write touches every chunk of the paper and the list is
     // refetched anyway. Waiting to redraw makes a local edit feel remote.
+    const shown = { title, authors: authors.join(', '), year };
     setDocuments((docs) => docs.map((d) => (
-      d.doc_id === docId ? { ...d, metadata: { ...d.metadata, title } } : d
+      d.doc_id === docId ? { ...d, metadata: { ...d.metadata, ...shown } } : d
     )));
     setRenamingDoc(null);
     try {
-      await documentsApi.rename(docId, title);
+      await documentsApi.correct(docId, { title, authors, year });
     } catch (err) {
-      console.error('failed to rename document:', err);
-      loadDocuments();   // put the stored title back
+      console.error('failed to correct the reference:', err);
+      loadDocuments();   // put the stored values back
     }
   };
 
@@ -476,34 +490,60 @@ export default function Library() {
                     className="doc-rename"
                     onClick={(e) => e.stopPropagation()}
                     onSubmit={(e) => { e.preventDefault(); submitRename(doc.doc_id); }}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
                   >
                     <input
                       autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
+                      className="doc-edit-title"
+                      value={renameValue.title}
+                      onChange={(e) => setRenameValue((v) => ({ ...v, title: e.target.value }))}
+                      placeholder="Title"
                       aria-label="Paper title"
+                    />
+                    <input
+                      className="doc-edit-authors"
+                      value={renameValue.authors}
+                      onChange={(e) => setRenameValue((v) => ({ ...v, authors: e.target.value }))}
+                      placeholder="Ada Lovelace, Alan Turing"
+                      aria-label="Authors"
+                    />
+                    <input
+                      className="doc-edit-year"
+                      value={renameValue.year}
+                      onChange={(e) => setRenameValue((v) => ({ ...v, year: e.target.value }))}
+                      placeholder="Year"
+                      inputMode="numeric"
+                      maxLength={4}
+                      aria-label="Year"
                     />
                     <button type="submit" className="link-button">Save</button>
                     <button type="button" className="link-button"
                             onClick={() => setRenamingDoc(null)}>Cancel</button>
+                    {/* Says the one rule that is not guessable. A name written
+                        surname-first has a comma in it, and splitting on that
+                        is the bug this whole editor exists to repair. */}
+                    <p className="doc-edit-hint">
+                      {renameError || 'Separate authors with commas — or semicolons if a name contains one.'}
+                    </p>
                   </form>
                 ) : (
+                  <>
                   <span className="doc-title" title={doc.metadata?.title || doc.filename}>
                     <span className="doc-title-text">{doc.metadata?.title || doc.filename}</span>
-                    {/* Extraction is ~93% right, so about one paper in fourteen
-                        is filed under the wrong name -- and that name labels it
-                        on the map too. This is the only place to correct it. */}
+                    {/* Titles are ~93% right and author lists ~86%, so about
+                        one paper in seven is stored wrong -- and that data
+                        labels it on the map, names it in search, and is what
+                        every BibTeX entry is built from. This is the only
+                        place to repair it. */}
                     <button
                       className="doc-rename-btn"
-                      title="Correct this title"
-                      aria-label="Correct this title"
+                      title="Correct this reference"
+                      aria-label="Correct this reference"
                       onClick={(e) => { e.stopPropagation(); startRename(doc); }}
                     >
                       <Pencil size={12} />
                     </button>
                   </span>
-                )}
                 {/* Was the chunk count -- a bare "1" that told the reader
                     nothing, being a detail of how we index the text. The
                     authors are what identifies a paper at a glance, and we
@@ -560,6 +600,8 @@ export default function Library() {
                     <ChevronDown size={13} color="var(--text-muted)" />
                   )}
                 </div>
+                </>
+                )}
               </div>
               {/* The opened paper: an indented extract, set in the reading
                   serif, hung off the row it belongs to. It was a nested card

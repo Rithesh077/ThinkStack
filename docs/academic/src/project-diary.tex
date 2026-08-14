@@ -1033,6 +1033,84 @@ panel is drawn above it in the stacking order. Nothing in the change suggested
 a stacking question and nothing in the source indicated one; it was found by
 looking at the screen and observing that the control was not there.
 
+\subsection{14 August: citations, and two failures that printed instead of raising}
+
+The paper editor could compile a document but could not cite one, which for a
+research tool is the omission that matters most. The interaction chosen was
+deliberately not a dialog: an author is already typing when they decide to cite,
+so typing the word \texttt{cite} opens the library beneath the cursor, further
+typing filters it, and pressing Enter replaces the word with a citation command.
+Choosing nothing leaves the word where it was, and an ordinary word compiles, so
+nothing is committed by opening the list.
+
+One planned subsystem was removed before it was built. The intention had been to
+track citation numbers so that the numbering stayed correct as citations moved.
+BibTeX already renumbers every citation on each recompile and orders the
+reference list according to the chosen style, so the entire mechanism was
+available at the cost of emitting keys instead of numbers. It is worth recording
+as a decision because the alternative would have been a second, worse copy of
+something the toolchain performs correctly.
+
+Two defects were found underneath, and they share a shape with the extraction
+defect recorded on 12 August. Neither raised an error.
+
+The first was in storage. Author lists were flattened into the vector store by
+joining them with commas, because the store holds only strings. In a
+bibliography the comma is not a separator between people, it separates a surname
+from a given name, so a list of eight authors read back as sixteen fragments of
+names. Nothing failed. A bibliography does not validate its input; it typesets
+it. The list is now encoded as structured text, and the older form is still read
+so that a library already built does not have to be rebuilt.
+
+The second was that a document containing citations but no bibliography command
+produced neither the references nor an error. The command that prints a
+reference list is also the command that instructs the compiler to run the
+bibliography processor at all, so its absence removed both the output and the
+process that would have produced it. Each citation was typeset as a question
+mark. The compile step now supplies the command when a document cites something
+and the project has a bibliography file to point at, both conditions being
+necessary: naming a file that does not exist converts a working compile into a
+failing one.
+
+A third defect is recorded for the method rather than the cause. The citation
+list did not appear. Every automated test passed, including tests that typed
+into an editor and asserted that the list opened, because those tests run in a
+simulated document object model that computes no layout. Driving the actual
+application and reading the element's position back showed that the list was
+present, populated with every paper in the library, and positioned 1382 pixels
+down a window 1000 pixels tall, inside a region that hides rather than scrolls
+whatever exceeds it. A second cause was found the same way: the compiled
+document displayed beside the editor was drawn above the list, concealing the
+column that held the citation keys.
+
+The lesson is narrow and worth stating exactly. A test environment that omits
+layout cannot fail a layout defect. A feature correct in every respect except
+where it is drawn is, to the person using it, a feature that was never built.
+What this means for the interface suite is set out in the testing document.
+
+\subsection{14 August: repairing what extraction gets wrong}
+
+Extraction identifies titles correctly for about 93 percent of papers and author
+lists for about 86 percent. Roughly one paper in seven is therefore stored under
+something wrong, and that record names the paper on the literature map, in every
+search result, and in every reference generated from it. A citation feature built
+on top of it inherits the error.
+
+The question was where the correction should be made, and the two candidates
+were not equivalent. Editing a document's bibliography repairs that document;
+the next one is generated from the same wrong record and repeats the mistake.
+Editing the library record repairs the source, and every citation, map node and
+search result made afterwards is correct. The library was chosen for that
+reason, and the editor was deliberately left without a second facility of its
+own, since a project's bibliography is already a file in its tree and can be
+opened like any other.
+
+One detail is worth recording because it was nearly got wrong twice in the same
+day. The editing form separates author names on commas, but accepts semicolons
+instead when any are present, because a name written surname first contains a
+comma. Splitting on it is precisely the defect the morning had been spent
+removing from the storage layer.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
@@ -1098,27 +1176,27 @@ automated gate, including changes by the member who wrote those rules.
 \toprule
 \textbf{Measure} & \textbf{Value} \\
 \midrule
-Commits & 237 \\
-Pull requests merged & 43 \\
-Application code (Python) & 11\,686 lines, 74 modules \\
-Test code & 5\,761 lines, 34 modules, 643 tests \\
-Interface tests & 63 tests, including every screen mounted \\
-Interface code & 5\,781 lines, 14 components \\
+Commits & 336 \\
+Pull requests merged & 82 \\
+Application code (Python) & 14\,438 lines, 83 modules \\
+Test code & 8\,375 lines, 46 modules, 1\,042 tests \\
+Interface tests & 213 tests, including every screen mounted \\
+Interface code & 13\,930 lines, 23 components \\
 Desktop shell (Rust) & 777 lines \\
-Build and release tooling & 3\,439 lines, 18 scripts, 6 workflows \\
-REST endpoints & 48 \\
-Architecture decisions recorded & 40 \\
-Releases published & 6, most recently beta v1.9.0 \\
+Build and release tooling & 4\,484 lines, 22 scripts, 7 workflows \\
+REST endpoints & 63 \\
+Architecture decisions recorded & 78 \\
+Releases published & 12, most recently v2.1.15 \\
 Platforms built and validated automatically & 3 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Figures are measured on the working branch at 5 August and therefore include
-the model management work of 4 to 5 August, which is complete and tested but
-not yet merged. The last released build, beta v1.9.0, carries 8\,725 lines of
-application code and 474 tests; the difference between the two figures is that
-work.
+Figures are counted on the working branch at 14 August and include the citation
+work described above, which is complete and tested but not yet released. The
+totals are of tracked files only: generated output, dependencies and the local
+evaluation scripts are excluded, so the counts describe what the team wrote
+rather than what the repository contains.
 
 \subsection{Verification status by platform}
 
@@ -1128,9 +1206,9 @@ work.
 \toprule
 \textbf{Platform} & \textbf{Status} \\
 \midrule
-Linux & automatically validated and exercised by hand on physical hardware \\
-Windows & automatically validated and confirmed working by a human tester, though not yet across a range of machines \\
-macOS & automatically validated and exercised by a tester; unsigned applications are still obstructed on first launch \\
+Linux & automatically validated, and the replaced interface, the paper editor and citations exercised by hand on physical hardware \\
+Windows & automatically validated; confirmed working by a human tester before the interface was replaced, and not driven by a person since \\
+macOS & automatically validated; exercised by a tester before the interface was replaced, and not driven by a person since. Unsigned applications are still obstructed on first launch \\
 In-application update & working; testers update in place from the beta channel \\
 \bottomrule
 \end{tabularx}

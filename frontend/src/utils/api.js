@@ -152,11 +152,13 @@ export const documentsApi = {
 
   get: (docId) => request(`/documents/${docId}`),
 
-  // Extraction is right about 93% of the time, so roughly one paper in
-  // fourteen is filed under the wrong name -- and that name labels it
-  // everywhere, including every node on the LitGraph map.
-  rename: (docId, title) =>
-    request(`/documents/${docId}/title`, { method: 'PATCH', body: { title } }),
+  // Correct what the extractor got wrong. Titles are right about 93% of the
+  // time and author lists 86%, so roughly one paper in seven is filed under
+  // something wrong -- and that data labels it everywhere, on the map, in
+  // search results, and in every BibTeX entry built from it.
+  // Omit a field to leave it as it is: fixing authors must not blank a title.
+  correct: (docId, fields) =>
+    request(`/documents/${docId}/metadata`, { method: 'PATCH', body: fields }),
 
   delete: (docId) => request(`/documents/${docId}`, { method: 'DELETE' }),
 
@@ -411,6 +413,18 @@ export const papersApi = {
     request(`/papers/projects/${projectId}`, { method: 'PATCH', body: { name } }),
 
   get: (projectId) => request(`/papers/projects/${projectId}`),
+
+  // Everything citable, each with the key it would be cited by. Read-only:
+  // asking what a key would be must not commit to it.
+  citations: (projectId) => request(`/papers/projects/${projectId}/citations`),
+
+  // The commitment. Writes the entry into this project's references.bib and
+  // returns the key it was written under, which is the one to insert.
+  cite: (projectId, docId) =>
+    request(`/papers/projects/${projectId}/citations`, {
+      method: 'POST',
+      body: { doc_id: docId },
+    }),
 
   save: (projectId, source) =>
     request('/papers/save', {

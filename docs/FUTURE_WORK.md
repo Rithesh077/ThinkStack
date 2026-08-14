@@ -2,48 +2,72 @@
 
 Planned work, divided by how much of it already exists.
 
-The division matters. The first group is mostly **consolidation**: the
-capabilities are built, tested and shipping, and the work is joining them into
-one coherent thing. The second group is **new capability**, including model
-training and a text editor written from scratch, and is measured in months
-rather than weeks.
+The division matters. The first group is **finishing**: the capability is built
+and shipping, and what is left is verification, a pass over data already
+stored, or a file that is written to disk and never read. The second group is
+**new capability**, including model training and a text editor written from
+scratch, and takes months.
+
+What this document used to list first — merging search, the gap finder and the
+vault into LitGraph, and giving the Library one view of everything the user has
+done — has since been built. Those sections are gone; leaving them would
+describe shipped work as planned.
 
 ---
 
-## Near term: consolidation of what already works
+## Near term: finishing what is already built
 
 These reuse existing, working components. Little new machinery is required.
 
-### LitGraph
+### Verification on Windows and macOS
 
-Today the **gap finder**, **semantic search** and the **encrypted vault** are
-three separate screens that already operate on the same corpus, the same
-embedding index and the same model runtime. Reaching them separately makes the
-user do the joining work.
+The replaced interface and the citation feature are exercised by hand on Linux
+and validated automatically on all three platforms. Neither has been driven by
+a person on Windows or macOS since the interface was replaced.
 
-LitGraph merges them into a single view where the literature is a connected
-structure rather than a list of files:
+That gap matters because of what the automated suites cannot see. The citation
+list shipped rendering correctly and 1382px below the window, and no test
+failed: the interface tests compute no layout. A control that is present,
+correctly positioned and invisible is caught by a person or by nobody. This
+blocks a stable release.
 
-- ask a question, see the passages that answer it, see how the papers containing
-  them relate, and see where the literature is thin, as one continuous activity;
-- **data handling stays separate.** Encrypted papers remain encrypted and are
-  decrypted only on demand. Merging the interface must not merge the storage or
-  weaken the vault's guarantees, which is the one hard constraint on this work;
-- relationships between papers become first-class, which is the foundation a
-  citation graph needs later.
+### Position synchronisation between source and PDF
 
-Retrieval, gap detection and the vault already share their inputs, so this
-removes duplicated computation as well as duplicated interface.
+The prerequisite is already on disk and unused. Every compile runs with
+`--synctex`, so each project carries a `main.synctex.gz` mapping page
+coordinates to source lines and back; the only code that touches the file
+hides it from the project tree. Two steps follow: clicking a place in the PDF
+moves the cursor to the line that produced it, and moving the cursor
+highlights the matching region of the page.
 
-### Library
+This is the cheap half of the editor work described below, and it ships
+independently of the rest.
 
-A single place showing everything the user has done: papers ingested, searches
-run, analyses produced, drafts written, models downloaded.
+### Reference data for papers already ingested
 
-The data already exists. Analysis runs, gap analyses and paper projects are
-already persisted with timestamps in the run histories. This is presentation
-over records that are already being kept, not new collection, and nothing leaves
-the machine.
+The arXiv identifier and DOI are extracted and stored, but only for papers
+ingested after the citation work landed. Anything older is cited as a generic
+entry with no preprint link, and its author list comes from the previous
+storage format, which is wrong wherever a name was recorded surname first.
+
+Every PDF is still on disk, so this is a pass over stored files and not a
+re-ingestion: identifiers can be re-read and author lists re-extracted without
+recomputing a single embedding.
+
+### Retrieval quality
+
+Search returns the right papers and scores them low, with a top similarity
+around 0.21 on queries whose answers are unambiguous. The ranking is useful and
+the number attached to it is not. That matters: the gap finder reads those
+scores, not the ordering. The cause has not been isolated — the embedding
+model, the chunk size and the absence of a reranking pass are all candidates —
+and isolating it is the work.
+
+### Ingestion progress per paper
+
+Progress is reported per batch: "analysing paper 2 of 5", never the title of
+the paper being read. The job record does not carry the document id. That is
+the whole of the fix.
 
 ---
 
@@ -63,6 +87,12 @@ Even the 1.5B model does not reliably follow "write only the fragment": it
 reproduces surrounding sections before adding new content, which the backend
 currently strips deterministically rather than trusting the instruction.
 
+The direction is **one small model per task, not one general model for all of
+them**. A 0.5B trained on the exact shape of a single job beats a 1.5B guessing
+at four, and it fits a machine with no GPU and 16GB of RAM. The routing table
+already maps tasks to models, so adopting a fine-tuned model means supplying
+weights and a registry entry; nothing that calls it changes.
+
 Planned models:
 
 - **a LaTeX writing model**, fine-tuned on instruction-to-markup pairs. These
@@ -71,7 +101,24 @@ Planned models:
   one is a matter of supplying weights;
 - **an analysis model**, fine-tuned on the structured summarisation and claim
   extraction formats the application parses, addressing the cases where a
-  general model returns prose where JSON was requested.
+  general model returns prose where JSON was requested;
+- **a citation and reference model**, on the evidence of the citation work. A
+  bibliography needs the author list split into people, the venue named and the
+  year right; the layout rules reach 86% on author lists. What defeats them is
+  not reasoning but formatting — job titles, membership grades and postal
+  addresses sitting on the author line — and that is the shape a small
+  fine-tuned model handles well and a rule handles badly.
+
+This is tractable for three specific reasons. The training pairs come from use,
+so no labelling exercise is needed. The evaluation exists and is honest:
+`local/eval_metadata.py` samples arXiv at random and scores against the
+archive's own catalogue, so a model is measured on papers nobody here chose.
+And because routing is per task, the fallback is the current behaviour — a
+model worse than the rules is deselected in Bench, with no release involved.
+
+Training one larger model to do everything better is deliberately *not* the
+plan. This project has already measured itself out of that: the bundled model
+is 469MB of a 900MB installer, and the size budget is why it ships at all.
 
 ### A layout classifier for metadata extraction
 
@@ -113,6 +160,35 @@ missing is breadth and a way to browse it.
 
 Distributing **adapters** rather than whole models is the intended direction, so
 a capability upgrade costs tens of megabytes instead of gigabytes.
+
+### Deployment beyond a single machine
+
+A direction, not a commitment. It is here because the groundwork already
+exists, not because anyone has asked for it.
+
+The release pipeline is config-driven partly for this: adding a channel or a
+platform is a configuration edit, not workflow surgery, so an extra
+distribution target is cheap. An institutional build would use that mechanism
+and not a fork.
+
+What such a build needs, and what the current design already gives it:
+
+- **a shared library, still on the institution's own hardware.** The vector
+  store is a local file today. Pointing several installations at one store is a
+  storage question and not an architectural one, because nothing above the
+  repository layer knows where chunks live;
+- **shared models, one copy for many machines.** Model discovery already finds
+  weights that Ollama or another runtime put on disk, so a machine on a managed
+  image can be handed the model instead of downloading 469MB of it;
+- **updates on the institution's schedule.** The updater reads a manifest, so
+  pinning a department to a version it has approved means serving that manifest
+  from somewhere else.
+
+One constraint governs all of it, the same one that governs federated learning
+below: nothing may leave the machines the institution controls. A deployment
+that made papers easier to share by putting them on someone else's server would
+remove the reason this application exists. That rules out the usual shape of
+this feature. Hence a direction and not a plan.
 
 ### Federated learning
 

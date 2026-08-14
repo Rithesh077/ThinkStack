@@ -552,9 +552,9 @@ increasing strength:
 
 The third is the one that matters, and it is a different guarantee from the
 first two. Reading both sides as text proves the paths **match**; only calling
-them proves the handlers **run**. All 16 answered, including `PATCH
-/documents/:id/title` returning 404 rather than 405 for an absent paper — 405
-would have meant the method was never wired.
+them proves the handlers **run**. All 16 answered, including the metadata
+patch returning 404 for an absent paper: a 405 would have meant the method was
+never wired.
 
 I also found a guard about to point at nothing. `test_api_contract.py`
 hardcoded `frontend/src/utils/api.js`. The moment the replacement shipped it
@@ -566,3 +566,37 @@ repeat it.
 A guard aimed at the wrong subject is worse than no guard, because it reports
 success. That is the third time this month I have written that sentence about a
 different piece of this codebase.
+
+## Citations in Scribe
+
+The interaction is mine: you are already typing when you decide to cite, so the
+trigger is the word `cite` rather than a shortcut or a dialog. The library
+drops down under the caret, filters as you keep typing, and Enter turns the
+word into `\cite{key}`. Choose nothing and `cite` stays an ordinary word,
+which compiles — nothing is committed by opening the list.
+
+I had planned to track citation numbers and was talked out of it, correctly:
+BibTeX renumbers every `\cite` on each recompile and orders the reference list
+itself. That whole subsystem was free, and building it would have meant
+maintaining a second, worse copy of something the toolchain already does.
+
+Storage had to be fixed before any of it could work. Author lists were
+flattened with `", ".join(authors)` into the vector store, and in BibTeX the
+comma is *syntax* — `Vaswani, Ashish and Shazeer, Noam` is two people. Read
+back for a bibliography, eight authors became sixteen half-names. Nothing
+raised; it printed them. Same shape as the extractor bug I spent the week
+before on, and it is the shape I look for first now: **the failure is confident
+wrongness, not silence.**
+
+Then there is the ceiling nothing in the feature can lift. Extraction is 93%
+right on titles and 86% on author lists, so about one paper in seven cites
+wrongly however good the citation code is. The Library can now edit authors and
+the year, not only the title.
+
+I put that in the Library and not in Scribe on purpose. The library holds the
+record, so a fix there carries into every future citation, every node on the
+map and every search hit; a fix in one project's `.bib` fixes one paper.
+Scribe needs no editor of its own: `references.bib` is already a file in the
+project tree, and entries carry a `thinkstackid` field that BibTeX ignores, so
+a key or an author can be rewritten by hand and the link back to the library
+survives.

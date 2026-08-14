@@ -332,7 +332,23 @@ async def extract_metadata(
     the point: the model is slow enough that running it on every upload is not
     an option, and precise enough on cover pages and unusual templates to be
     worth waiting for on the few that need it.
+
+    Whichever path answers, the identifiers are stamped on the way out. They
+    come from the raw text on all three, so finding them once here keeps the
+    extractors to the job their names describe.
     """
+    metadata = await _best_metadata(text, page, use_slm)
+    metadata.arxiv_id = find_arxiv_id(text)
+    metadata.doi = find_doi(text)
+    return metadata
+
+
+async def _best_metadata(
+    text: str,
+    page: PageLayout | None,
+    use_slm: bool,
+) -> DocumentMetadata:
+    """Title, authors, abstract and year -- the fields that need a strategy."""
     if page is not None and page.spans:
         metadata = extract_metadata_layout(page, text)
         if metadata_is_plausible(metadata):

@@ -9,7 +9,8 @@ import pytest
 from fastapi import HTTPException
 
 from api import routes_documents
-from api.routes_documents import list_documents, rename_document
+from api.routes_documents import list_documents, correct_reference
+from domain.knowledge_base.author_codec import decode_authors
 from domain.knowledge_base import repository as repo
 from infrastructure.analysis_cache import DocAnalysisCache
 
@@ -72,31 +73,58 @@ class TestListCounts:
         assert result["gaps"] == 0 and result["analyses"] == 0
 
 
-class TestRename:
-    async def test_updates_every_chunk(self, monkeypatch):
-        """The title is copied onto each chunk so a search hit can name its
-        paper. Miss one and the same document answers to two titles depending
-        on which passage matched."""
+class TestCorrectReference:
+    """Repairing what the extractor got wrong.
+
+    Titles are ~93% right and author lists ~86%, so about one paper in seven
+    is stored under something wrong. It labels every node on the map, names
+    every search hit, and is what a BibTeX entry is built from.
+    """
+
+    @staticmethod
+    def _capture(monkeypatch, count=7):
         seen = {}
         monkeypatch.setattr(
-            routes_documents, "update_document_metadata_field",
-            lambda doc_id, field, value: seen.update(
-                {"doc": doc_id, "field": field, "value": value}) or 7,
+            routes_documents, "update_document_metadata",
+            lambda doc_id, fields: seen.update({"doc": doc_id, **fields}) or count,
         )
+        return seen
 
-        result = await rename_document("docX", routes_documents.TitleUpdate(
-            title="  Attention Is All You Need  "))
+    async def test_all_three_fields_go_in_one_write(self, monkeypatch):
+        """Correcting a reference usually means fixing several fields at once,
+        and each write touches every chunk of the paper."""
+        seen = self._capture(monkeypatch)
 
-        assert seen == {"doc": "docX", "field": "title",
-                        "value": "Attention Is All You Need"}
+        result = await correct_reference("docX", routes_documents.ReferenceUpdate(
+            title="  Attention Is All You Need  ",
+            authors=["Ashish Vaswani", "  ", "Noam Shazeer"],
+            year=" 2017 ",
+        ))
+
+        assert seen["doc"] == "docX"
+        assert seen["title"] == "Attention Is All You Need"
+        assert seen["year"] == "2017"
+        assert decode_authors(seen["authors"]) == ["Ashish Vaswani", "Noam Shazeer"]
         assert result["chunks_updated"] == 7
 
-    async def test_unknown_document_is_a_404(self, monkeypatch):
-        monkeypatch.setattr(routes_documents, "update_document_metadata_field",
-                            lambda *a: 0)
+    async def test_an_omitted_field_is_left_alone(self, monkeypatch):
+        """Fixing the authors must not blank the title."""
+        seen = self._capture(monkeypatch)
+        await correct_reference("docX", routes_documents.ReferenceUpdate(
+            authors=["Ada Lovelace"]))
+        assert set(seen) == {"doc", "authors"}
 
+    async def test_authors_are_stored_so_bibtex_can_split_them(self, monkeypatch):
+        """The whole reason for the codec: a comma is BibTeX syntax."""
+        seen = self._capture(monkeypatch)
+        await correct_reference("docX", routes_documents.ReferenceUpdate(
+            authors=["Vaswani, Ashish"]))
+        assert decode_authors(seen["authors"]) == ["Vaswani, Ashish"]
+
+    async def test_unknown_document_is_a_404(self, monkeypatch):
+        self._capture(monkeypatch, count=0)
         with pytest.raises(HTTPException) as e:
-            await rename_document("nope", routes_documents.TitleUpdate(title="x y"))
+            await correct_reference("nope", routes_documents.ReferenceUpdate(title="x y"))
         assert e.value.status_code == 404
 
     @pytest.mark.parametrize("title", ["", "   ", "\n"])
@@ -104,7 +132,30 @@ class TestRename:
         """An empty title is what the old extractor's guard tested for and
         never saw. It must not become storable by hand either."""
         with pytest.raises(HTTPException) as e:
-            await rename_document("docX", routes_documents.TitleUpdate(title=title))
+            await correct_reference("docX", routes_documents.ReferenceUpdate(title=title))
+        assert e.value.status_code == 400
+
+    async def test_a_blank_year_is_allowed(self, monkeypatch):
+        """An unstated year is a fact the extractor reports honestly."""
+        seen = self._capture(monkeypatch)
+        await correct_reference("docX", routes_documents.ReferenceUpdate(year=""))
+        assert seen["year"] == ""
+
+    @pytest.mark.parametrize("year", ["17", "20177", "twenty", "2017a"])
+    async def test_a_year_that_is_not_a_year_is_refused(self, year):
+        with pytest.raises(HTTPException) as e:
+            await correct_reference("docX", routes_documents.ReferenceUpdate(year=year))
+        assert e.value.status_code == 400
+
+    async def test_an_empty_patch_changes_nothing(self):
+        with pytest.raises(HTTPException) as e:
+            await correct_reference("docX", routes_documents.ReferenceUpdate())
+        assert e.value.status_code == 400
+
+    async def test_an_absurd_author_list_is_refused(self):
+        with pytest.raises(HTTPException) as e:
+            await correct_reference("docX", routes_documents.ReferenceUpdate(
+                authors=[f"Author {i}" for i in range(200)]))
         assert e.value.status_code == 400
 
 
@@ -123,7 +174,7 @@ class TestUpdateEveryChunk:
 
         monkeypatch.setattr(repo, "get_vector_store", lambda: FakeStore())
 
-        count = repo.update_document_metadata_field("docX", "title", "new")
+        count = repo.update_document_metadata("docX", {"title": "new"})
 
         assert count == 3
         assert captured["ids"] == ["c1", "c2", "c3"]
@@ -138,4 +189,4 @@ class TestUpdateEveryChunk:
                 raise AssertionError("must not write when there is nothing to write")
 
         monkeypatch.setattr(repo, "get_vector_store", lambda: EmptyStore())
-        assert repo.update_document_metadata_field("nope", "title", "x") == 0
+        assert repo.update_document_metadata("nope", {"title": "x"}) == 0

@@ -398,16 +398,23 @@ degraded case.
 \subsection{Functional Requirements}
 
 \begin{longtable}{@{}p{0.10\linewidth}p{0.34\linewidth}p{0.48\linewidth}@{}}
+\caption{Functional requirements}\label{tab:fr}\\
+\toprule
+\textbf{ID} & \textbf{Requirement} & \textbf{Description} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{ID} & \textbf{Requirement} & \textbf{Description} \\
 \midrule
 \endhead
+
 FR-1  & Ingest a PDF & Accept one or many PDFs by drag-and-drop or file
         picker; extract text; report failure per file. \\
 FR-2  & Extract metadata & Determine title, authors, year and abstract from the
         document, without a network lookup. \\
-FR-3  & Correct metadata & Allow a wrong title to be corrected in place, and
-        propagate the correction to every stored passage. \\
+FR-3  & Correct metadata & Allow a wrong title, author list or year to be
+        corrected in place, and propagate the correction to every stored
+        passage. \\
 FR-4  & Chunk and embed & Divide text into passages and compute an embedding
         for each, locally. \\
 FR-5  & Semantic search & Return ranked passages for a natural-language query,
@@ -439,18 +446,27 @@ FR-19 & Report progress & Show what background analysis is doing and how far
         through it is. \\
 FR-20 & Stop ingestion & Interrupt a running batch without leaving a document
         partly ingested. \\
+FR-21 & Cite a paper & Insert a citation to a paper in the library from within
+        the editor, and maintain the project's bibliography file. \\
+FR-22 & Resolve citations & Compile citations to numbered references and
+        generate the reference list, without the author declaring a
+        bibliography. \\
 \bottomrule
-\caption{Functional requirements}
-\label{tab:fr}
 \end{longtable}
 
 \subsection{Non-Functional Requirements}
 
 \begin{longtable}{@{}p{0.10\linewidth}p{0.26\linewidth}p{0.56\linewidth}@{}}
+\caption{Non-functional requirements}\label{tab:nfr}\\
+\toprule
+\textbf{ID} & \textbf{Attribute} & \textbf{Requirement} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{ID} & \textbf{Attribute} & \textbf{Requirement} \\
 \midrule
 \endhead
+
 NFR-1 & Privacy & No document, prompt or embedding is transmitted. The only
         outbound request is a version check carrying no user data. \\
 NFR-2 & Offline operation & Every feature except the update check functions
@@ -472,8 +488,6 @@ NFR-9 & Verifiability & A release is validated by running the packaged
 NFR-10 & Accessibility & Text meets contrast requirements against its
         substrate; controls are reachable by keyboard. \\
 \bottomrule
-\caption{Non-functional requirements}
-\label{tab:nfr}
 \end{longtable}
 
 \section{Block Diagram}
@@ -524,10 +538,16 @@ asking the user to choose one.
 \subsection{Software and Hardware Requirements}
 
 \begin{longtable}{@{}p{0.28\linewidth}p{0.30\linewidth}p{0.34\linewidth}@{}}
+\caption{Hardware and software requirements}\label{tab:sysreq}\\
+\toprule
+ & \textbf{Minimum} & \textbf{Recommended} \\
+\midrule
+\endfirsthead
 \toprule
  & \textbf{Minimum} & \textbf{Recommended} \\
 \midrule
 \endhead
+
 Operating system & Windows 10, macOS 12, or a Linux distribution with GTK/WebKit
  & Any of the above, current \\
 Processor & 64-bit dual core & Quad core or better \\
@@ -536,8 +556,6 @@ Disk & 2\,GB free & 5\,GB free \\
 Accelerator & None required & Vulkan-capable GPU, optional \\
 Network & Not required & Required only to download an additional model \\
 \bottomrule
-\caption{Hardware and software requirements}
-\label{tab:sysreq}
 \end{longtable}
 
 The development and evaluation machine was a 16\,GB laptop with no usable
@@ -635,10 +653,16 @@ strictly downward: the interface knows the API, the API knows the domain, the
 domain knows infrastructure, and nothing knows the layer above it.
 
 \begin{longtable}{@{}p{0.22\linewidth}p{0.74\linewidth}@{}}
+\caption{Architectural layers}\label{tab:layers}\\
+\toprule
+\textbf{Layer} & \textbf{Responsibility} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Layer} & \textbf{Responsibility} \\
 \midrule
 \endhead
+
 \texttt{frontend/} & The interface. React~19 and Vite, one theme, four screens.
   Holds no business rule: anything derived from global state is read from the
   backend rather than recomputed. \\
@@ -659,8 +683,6 @@ domain knows infrastructure, and nothing knows the layer above it.
   supervised child process, waits behind a loading screen, and stops it when
   the window closes. \\
 \bottomrule
-\caption{Architectural layers}
-\label{tab:layers}
 \end{longtable}
 
 \evidence{\textbf{Decision recorded.} One module answers ``what can this machine
@@ -673,10 +695,16 @@ looked authoritative. The split is now: \emph{Rust detects, Python decides.}}
 \section{Module Design}
 
 \begin{longtable}{@{}p{0.26\linewidth}p{0.70\linewidth}@{}}
+\caption{Module decomposition}\label{tab:modules}\\
+\toprule
+\textbf{Module} & \textbf{Contents} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Module} & \textbf{Contents} \\
 \midrule
 \endhead
+
 \texttt{ingestion} & \texttt{pdf\_parser} (text and positioned spans),
   \texttt{layout} (geometry: rows, cells, normalisation), \texttt{layout\_metadata}
   (title and authors from geometry), \texttt{metadata\_extractor}
@@ -702,8 +730,6 @@ looked authoritative. The split is now: \emph{Rust detects, Python decides.}}
 \texttt{model\_manager} & \texttt{registry}, \texttt{catalog},
   \texttt{router}, \texttt{downloader}, \texttt{manifest}. \\
 \bottomrule
-\caption{Module decomposition}
-\label{tab:modules}
 \end{longtable}
 
 \section{Database Design}
@@ -719,10 +745,16 @@ consequence is that referential integrity is enforced in the repository layer
 rather than by a foreign key.
 
 \begin{longtable}{@{}p{0.24\linewidth}p{0.30\linewidth}p{0.42\linewidth}@{}}
+\caption{Persistent stores}\label{tab:stores}\\
+\toprule
+\textbf{Store} & \textbf{Form} & \textbf{Contents} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Store} & \textbf{Form} & \textbf{Contents} \\
 \midrule
 \endhead
+
 Vector store & Embedded chunks & \texttt{chunk\_id}, \texttt{doc\_id},
   \texttt{text}, \texttt{embedding}, \texttt{page\_number},
   \texttt{chunk\_index}, \texttt{token\_count}, and the paper's
@@ -738,8 +770,6 @@ Run histories & JSON & Analysis and gap runs, newest first, capped. \\
 Paper projects & Directories & One directory per paper, containing
   \texttt{main.tex}, figures and build artefacts. \\
 \bottomrule
-\caption{Persistent stores}
-\label{tab:stores}
 \end{longtable}
 
 \subsection{Data Integrity and Constraints}
@@ -1023,19 +1053,107 @@ argument against the project directory and refuses anything landing outside.
 Resolution happens \emph{before} the check rather than a string test for
 \texttt{..}, because that is what catches a symbolic link.
 
+\subsection{Citations, and where the authority for a key lives}
+
+The editor could compile a document but could not cite one. The interaction
+chosen puts the library where the author already is: typing the word
+\texttt{cite} opens a list beneath the cursor, further typing filters it on
+title, author, year or key, and Enter replaces the word with a citation
+command while writing the corresponding entry into the project's bibliography
+file. Selecting nothing leaves the word in place, and an ordinary word
+compiles.
+
+Citation numbers are not tracked, and the omission is deliberate. BibTeX
+renumbers every citation on each recompile and orders the reference list
+according to the chosen style, so emitting keys obtains that behaviour for
+nothing, whereas tracking numbers would maintain a second and less reliable
+copy of it.
+
+The design question that remained was which side holds the authority for a key.
+Keys are derived from metadata, so a collision between two papers is resolved
+differently depending on what else the library contains, and a key derived
+again later can differ from the one already written into the author's source.
+The bibliography file is therefore authoritative: keys already present in it are
+honoured and never recomputed, and only documents the file has not seen are
+assigned new ones. Each entry carries an identifier field that bibliography
+styles ignore, since a style reads only the fields it declares, which preserves
+the link back to the library record even when the file has been edited by hand.
+
+Two defects underneath had to be corrected first, and both printed rather than
+raised. Author lists were stored by joining them with commas, but in a
+bibliography the comma separates a surname from a given name, so eight authors
+were read back as sixteen fragments. And a document containing citations but no
+bibliography command produced no references and no error, because the command
+that prints the reference list is also the one that causes the bibliography
+processor to run at all.
+
+\subsection{Correcting what extraction gets wrong}
+
+Extraction identifies titles correctly for about 93 percent of papers and
+author lists for about 86 percent, so roughly one paper in seven carries a
+wrong record. That record names the paper on the map, in every search result
+and in every reference generated from it, which means a citation feature built
+above it inherits the error.
+
+Correction belongs to the library rather than to the editor. The library holds
+the record, so a correction there applies to every subsequent citation, every
+node on the map and every search result at once, while a correction made inside
+one document's bibliography applies to that document alone. The editor needs no
+separate facility, because a project's bibliography is already a file in its own
+tree and the identifier field described above lets it be edited by hand without
+breaking the link back to the record. Placing the same field in two editable
+surfaces would create two sources of truth for one value.
+
 \section{Screenshots}
 
-\begin{itemize}[leftmargin=*]
-  \item Figure: Library, the collection, its folio, the panels reporting
-        models in use and drafts in progress, and the shelf.
-  \item Figure: LitGraph, the map, with themes as regions and gap markers.
-  \item Figure: Scribe, the file tree, the editor and the compiled PDF.
-  \item Figure, Bench, what the machine can run and which model serves which
-        task.
-\end{itemize}
+The following are captured from the running application on the development
+machine, against a library of 20 papers.
 
-\noindent\emph{[Screenshots to be inserted from the running application before
-final submission.]}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{assets/screens/library.png}
+\caption{Library. The folio above the rule counts the collection; the three
+panels report which model serves which task, which papers are missing a field,
+and which drafts are open. The shelf lists the papers themselves.}
+\label{fig:library}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{assets/screens/litgraph.png}
+\caption{LitGraph. Papers are placed by semantic similarity, themes are drawn
+as regions, and links show the strongest relations. Search, gap finding and the
+encrypted vault are reached from this one view.}
+\label{fig:litgraph}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{assets/screens/scribe.png}
+\caption{Scribe. The project is a directory: the tree on the left, the source
+in the middle, and the compiled PDF on the right, rebuilt a moment after typing
+stops.}
+\label{fig:scribe}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{assets/screens/scribe-cite.png}
+\caption{Citing from the editor. Typing the word \texttt{cite} opens the
+library beneath the cursor, with the key each paper would be cited by shown at
+the right and papers already in this project's bibliography marked. Enter
+replaces the word with the citation command.}
+\label{fig:cite}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{assets/screens/bench.png}
+\caption{Bench. What the machine can run, measured rather than assumed,
+including a graphics device that is present but not in use because the shipped
+build is processor-only.}
+\label{fig:bench}
+\end{figure}
 
 % ============================================================
 \chapter{TESTING}
@@ -1046,10 +1164,16 @@ final submission.]}
 Testing is in four layers, and the reason for the fourth is the interesting one.
 
 \begin{longtable}{@{}p{0.24\linewidth}p{0.16\linewidth}p{0.54\linewidth}@{}}
+\caption{Test layers}\label{tab:testlayers}\\
+\toprule
+\textbf{Layer} & \textbf{Count} & \textbf{What it establishes} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Layer} & \textbf{Count} & \textbf{What it establishes} \\
 \midrule
 \endhead
+
 Backend unit tests & 984 & Domain and infrastructure behaviour, run on every
   push and in CI. \\
 Interface unit tests & 198 & Component and utility behaviour under jsdom. \\
@@ -1058,8 +1182,6 @@ Contract tests & 5 & That every route the interface calls is a route the
 Packaged-application validation &: & That the \emph{installed} application
   starts and works, run against the built installer on each platform. \\
 \bottomrule
-\caption{Test layers}
-\label{tab:testlayers}
 \end{longtable}
 
 The fourth layer exists because of a specific failure. Version 1.0.0 passed
@@ -1077,10 +1199,16 @@ figure also reports success.
 Representative cases from each area; the full suite is in \texttt{tests/}.
 
 \begin{longtable}{@{}p{0.07\linewidth}p{0.35\linewidth}p{0.34\linewidth}p{0.14\linewidth}@{}}
+\caption{Representative test cases}\label{tab:cases}\\
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
 \midrule
 \endhead
+
 T-01 & Title is the largest horizontal text at the top of page 1 & Exact title
   returned & Pass \\
 T-02 & Rotated archive stamp larger than the title & Stamp ignored & Pass \\
@@ -1095,9 +1223,9 @@ T-07 & Year from an archive identifier vs. a stray four-digit number & Identifie
 T-08 & Paper stating no year & Year left empty & Pass \\
 T-09 & Plausible title, no authors & Model fallback invoked & Pass \\
 T-10 & Model returns an empty field & Existing good value retained & Pass \\
-T-11 & Rename propagates to every chunk & All chunks updated & Pass \\
-T-12 & Rename with a blank title & Rejected, 400 & Pass \\
-T-13 & Rename an absent document & 404, nothing written & Pass \\
+T-11 & Correction propagates to every chunk & All chunks updated & Pass \\
+T-12 & Correction with a blank title & Rejected, 400 & Pass \\
+T-13 & Correction to an absent document & 404, nothing written & Pass \\
 T-14 & Ingest continues when the analysis queue fails & Document retained
   & Pass \\
 T-15 & PDF route for an encrypted document & Refused, 403 & Pass \\
@@ -1107,9 +1235,17 @@ T-17 & Sidebar collapse does not swallow the click that caused it & Click
 T-18 & Update prompt where the platform cannot ask & Not installed & Pass \\
 T-19 & Every interface call resolves to a defined route & No orphans & Pass \\
 T-20 & Version never decreases & Lower version refused & Pass \\
+T-21 & An author list survives storage & Eight names read back as eight
+  & Pass \\
+T-22 & A key already in the bibliography is not recomputed & Same key returned
+  & Pass \\
+T-23 & Citing the same paper twice & One entry, same key & Pass \\
+T-24 & An entry written by hand survives a citation & Retained & Pass \\
+T-25 & Listing what can be cited writes nothing & No file created & Pass \\
+T-26 & A citing document without a bibliography & Command supplied, references
+  typeset & Pass \\
+T-27 & Special characters in a title reach the bibliography & Escaped & Pass \\
 \bottomrule
-\caption{Representative test cases}
-\label{tab:cases}
 \end{longtable}
 
 \section{Test Reports}
@@ -1127,17 +1263,21 @@ subject classifications through the public interface, scored against the
 archive's own catalogue records.
 
 \begin{longtable}{@{}p{0.34\linewidth}p{0.20\linewidth}p{0.20\linewidth}@{}}
+\caption{Extraction accuracy, curated versus randomly sampled papers}\label{tab:extraction}\\
+\toprule
+\textbf{Field} & \textbf{Curated (18)} & \textbf{Random (56)} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Field} & \textbf{Curated (18)} & \textbf{Random (56)} \\
 \midrule
 \endhead
+
 Title exactly correct        & 100\%  & 92.9\% \\
 Author list exactly correct  & 100\%  & 85.7\% \\
 Year exactly correct         & 100\%  & 92.9\% \\
 All three simultaneously     & 100\%  & 76.8\% \\
 \bottomrule
-\caption{Extraction accuracy, curated versus randomly sampled papers}
-\label{tab:extraction}
 \end{longtable}
 
 The first random measurement was 62.5\% on all three fields. The entire
@@ -1155,17 +1295,21 @@ otherwise.
 \subsection{Suite results}
 
 \begin{longtable}{@{}p{0.34\linewidth}p{0.14\linewidth}p{0.14\linewidth}p{0.24\linewidth}@{}}
+\caption{Suite results at the time of writing}\label{tab:suites}\\
+\toprule
+\textbf{Suite} & \textbf{Tests} & \textbf{Passing} & \textbf{Runtime} \\
+\midrule
+\endfirsthead
 \toprule
 \textbf{Suite} & \textbf{Tests} & \textbf{Passing} & \textbf{Runtime} \\
 \midrule
 \endhead
-Backend (pytest)      & 984 & 984 & \textasciitilde13\,s \\
-Interface (vitest)    & 198 & 198 & \textasciitilde5\,s \\
+
+Backend (pytest)      & 1\,042 & 1\,042 & \textasciitilde13\,s \\
+Interface (vitest)    & 213 & 213 & \textasciitilde5\,s \\
 Contract              & 5   & 5   & $<$1\,s \\
 Route reachability    & 16  & 16  & $<$2\,s \\
 \bottomrule
-\caption{Suite results at the time of writing}
-\label{tab:suites}
 \end{longtable}
 
 Route reachability is distinct from the contract test and was added when the

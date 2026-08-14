@@ -14,6 +14,7 @@ import logging
 
 import numpy as np
 
+from domain.knowledge_base.author_codec import authors_display
 from domain.knowledge_base.repository import get_all_doc_ids
 from infrastructure.analysis_cache import doc_analysis_cache
 from infrastructure.analysis_history import analysis_history
@@ -316,7 +317,7 @@ def build_graph() -> dict:
             "x": round(float(coords[i][0]), 4),
             "y": round(float(coords[i][1]), 4),
             "title": meta.get("title") or doc_id,
-            "authors": meta.get("authors", ""),
+            "authors": authors_display(meta.get("authors", "")),
             "year": meta.get("year", ""),
             "chunks": info[doc_id]["chunks"],
             "is_encrypted": meta.get("is_encrypted") in ("true", True),

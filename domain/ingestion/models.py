@@ -18,6 +18,10 @@ class DocumentMetadata:
     year: str = ""
     source: str = ""
     pages: int = 0
+    # Both are found while dating the paper and were thrown away until Scribe
+    # needed to cite it: a BibTeX entry carrying neither is a dead reference.
+    arxiv_id: str = ""
+    doi: str = ""
 
 
 @dataclass

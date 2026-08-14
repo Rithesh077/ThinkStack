@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from infrastructure.local_vector_store import get_vector_store
+from domain.knowledge_base.author_codec import encode_authors
 from domain.knowledge_base.embedding_service import generate_embeddings
 from domain.ingestion.models import TextChunk, DocumentMetadata
 
@@ -36,8 +37,10 @@ def store_chunks(
             "page_number": c.page_number,
             "token_count": c.token_count,
             "title": metadata.title or "",
-            "authors": ", ".join(metadata.authors) if metadata.authors else "",
+            "authors": encode_authors(metadata.authors),
             "year": metadata.year or "",
+            "arxiv_id": metadata.arxiv_id or "",
+            "doi": metadata.doi or "",
         }
         for c in chunks
     ]
@@ -82,6 +85,35 @@ def get_all_doc_ids() -> list[str]:
             doc_ids.add(meta["doc_id"])
 
     return sorted(doc_ids)
+
+
+def get_document_metadata() -> dict[str, dict]:
+    """`{doc_id: metadata}`, taking each document's lowest-numbered chunk.
+
+    Every chunk of a document carries the same document-level fields, so any
+    of them would do -- except that "any" is not stable. Chroma returns rows
+    in no guaranteed order, and a document ingested before a field existed has
+    it on none of its chunks, so picking by chunk index keeps two calls in a
+    row from disagreeing.
+
+    One store read for the whole library. The alternative -- a `where` query
+    per document -- is what the documents list does, and it costs a round trip
+    per paper for information that arrives in the first one.
+    """
+    store = get_vector_store()
+    results = store.get()
+
+    best: dict[str, tuple[int, dict]] = {}
+    for meta in results.get("metadatas", []) or []:
+        if not meta or "doc_id" not in meta:
+            continue
+        index = meta.get("chunk_index")
+        index = index if isinstance(index, int) else 1 << 30
+        current = best.get(meta["doc_id"])
+        if current is None or index < current[0]:
+            best[meta["doc_id"]] = (index, dict(meta))
+
+    return {doc_id: meta for doc_id, (_, meta) in best.items()}
 
 
 def get_doc_centroids(doc_ids: list[str] | None = None) -> tuple[list[str], "np.ndarray"]:
@@ -129,14 +161,21 @@ def get_collection_stats() -> dict:
     }
 
 
-def update_document_metadata_field(doc_id: str, field: str, value) -> int:
-    """Set one metadata field on EVERY chunk of a document. Returns the count.
+def update_document_metadata(doc_id: str, fields: dict) -> int:
+    """Set metadata fields on EVERY chunk of a document. Returns the count.
 
     Bibliographic metadata is copied onto each chunk so a search hit can name
     its paper without a second lookup. The cost is that correcting a title is
     not one write: miss a chunk and the same paper answers to two titles
     depending on which passage matched.
+
+    All the fields go in one pass. Correcting a reference usually means fixing
+    the authors and the year together, and a field at a time would read and
+    rewrite every chunk of the paper once per field.
     """
+    if not fields:
+        return 0
+
     store = get_vector_store()
     existing = store.get(where={"doc_id": doc_id})
     ids = existing.get("ids") or []
@@ -145,10 +184,10 @@ def update_document_metadata_field(doc_id: str, field: str, value) -> int:
 
     metadatas = existing.get("metadatas") or [{} for _ in ids]
     for meta in metadatas:
-        meta[field] = value
+        meta.update(fields)
 
     store.update(ids=ids, metadatas=metadatas)
-    logger.info("updated %s on %d chunks of %s", field, len(ids), doc_id)
+    logger.info("updated %s on %d chunks of %s", ", ".join(fields), len(ids), doc_id)
     return len(ids)
 
 
