@@ -115,7 +115,7 @@
   outline: none;
   color: var(--text);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 .lg-x { display: flex; background: none; border: none; color: var(--text-3); cursor: pointer; }
 .lg-x:hover { color: var(--text); }
@@ -126,7 +126,7 @@
   align-items: center;
   gap: 5px;
   padding: 8px 11px;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -154,7 +154,7 @@
 }
 .lg-results-head {
   padding: 9px 12px;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -176,9 +176,9 @@
 .lg-rrow:last-child { border-bottom: none; }
 .lg-rrow:hover,
 .lg-rrow.on { background: var(--accent-soft); }
-.lg-score { font-size: 0.72rem; color: var(--accent); font-variant-numeric: tabular-nums; }
-.lg-rtitle { display: block; font-size: 0.8rem; line-height: 1.35; color: var(--text); }
-.lg-rmeta { display: block; margin-top: 3px; font-size: 0.7rem; color: var(--text-3); }
+.lg-score { font-size: var(--text-xs); color: var(--accent); font-variant-numeric: tabular-nums; }
+.lg-rtitle { display: block; font-size: var(--text-sm); line-height: 1.35; color: var(--text); }
+.lg-rmeta { display: block; margin-top: 3px; font-size: var(--text-xs); color: var(--text-3); }
 
 /* ---------- bottom chrome ---------- */
 /* Present but quiet: legible enough to find when wanted, dim enough to ignore
@@ -193,7 +193,7 @@
   margin-left: auto;
   padding: 7px 12px;
   white-space: nowrap;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   color: var(--text-3);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   border: 1px solid var(--border);
@@ -203,7 +203,7 @@
 }
 .lg-stats b {
   margin-right: 3px;
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -217,7 +217,7 @@
 /* result count, in the box where the query is */
 .lg-qcount {
   padding: 1px 6px;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -257,7 +257,7 @@
 }
 .lg-zoom-readout {
   padding-bottom: 2px;
-  font-size: 0.64rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
   text-align: center;
@@ -293,13 +293,13 @@
   border-radius: var(--radius-sm);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.3);
 }
-.lg-actbar > span { margin-right: 4px; font-size: 0.72rem; color: var(--accent); }
+.lg-actbar > span { margin-right: 4px; font-size: var(--text-xs); color: var(--accent); }
 .lg-actbar button {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--text-2);
   background: none;
   border: 1px solid var(--border);
@@ -308,7 +308,7 @@
 }
 .lg-actbar button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .lg-actbar button:disabled { opacity: 0.4; cursor: not-allowed; }
-.lg-busy { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--text-3); }
+.lg-busy { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-3); }
 
 /* ---------- background analysis progress ----------
    Ingest queues minutes of model work. This sits top-left, out of the way of
@@ -331,7 +331,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--text-2);
 }
 
@@ -392,7 +392,7 @@
 
 .lg-jobs-note {
   margin-top: 6px;
-  font-size: 0.66rem;
+  font-size: var(--text-xs);
   color: var(--text-3);
 }
 
@@ -407,7 +407,7 @@
   max-width: 70%;
   padding: 9px 12px;
   transform: translateX(-50%);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--danger);
   background: var(--surface);
   border: 1px solid var(--danger);
@@ -448,7 +448,7 @@
 .lg-panel-x:hover { color: var(--text); }
 .lg-kind {
   margin-bottom: 8px;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
@@ -459,14 +459,14 @@
 .lg-drawer h4 {
   margin: 18px 0 8px;
   padding-bottom: 6px;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-3);
   border-bottom: 1px solid var(--border);
 }
-.lg-panel p { margin: 0 0 10px; font-size: 0.82rem; line-height: 1.6; color: var(--text-2); }
-.lg-authors { margin-bottom: 12px; font-size: 0.75rem; color: var(--text-3); }
+.lg-panel p { margin: 0 0 10px; font-size: var(--text-sm); line-height: 1.6; color: var(--text-2); }
+.lg-authors { margin-bottom: 12px; font-size: var(--text-xs); color: var(--text-3); }
 .lg-muted { color: var(--text-3); font-style: italic; }
 
 /* Tabs. Same shape as the Scribe preview switcher (.pw-preview-tab), copied
@@ -485,7 +485,7 @@
   background: transparent;
   color: var(--text-3);
   font-family: var(--font-base);
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
   transition: color var(--transition-fast), border-color var(--transition-fast);
@@ -494,7 +494,7 @@
 .lg-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* A statement about the paper, as opposed to a quote from it. */
-.lg-fact { margin: 0; font-size: 0.8rem; line-height: 1.6; color: var(--text-2); }
+.lg-fact { margin: 0; font-size: var(--text-sm); line-height: 1.6; color: var(--text-2); }
 
 /* ---------- the reader ---------- */
 /* We draw the pdf ourselves now, so this scrolls like the text reader rather
@@ -592,7 +592,7 @@
   padding: 8px 0;
   background: var(--surface);
   /* A filename is not a heading -- uppercasing one makes it unreadable. */
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   color: var(--text-3);
   overflow-wrap: anywhere;
 }
@@ -602,13 +602,13 @@
   /* A measure, not the panel width: the grip goes to half the window and
      prose stops being readable long before that. */
   max-width: 62ch;
-  font-size: 0.83rem;
+  font-size: var(--text-sm);
   line-height: 1.75;
   color: var(--text);
 }
 .lg-page {
   margin-right: 0.5em;
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-3);
 }
@@ -657,7 +657,7 @@
   flex-wrap: wrap;
   gap: 0.4rem 0.9rem;
   margin-bottom: 1.1em;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   color: var(--text-3);
 }
 /* In the pdf the legend is the only chrome, and the page it explains is long.
@@ -693,14 +693,14 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
-.lg-quote q { display: block; font-size: 0.78rem; font-style: italic; line-height: 1.6; color: var(--text); }
-.lg-quote span { display: block; margin-top: 7px; font-size: 0.68rem; color: var(--text-3); }
+.lg-quote q { display: block; font-size: var(--text-sm); font-style: italic; line-height: 1.6; color: var(--text); }
+.lg-quote span { display: block; margin-top: 7px; font-size: var(--text-xs); color: var(--text-3); }
 
 .lg-claim {
   display: block;
   width: 100%;
   padding: 9px 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
   text-align: left;
   color: var(--text-2);
@@ -713,14 +713,14 @@
 .lg-tag {
   display: block;
   margin-bottom: 3px;
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
 }
 .lg-sugg {
   padding: 9px 0;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--text-2);
   border-bottom: 1px solid var(--border);
@@ -730,7 +730,7 @@
   display: flex;
   justify-content: space-between;
   padding: 7px 0;
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   color: var(--text-3);
   border-bottom: 1px solid var(--border);
 }
@@ -776,8 +776,8 @@
   cursor: pointer;
 }
 .lg-run.on { background: var(--accent-soft); }
-.lg-run b { font-size: 0.8rem; color: var(--text); }
-.lg-run span { font-size: 0.7rem; color: var(--text-3); }
+.lg-run b { font-size: var(--text-sm); color: var(--text); }
+.lg-run span { font-size: var(--text-xs); color: var(--text-3); }
 .lg-run-x { padding: 0 6px; background: none; border: none; color: var(--text-3); cursor: pointer; }
 .lg-run-x:hover { color: var(--danger); }
 .lg-runres { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -806,7 +806,7 @@
   font-size: 1rem;
   color: var(--warning);
 }
-.lg-modal p { margin-bottom: 14px; font-size: 0.82rem; line-height: 1.6; color: var(--text-2); }
+.lg-modal p { margin-bottom: 14px; font-size: var(--text-sm); line-height: 1.6; color: var(--text-2); }
 .lg-pw { display: flex; gap: 8px; align-items: center; }
 .lg-pw input { flex: 1; }
 .lg-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
@@ -824,7 +824,7 @@
 }
 .lg-empty > svg { color: var(--accent); opacity: 0.5; }
 .lg-empty h3 { margin: 0; color: var(--text); }
-.lg-empty p { max-width: 420px; margin: 0; font-size: 0.85rem; line-height: 1.7; }
+.lg-empty p { max-width: 420px; margin: 0; font-size: var(--text-sm); line-height: 1.7; }
 
 @media (max-width: 900px) {
   .lg-root.lg-has-panel { grid-template-columns: 1fr; }
@@ -842,7 +842,7 @@
   display: block;
   padding-left: 0.7em;
   border-left: 2px solid var(--hl-gap);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.55;
   color: var(--text-2);
 }
