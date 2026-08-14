@@ -95,6 +95,30 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   given. Library takes the full width too: the 1400px measure exists so prose is
   not set 1900px wide, which is not a problem a dashboard has.
 
+- **Library says less, and says it where it matters.** Six stat cards opened
+  the page — the least actionable thing first, pushing the papers themselves
+  below the fold — and a "chunks per paper" chart nobody acts on sat under
+  them. The counts now caption the Knowledge Base section they describe. Two
+  were cut rather than moved: bytes on disk answered a question nobody asked,
+  and the chunk count is a detail of how text is indexed. "Analysed" reads
+  **15 of 20**, because the gap between ingested and read is the fact worth
+  having. The paper list pages five at a time, with an arrow at each end.
+
+- **The interface has a type scale.** There were twelve ad-hoc small sizes in
+  the stylesheets — `0.68`, `0.7`, `0.72`, `0.75`, `0.76`, `0.78`, `0.8`,
+  `0.82`, `0.84`, `0.85`, `0.9`, `0.95rem` — differences nobody can see and
+  nobody chose. 161 declarations now resolve to six named steps, and the root
+  size is fluid (`clamp(16px, 0.15vw + 14.6px, 18px)`), so every `rem` grows
+  with the window instead of staying at a fixed 16px on a 27" display.
+
+- **The collapsed sidebar is a rail, not nothing.** It used to collapse to zero
+  width and leave entirely, which meant the two things you still need — the
+  logo to bring it back, and the "i" explaining the page — had to float *over*
+  the content, covering whatever was underneath. A 64px rail carries both, and
+  since the page's margin is the same variable, the content moves aside for it.
+  The separate floating logo is gone: one affordance, in one place, in both
+  states.
+
 ### Known limitations
 
 - 43 of those 56 papers are exactly right on title, authors *and* year together.
