@@ -1,12 +1,30 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target } from 'lucide-react';
-import { documentsApi, encryptionApi } from '../utils/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Trash2, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
+         Lock, ShieldCheck, ShieldOff, Eye, EyeOff, Pencil, Search } from 'lucide-react';
+import { documentsApi, encryptionApi, papersApi, registryApi, useJobs } from '../utils/api';
+import { FEATURES } from '../features';
+import { libraryTourOpen, setLibraryTourOpen } from '../utils/firstRun';
 import UploadPanel from './UploadPanel';
 import PageHeader from './PageHeader';
+import ConfirmDialog from './ConfirmDialog';
 
-// Recharts is 300 kB and there is no chart to draw on an empty library, which
-// is exactly the state a first run opens in. It arrives with the first paper.
-const LibraryChart = lazy(() => import('./charts/LibraryChart'));
+// Everything except Library itself: this list sits ON Library, and a page does
+// not introduce itself. Read from FEATURES so a new feature appears here
+// without anyone remembering, and so the wording cannot drift from the "i".
+const OTHER_FEATURES = FEATURES.filter((f) => f.id !== 'library');
+
+// The routing table's task keys, in the words the rest of the app uses.
+const TASK_LABELS = {
+  general: 'General',
+  analysis: 'Analysis',
+  gap_analysis: 'Gap finding',
+  latex_writer: 'LaTeX writing',
+};
+
+// Rows at once. Small on purpose: this page is meant to be taken in at a
+// glance, and a list long enough to scroll buries whatever sits above it.
+const PAGE_SIZE = 5;
 
 /**
  * Library - the paper collection.
@@ -16,9 +34,30 @@ const LibraryChart = lazy(() => import('./charts/LibraryChart'));
  * shows metadata, chunk counts, and encryption status for each paper.
  */
 export default function Library() {
+  const navigate = useNavigate();
+  // Expanded only for someone who has never run this app. An update should not
+  // greet an existing user with an introduction to their own workspace.
+  const [tourOpen, setTourOpen] = useState(libraryTourOpen);
+  const toggleTour = () => setTourOpen((open) => { setLibraryTourOpen(!open); return !open; });
+
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, total_chunks: 0 });
+  const [stats, setStats] = useState({ total: 0, total_chunks: 0, analyses: 0, gaps: 0 });
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [renamingDoc, setRenamingDoc] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  // Analysis is queued AFTER the upload responds, so without this the reader is
+  // told "read", opens LitGraph, finds it empty, and concludes it is broken.
+  const jobs = useJobs();
+  const wasBusy = useRef(false);
+
+  // `null` means not loaded or the call failed -- rendered differently from
+  // "nothing yet", because an outage and an empty shelf are different facts.
+  const [scribeProjects, setScribeProjects] = useState(null);
+  const [benchModels, setBenchModels] = useState(null);
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [docDetails, setDocDetails] = useState({});
 
@@ -36,16 +75,86 @@ export default function Library() {
     try {
       const data = await documentsApi.list();
       setDocuments(data.documents || []);
-      setStats({ total: data.total, total_chunks: data.total_chunks });
+      setStats({
+        total: data.total,
+        total_chunks: data.total_chunks,
+        analyses: data.analyses ?? 0,
+        gaps: data.gaps ?? 0,
+      });
     } catch (err) {
       console.error('failed to load documents:', err);
     }
     setLoading(false);
   }, []);
 
+  const loadScribeProjects = useCallback(async () => {
+    try {
+      const d = await papersApi.list();
+      setScribeProjects(d.projects || []);
+    } catch (err) {
+      console.error('failed to load scribe projects:', err);
+      setScribeProjects(null);
+    }
+  }, []);
+
+  const loadBenchModels = useCallback(async () => {
+    try {
+      const snap = await registryApi.get();
+      // `routing`, not `models`. There is no single active model: work is
+      // routed per task, and which entry serves one depends on every other
+      // entry -- assignment, the memory free right now, rank. The backend
+      // computes that and says so at routes_registry.py:186; deciding it again
+      // here lets the two drift. One row per task.
+      const routing = snap.routing || {};
+      setBenchModels(
+        Object.entries(routing)
+          .filter(([, r]) => r?.label)
+          .map(([task, r]) => ({ task, label: r.label })),
+      );
+    } catch (err) {
+      console.error('failed to load bench routing:', err);
+      setBenchModels(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadDocuments();
-  }, [loadDocuments]);
+    loadScribeProjects();
+    loadBenchModels();
+  }, [loadDocuments, loadScribeProjects, loadBenchModels]);
+
+  // Refresh on the queue's FALLING edge, not every poll: the counts only change
+  // when a job ends, and re-fetching twice a second reloads the list under the
+  // reader's cursor.
+  useEffect(() => {
+    if (wasBusy.current && !jobs.active) loadDocuments();
+    wasBusy.current = jobs.active;
+  }, [jobs.active, loadDocuments]);
+
+  // A filter that leaves you on page four of one shows an empty list.
+  useEffect(() => { setPage(0); }, [query, onlyIncomplete]);
+
+  const startRename = (doc) => {
+    setRenamingDoc(doc.doc_id);
+    setRenameValue(doc.metadata?.title || doc.filename || '');
+  };
+
+  const submitRename = async (docId) => {
+    const title = renameValue.trim();
+    if (!title) return;
+    // Optimistic: the write touches every chunk of the paper and the list is
+    // refetched anyway. Waiting to redraw makes a local edit feel remote.
+    setDocuments((docs) => docs.map((d) => (
+      d.doc_id === docId ? { ...d, metadata: { ...d.metadata, title } } : d
+    )));
+    setRenamingDoc(null);
+    try {
+      await documentsApi.rename(docId, title);
+    } catch (err) {
+      console.error('failed to rename document:', err);
+      loadDocuments();   // put the stored title back
+    }
+  };
 
   const handleDelete = async (docId) => {
     try {
@@ -122,6 +231,26 @@ export default function Library() {
     setEncryptBusy(false);
   };
 
+  // All derived from the list already fetched -- no extra call, and no counter
+  // that can disagree with the rows beneath it.
+  const hasAuthors = (d) => /[a-z]/i.test(d.metadata?.authors || '');
+  const incomplete = documents.filter((d) => !hasAuthors(d) || !d.metadata?.year);
+
+  const matchesQuery = (doc) => {
+    if (!query.trim()) return true;
+    const m = doc.metadata || {};
+    return `${m.title || ''} ${m.authors || ''} ${doc.filename || ''}`
+      .toLowerCase().includes(query.trim().toLowerCase());
+  };
+
+  const visible = documents
+    .filter(matchesQuery)
+    .filter((d) => !onlyIncomplete || incomplete.includes(d));
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageDocs = visible.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   const isDocEncrypted = (doc) => {
     const meta = doc.metadata || {};
     return meta.is_encrypted === 'true' || meta.is_encrypted === true;
@@ -135,258 +264,420 @@ export default function Library() {
 
   return (
     <div>
+      {/* Four glass stat cards became one line of type, and that line has now
+          moved onto the masthead rule as the folio. It was drawing a second
+          horizontal rule directly under the first one to carry three numbers.
+          Refresh goes with it, as a header action. */}
       <PageHeader
         className="fade-up stagger-1"
-        title="Library"
-      />
+        folio={
+          <>
+            <span className="tally-item"><b>{stats.total || '—'}</b>papers</span>
+            <span className="tally-item"><b>{stats.analyses || '—'}</b>Read</span>
+            {stats.gaps > 0 && <span className="tally-item"><b>{stats.gaps}</b>gaps</span>}
+            <span className="tally-item"><b>{stats.total_chunks || '—'}</b>chunks</span>
+            {documents.filter(isDocEncrypted).length > 0 && (
+              <span className="tally-item">
+                <b>{documents.filter(isDocEncrypted).length}</b>encrypted
+              </span>
+            )}
+          </>
+        }
+      >
+        <button className="tally-action" onClick={loadDocuments}>
+          <RefreshCw size={12} /> Refresh
+        </button>
+      </PageHeader>
 
-      <div className="stat-row fade-up stagger-2">
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Papers Ingested</span>
-            <FileText size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">{stats.total || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Knowledge Chunks</span>
-            <BarChart2 size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">{stats.total_chunks || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Analyses Run</span>
-            <Brain size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">-</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Gaps Found</span>
-            <Target size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">-</div>
-        </div>
-      </div>
+      {/* What the other three screens are for. "LitGraph" and "Scribe" mean
+          nothing to someone who has just installed this, and each page's own
+          "i" cannot help -- you have to already be there. Saying it once, on
+          the page every launch opens, is what lets the page titles go. */}
+      <section className="library-tour fade-up stagger-2">
+        <button className="library-tour-toggle" onClick={toggleTour} aria-expanded={tourOpen}>
+          {tourOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          <span>What&apos;s here</span>
+        </button>
+        {tourOpen && (
+          <ul className="library-tour-list">
+            {OTHER_FEATURES.map(({ id, path, label, icon: Icon, summary }) => (
+              <li key={id}>
+                <button className="library-tour-item" onClick={() => navigate(path)}>
+                  <Icon size={15} className="library-tour-icon" />
+                  <span className="library-tour-label">{label}</span>
+                  <span className="library-tour-summary">{summary}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {documents.length > 0 && (
-        <Suspense fallback={null}><LibraryChart documents={documents} /></Suspense>
+        <div className="library-panels fade-up stagger-2">
+          <section className="panel">
+            <h4 className="panel-head">Models in use</h4>
+            {benchModels === null ? (
+              <p className="panel-empty">Could not read the model registry</p>
+            ) : benchModels.length === 0 ? (
+              <p className="panel-empty">No model is configured</p>
+            ) : (
+              <ul className="panel-list">
+                {benchModels.map(({ task, label }) => (
+                  <li key={task}>
+                    <span className="panel-key">{TASK_LABELS[task] || task}</span>
+                    <span className="panel-val">{label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* The first-run note says this once and never returns, and it
+                lands people in Bench -- a screen they have no reason to open
+                again. This is where they actually are. */}
+            <p className="panel-note">
+              Runs on this machine.{' '}
+              <button className="link-button" onClick={() => navigate('/bench')}>
+                Change in Bench
+              </button>
+            </p>
+          </section>
+
+          {incomplete.length > 0 && (
+            <section className="panel">
+              <h4 className="panel-head">Needs attention</h4>
+              <ul className="panel-list">
+                {incomplete.slice(0, 4).map((doc) => (
+                  <li key={doc.doc_id}>
+                    <span className="panel-key">{doc.metadata?.title || doc.filename}</span>
+                    <span className="panel-val">
+                      {!hasAuthors(doc) && !doc.metadata?.year ? 'no authors, no year'
+                        : !hasAuthors(doc) ? 'no authors' : 'no year'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="panel-note">
+                {incomplete.length} of {documents.length}.{' '}
+                <button className="link-button" onClick={() => setOnlyIncomplete((on) => !on)}>
+                  {onlyIncomplete ? 'Show all' : 'Show only these'}
+                </button>
+              </p>
+            </section>
+          )}
+
+          <section className="panel">
+            <h4 className="panel-head">Being written</h4>
+            {scribeProjects === null ? (
+              <p className="panel-empty">Could not read Scribe projects</p>
+            ) : scribeProjects.length === 0 ? (
+              <p className="panel-empty">
+                Nothing in progress.{' '}
+                <button className="link-button" onClick={() => navigate('/write')}>
+                  Start a paper
+                </button>
+              </p>
+            ) : (
+              <>
+                <ul className="panel-list">
+                  {scribeProjects.slice(0, 4).map((proj) => (
+                    <li key={proj.project_id}>
+                      <span className="panel-key">{proj.name || proj.project_id}</span>
+                      <span className="panel-val">{proj.has_pdf ? 'pdf' : 'draft'}</span>
+                    </li>
+                  ))}
+                </ul>
+                {/* One link, not one per row. Scribe has no route parameter and
+                    does not restore a project, so a click on "uxtest" would
+                    open whatever Scribe opens by default -- which is worse than
+                    a single honest door. Per-draft links want a /write/:id
+                    route first. */}
+                <p className="panel-note">
+                  {scribeProjects.length} in progress.{' '}
+                  <button className="link-button" onClick={() => navigate('/write')}>
+                    Continue writing
+                  </button>
+                </p>
+              </>
+            )}
+          </section>
+        </div>
       )}
 
+      {/* The upload zone stops being a five-rem dashed pit and becomes the
+          first row of the list it feeds. */}
       <div className="fade-up stagger-3">
         <UploadPanel onUploadComplete={loadDocuments} />
       </div>
 
-      <h3 className="section-heading fade-up stagger-4" style={{ marginTop: '2rem' }}>Ingested Papers</h3>
-
-      <div className="card fade-up stagger-4">
-        <div className="card-header">
-          <span className="card-title"></span>
-          <button className="btn btn-secondary btn-sm" onClick={loadDocuments}>
-            <RefreshCw size={14} />
-            <span>refresh</span>
-          </button>
+      {documents.length > 0 && (
+        <div className="kb-bar fade-up stagger-4">
+          <span className="kb-search">
+            <Search size={13} className="kb-search-icon" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Filter ${documents.length} papers by title, author or filename`}
+              aria-label="Filter papers"
+            />
+          </span>
+          {onlyIncomplete && (
+            <button className="link-button" onClick={() => setOnlyIncomplete(false)}>
+              showing {visible.length} needing attention &mdash; show all
+            </button>
+          )}
         </div>
+      )}
 
+      {/* Ingestion returns before the analysis does. Without this the reader is
+          told the paper is in, opens LitGraph, and finds nothing. */}
+      {jobs.active && (
+        <p className="kb-progress" role="status">
+          <span className="spinner" />
+          {jobs.label || 'Working through the queue'}
+          {jobs.total > 1 && <em> · {jobs.done} of {jobs.total}</em>}
+          {jobs.queued > 0 && <em> · {jobs.queued} queued</em>}
+        </p>
+      )}
+
+      <div className="paper-list fade-up stagger-4">
         {loading ? (
           <div className="loading-overlay">
             <div className="spinner spinner-lg" />
-            <span>loading papers...</span>
+            <span>Loading papers…</span>
           </div>
         ) : documents.length === 0 ? (
           <div className="empty-state">
-            <FileText size={48} />
-            <h3>no papers yet</h3>
-            <p>upload pdf research papers above to start building your knowledge base.</p>
+            <h3>Nothing read yet</h3>
+            <p>
+              Drop a PDF on the line above. ThinkStack reads it on this machine,
+              and the page starts to take its colour.
+            </p>
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="empty-state">
+            <h3>No match</h3>
+            <p>Nothing in {documents.length} papers matches &ldquo;{query.trim()}&rdquo;.</p>
           </div>
         ) : (
-          documents.map((doc) => (
+          pageDocs.map((doc) => (
             <div key={doc.doc_id}>
+              {/* Columns, per §6: what it is, how much of it there is, what
+                  state it is in, and when. Serif for the title because it is
+                  read; mono for the rest because it is counted. */}
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
-                <div className="doc-icon">
-                  {isDocEncrypted(doc) ? (
-                    <Lock size={18} color="var(--accent-secondary)" />
-                  ) : (
-                    <CheckCircle size={18} color="var(--success)" />
-                  )}
-                </div>
-                <div className="doc-info">
-                  <div className="doc-title">
-                    {doc.filename}
-                    {isDocEncrypted(doc) && (
-                      <span className="badge badge-warning" style={{ marginLeft: '0.5rem', fontSize: '0.65rem' }}>
-                        encrypted
-                      </span>
-                    )}
-                  </div>
-                  <div className="doc-meta">
-                    <Clock size={12} /> {doc.metadata?.timestamp || new Date().toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="doc-actions" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                {/* The inner span is what the leader dots need: the text has to
+                    be its own box so the dotted rule can be a sibling that eats
+                    whatever width the title does not. */}
+                {renamingDoc === doc.doc_id ? (
+                  // Click-through would collapse the row out from under the
+                  // input the moment you tried to type in it.
+                  <form
+                    className="doc-rename"
+                    onClick={(e) => e.stopPropagation()}
+                    onSubmit={(e) => { e.preventDefault(); submitRename(doc.doc_id); }}
+                  >
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
+                      aria-label="Paper title"
+                    />
+                    <button type="submit" className="link-button">Save</button>
+                    <button type="button" className="link-button"
+                            onClick={() => setRenamingDoc(null)}>Cancel</button>
+                  </form>
+                ) : (
+                  <span className="doc-title" title={doc.metadata?.title || doc.filename}>
+                    <span className="doc-title-text">{doc.metadata?.title || doc.filename}</span>
+                    {/* Extraction is ~93% right, so about one paper in fourteen
+                        is filed under the wrong name -- and that name labels it
+                        on the map too. This is the only place to correct it. */}
+                    <button
+                      className="doc-rename-btn"
+                      title="Correct this title"
+                      aria-label="Correct this title"
+                      onClick={(e) => { e.stopPropagation(); startRename(doc); }}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  </span>
+                )}
+                {/* Was the chunk count -- a bare "1" that told the reader
+                    nothing, being a detail of how we index the text. The
+                    authors are what identifies a paper at a glance, and we
+                    now extract them accurately enough to print. */}
+                <span className="doc-authors">
+                  {/[a-z]/i.test(doc.metadata?.authors || '')
+                    ? doc.metadata.authors
+                    : '—'}
+                </span>
+                <span className={`doc-state ${isDocEncrypted(doc) ? 'is-locked' : ''}`}>
+                  {isDocEncrypted(doc) ? 'encrypted' : 'read'}
+                </span>
+                {/* metadata.year, not a timestamp: the API has never returned
+                    one, so the old row fell through to new Date() and stamped
+                    every paper in the library with today. */}
+                <span className="doc-year">{doc.metadata?.year || '—'}</span>
+                <div className="doc-actions">
                   {isDocEncrypted(doc) ? (
                     <>
                       <button
                         className="btn-icon btn-icon-accent"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'view'); }}
-                        title="view decrypted text"
+                        title="View decrypted text"
                       >
-                        <Eye size={20} />
+                        <Eye size={15} />
                       </button>
                       <button
                         className="btn-icon btn-icon-warning"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'remove'); }}
-                        title="remove encryption"
+                        title="Remove encryption"
                       >
-                        <ShieldOff size={20} />
+                        <ShieldOff size={15} />
                       </button>
                     </>
                   ) : (
                     <button
                       className="btn-icon btn-icon-accent"
                       onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'encrypt'); }}
-                      title="encrypt paper"
+                      title="Encrypt paper"
                     >
-                      <ShieldCheck size={20} />
+                      <ShieldCheck size={15} />
                     </button>
                   )}
                   <button
                     className="btn-icon btn-icon-danger"
                     onClick={(e) => { e.stopPropagation(); handleDelete(doc.doc_id); }}
-                    title="delete paper"
+                    title="Delete paper"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={15} />
                   </button>
                   {expandedDoc === doc.doc_id ? (
-                    <ChevronUp size={16} color="var(--text-muted)" />
+                    <ChevronUp size={13} color="var(--text-muted)" />
                   ) : (
-                    <ChevronDown size={16} color="var(--text-muted)" />
+                    <ChevronDown size={13} color="var(--text-muted)" />
                   )}
                 </div>
               </div>
+              {/* The opened paper: an indented extract, set in the reading
+                  serif, hung off the row it belongs to. It was a nested card
+                  on --bg-tertiary -- a box inside a box inside the page. */}
               {expandedDoc === doc.doc_id && docDetails[doc.doc_id] && (
-                <div style={{ padding: '0 1.25rem 1rem', marginTop: '-0.25rem' }}>
-                  <div className="card" style={{ background: 'var(--bg-tertiary)' }}>
-                    {isDocEncrypted(doc) ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--warning)', fontSize: '0.85rem' }}>
-                        <Lock size={14} />
-                        <span>this document is encrypted. use the view button to read.</span>
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7' }}>
-                        {docDetails[doc.doc_id].full_text?.substring(0, 800)}
-                        {docDetails[doc.doc_id].full_text?.length > 800 && '...'}
-                      </p>
-                    )}
-                  </div>
+                <div className="doc-extract">
+                  {isDocEncrypted(doc) ? (
+                    <p className="doc-extract-locked">
+                      <Lock size={14} />
+                      <span>This paper is encrypted. Use the view button to read it.</span>
+                    </p>
+                  ) : (
+                    <p>
+                      {docDetails[doc.doc_id].full_text?.substring(0, 800)}
+                      {docDetails[doc.doc_id].full_text?.length > 800 && '…'}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           ))
         )}
+
+        {/* One batch at a time, a mark at each end. The shelf is meant to be
+            read at a glance; a list long enough to scroll buries the folio. */}
+        {visible.length > PAGE_SIZE && (
+          <div className="kb-pager">
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.max(0, n - 1))}
+              disabled={safePage === 0}
+              aria-label="Previous papers"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="kb-pager-label">
+              {safePage * PAGE_SIZE + 1}&ndash;
+              {Math.min((safePage + 1) * PAGE_SIZE, visible.length)} of {visible.length}
+            </span>
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
+              disabled={safePage >= pageCount - 1}
+              aria-label="Next papers"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Encryption Modal ── */}
+      {/* ── Encryption dialog ──
+          Was a hand-built overlay: `.modal-overlay` (a class with no rule
+          anywhere) plus eleven inline style objects, and none of the behaviour
+          -- no Escape, no focus handling, and `onClick` on the backdrop, so a
+          drag that started on the password field and finished outside the box
+          closed the dialog and threw the typing away. It is the shared
+          ConfirmDialog now, which is what that component's own docstring said
+          it was for. */}
       {encryptingDoc && encryptAction && (
-        <div
-          className="modal-overlay"
-          onClick={closeEncryptDialog}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
+        <ConfirmDialog
+          title={actionLabels[encryptAction]?.title}
+          icon={actionLabels[encryptAction]?.icon || Lock}
+          wide={Boolean(decryptedText)}
+          onCancel={closeEncryptDialog}
         >
-          <div
-            className="card"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '460px',
-              padding: '1.5rem', animation: 'fadeIn 0.2s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              {(() => { const Icon = actionLabels[encryptAction]?.icon || Lock; return <Icon size={20} />; })()}
-              <h3 style={{ margin: 0 }}>{actionLabels[encryptAction]?.title}</h3>
-            </div>
-
-            {decryptedText ? (
-              <div>
-                <div className="card" style={{ background: 'var(--bg-tertiary)', maxHeight: '400px', overflowY: 'auto' }}>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
-                    {decryptedText.substring(0, 3000)}
-                    {decryptedText.length > 3000 && '...'}
-                  </p>
-                </div>
+          {decryptedText ? (
+            <>
+              <div className="encrypt-read">
+                <p>
+                  {decryptedText.substring(0, 3000)}
+                  {decryptedText.length > 3000 && '…'}
+                </p>
+              </div>
+              <div className="confirm-actions">
+                <button className="btn btn-secondary" onClick={closeEncryptDialog}>Close</button>
+              </div>
+            </>
+          ) : (
+            <form onSubmit={handleEncryptSubmit}>
+              <div className="encrypt-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="input"
+                  placeholder="Enter password…"
+                  value={encryptPassword}
+                  onChange={(e) => setEncryptPassword(e.target.value)}
+                  autoFocus
+                />
                 <button
-                  className="btn btn-secondary"
-                  onClick={closeEncryptDialog}
-                  style={{ marginTop: '1rem', width: '100%' }}
+                  type="button"
+                  className="btn-icon btn-icon-accent"
+                  onClick={() => setShowPassword((v) => !v)}
+                  title={showPassword ? 'hide password' : 'show password'}
                 >
-                  close
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-            ) : (
-              <form onSubmit={handleEncryptSubmit}>
-                <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="input"
-                    placeholder="enter password…"
-                    value={encryptPassword}
-                    onChange={(e) => setEncryptPassword(e.target.value)}
-                    autoFocus
-                    style={{ width: '100%', paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn-icon btn-icon-accent"
-                    onClick={() => setShowPassword((v) => !v)}
-                    style={{ position: 'absolute', right: '0.25rem', top: '50%', transform: 'translateY(-50%)' }}
-                    title={showPassword ? 'hide password' : 'show password'}
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
 
-                {encryptError && (
-                  <div style={{
-                    color: 'var(--danger)', background: 'rgba(248,113,113,0.1)',
-                    padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
-                    fontSize: '0.85rem', marginBottom: '1rem',
-                  }}>
-                    {encryptError}
-                  </div>
-                )}
+              {encryptError && <div className="encrypt-error">{encryptError}</div>}
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeEncryptDialog}
-                    style={{ flex: 1 }}
-                  >
-                    cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className={`btn ${encryptAction === 'remove' ? 'btn-danger' : 'btn-primary'}`}
-                    disabled={encryptBusy}
-                    style={{ flex: 1 }}
-                  >
-                    {encryptBusy ? (
-                      <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                    ) : (
-                      actionLabels[encryptAction]?.button
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+              <div className="confirm-actions">
+                <button type="button" className="btn btn-secondary" onClick={closeEncryptDialog}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`btn ${encryptAction === 'remove' ? 'btn-danger' : 'btn-primary'}`}
+                  disabled={encryptBusy}
+                >
+                  {encryptBusy
+                    ? <div className="spinner" />
+                    : actionLabels[encryptAction]?.button}
+                </button>
+              </div>
+            </form>
+          )}
+        </ConfirmDialog>
       )}
     </div>
   );

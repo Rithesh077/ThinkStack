@@ -59,6 +59,10 @@ export const FEATURES = [
     // that is the moment the product should say its own name. Change this to
     // BookOpen if you would rather every section be equally signposted.
     mark: StackMark,
+    // A dashboard, not prose. The measure exists so a LINE OF TEXT is not set
+    // 1900px wide; a folio, three panels and a shelf have no such problem, and
+    // capping them left a third of a wide window empty.
+    fills: true,
     summary: 'Every paper you have ingested, and what ThinkStack has read from it.',
     guide: [
       ['upload', 'drop PDFs in, or use the picker. Ingestion parses, chunks and embeds each one'],

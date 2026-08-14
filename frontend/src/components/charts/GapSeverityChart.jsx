@@ -41,7 +41,15 @@ export default function GapSeverityChart({ gaps = [] }) {
               <Cell key={i} fill={d.color} />
             ))}
           </Pie>
-          <Tooltip contentStyle={{ background: c.surface, border: `1px solid ${c.border}`, borderRadius: 12, color: c.text }} />
+          {/* 2px, like every other corner in the app. Recharts wants a number
+              here, so this is the one place --r is written out rather than
+              read; the rest of the tooltip does read tokens.
+
+              The three severities are --danger / --warning / --success, which
+              used to be the unearned pigments -- so on a fresh install this
+              donut drew three identical grey slices and a legend explaining
+              which grey was which. They are literals now. */}
+          <Tooltip contentStyle={{ background: c.surface, border: `1px solid ${c.border}`, borderRadius: 2, color: c.text }} />
           <Legend formatter={(v) => <span style={{ color: c['text-2'], fontSize: 12 }}>{v}</span>} />
         </PieChart>
       </ResponsiveContainer>

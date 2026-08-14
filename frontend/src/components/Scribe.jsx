@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Save, Play, Download, Sparkles, FileText, Loader2, BookOpen, ChevronDown,
 } from 'lucide-react';
@@ -475,9 +474,21 @@ export default function Scribe() {
   };
 
   return (
-    <div>
+    // Classed so the workspace can hand its height down: <main> is the
+    // viewport, .page-turn passes it through, and this takes what is left.
+    <div className="pw-page">
+      {/* Counts the manuscript: how many papers are on the desk, how long the
+          open file is, and whether it is saved. The unsaved state existed only
+          as a 5px dot beside the filename in the editor toolbar, which is not
+          where you look when you are deciding whether it is safe to close. */}
       <PageHeader
-        title="Scribe"
+        folio={
+          <>
+            <span className="tally-item"><b>{projects.length || '—'}</b>papers</span>
+            <span className="tally-item"><b>{source.split('\n').length}</b>lines</span>
+            <span className="tally-item">{dirty ? 'unsaved' : 'saved'}</span>
+          </>
+        }
       />
 
       {error && (
@@ -507,13 +518,13 @@ export default function Scribe() {
             tabIndex={0}
           />
 
-          {/* editor */}
-          <motion.div
-            className="card pw-editor"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 240, damping: 28 }}
-          >
+          {/* editor.
+              The spring that slid this up 12px on mount is gone with
+              framer-motion. It was the uniform entrance reflex applied to a
+              working surface: you open the editor to type in it, and a panel
+              that arrives from somewhere is a twelfth of a second you spend
+              watching instead of writing. The shared fade is enough. */}
+          <div className="card pw-editor fade-up">
             <div className="pw-toolbar">
               <span className="pw-toolbar-title">
                 {openFile} {dirty && <span className="pw-dot" title="unsaved" />}
@@ -614,7 +625,7 @@ export default function Scribe() {
               {showContext && (
                 <div className="pw-context-list">
                   {docs.length === 0 ? (
-                    <span className="pw-hint">no papers yet - upload in Library</span>
+                    <span className="pw-hint">No papers yet — upload in Library</span>
                   ) : (
                     docs.map((d) => (
                       <button
@@ -654,7 +665,7 @@ export default function Scribe() {
                 <span>{generating ? 'Generating…' : llmBusy && !generating ? (label || 'Model busy…') : 'Generate'}</span>
               </button>
             </div>
-          </motion.div>
+          </div>
 
           {/* the compiled PDF is the only preview -- see the note at the top */}
           <div
@@ -683,26 +694,25 @@ export default function Scribe() {
               </details>
             )}
 
-            <AnimatePresence mode="wait">
-              {pdfUrl ? (
-                <motion.iframe
-                  key={pdfUrl}
-                  title="compiled pdf"
-                  src={pdfUrl}
-                  className="pw-iframe"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.3 }}
-                />
-              ) : (
-                <div className="pw-empty">
-                  <FileText size={42} />
-                  <p>{autoCompile
-                    ? 'Start typing - the PDF builds itself.'
-                    : 'Hit Compile to build the PDF.'}</p>
-                </div>
-              )}
-            </AnimatePresence>
+            {/* Keyed on the URL, so a fresh compile remounts the iframe and
+                replays `.pw-iframe`'s fade. That fade is state, not decoration:
+                it is the only signal that the proof on screen is the new one.
+                The CSS carries it now -- see .pw-iframe in index.css. */}
+            {pdfUrl ? (
+              <iframe
+                key={pdfUrl}
+                title="compiled pdf"
+                src={pdfUrl}
+                className="pw-iframe"
+              />
+            ) : (
+              <div className="pw-empty">
+                <FileText size={42} />
+                <p>{autoCompile
+                  ? 'Start typing - the PDF builds itself.'
+                  : 'Hit Compile to build the PDF.'}</p>
+              </div>
+            )}
           </div>
       </div>
     </div>

@@ -206,6 +206,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    # One tree again. This was a matrix over frontend/ and new-frontend/ while
+    # the interface was being replaced, so neither could ship having been
+    # checked differently from the other. The Paper and Ink interface IS
+    # frontend/ now, and the old tree is gone.
     name: Frontend (lint + test + build)
     defaults:
       run:

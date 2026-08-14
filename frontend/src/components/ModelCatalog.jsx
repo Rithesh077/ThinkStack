@@ -53,7 +53,7 @@ export default function ModelCatalog({ catalog, tasks, budgetGb, busy, downloadi
                     made to care what a parameter count is. */}
                 <span className="catalog-name">
                   {m.outcome}
-                  {m.recommended_here && <em className="catalog-badge">suited to this machine</em>}
+                  {m.recommended_here && <em className="catalog-badge">Suited to this machine</em>}
                 </span>
                 <span className="catalog-desc">{m.description}</span>
                 <span className="catalog-tech">{m.label} · {m.speed}</span>

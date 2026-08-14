@@ -64,11 +64,69 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   *before* its letter, so "Dollár" arrived as `Doll ´ar`. Both are normalised at
   parse time; before this, neither surname nor title could be searched for.
 
+- **Library's overview reported things it did not know.** "Bench in use" read
+  the model list and took the first entry whose status was `ready` — a status
+  the backend does not emit; it says `present` — so it always fell through to
+  whichever model happened to be first. There is no active model: routing is
+  per task, and the 1.5B that actually serves Analysis was not in that array at
+  all. It now reads the routing table the backend already computes, one row per
+  task. "Analyses Run" and "Gaps Found" had been hardcoded to `-` since they
+  were written and now carry real counts. A lone `-` also meant three different
+  things — loading, empty, and *the request failed* — which are now told apart.
+
+- **Nothing showed that ingestion was still working.** Analysis is queued after
+  the upload responds, so a user was told "ingested", opened LitGraph, found it
+  empty, and had no way to know a model was still running. Library now shows the
+  queue and refreshes when it drains.
+
+- **A wrong title could not be corrected.** Rows showed the filename, so the
+  extracted title — which labels the paper everywhere else, including every
+  LitGraph node — was never even visible. It is now shown and editable, and
+  "Needs Attention" names the papers missing an author list or a year.
+
+### Changed
+
+- **Page titles are gone from all four screens.** The nav says where you are,
+  the brand mark follows it, and Library now introduces the others by name. A
+  heading reading "Scribe" above Scribe only cost the editor a strip of height.
+- **Scribe and LitGraph fill the window properly.** Both sized themselves with
+  `calc(100vh - 11rem)` — a guess at the chrome above them, which was silently
+  wrong the moment the title was removed. They now take the height they are
+  given. Library takes the full width too: the 1400px measure exists so prose is
+  not set 1900px wide, which is not a problem a dashboard has.
+
+- **Library says less, and says it where it matters.** Six stat cards opened
+  the page — the least actionable thing first, pushing the papers themselves
+  below the fold — and a "chunks per paper" chart nobody acts on sat under
+  them. The counts now caption the Knowledge Base section they describe. Two
+  were cut rather than moved: bytes on disk answered a question nobody asked,
+  and the chunk count is a detail of how text is indexed. "Analysed" reads
+  **15 of 20**, because the gap between ingested and read is the fact worth
+  having. The paper list pages five at a time, with an arrow at each end.
+
+- **The interface has a type scale.** There were twelve ad-hoc small sizes in
+  the stylesheets — `0.68`, `0.7`, `0.72`, `0.75`, `0.76`, `0.78`, `0.8`,
+  `0.82`, `0.84`, `0.85`, `0.9`, `0.95rem` — differences nobody can see and
+  nobody chose. 161 declarations now resolve to six named steps, and the root
+  size is fluid (`clamp(16px, 0.15vw + 14.6px, 18px)`), so every `rem` grows
+  with the window instead of staying at a fixed 16px on a 27" display.
+
+- **The collapsed sidebar is a rail, not nothing.** It used to collapse to zero
+  width and leave entirely, which meant the two things you still need — the
+  logo to bring it back, and the "i" explaining the page — had to float *over*
+  the content, covering whatever was underneath. A 64px rail carries both, and
+  since the page's margin is the same variable, the content moves aside for it.
+  The separate floating logo is gone: one affordance, in one place, in both
+  states.
+
 ### Known limitations
 
 - 43 of those 56 papers are exactly right on title, authors *and* year together.
   Mathematics inside a title, publisher cover pages that precede the paper, and
   submissions too new to carry an arXiv stamp still defeat it.
+- Library's ingestion progress is per *batch* ("analysing paper 2 of 5"), not
+  per document. Saying which row is being analysed needs the document id on the
+  job record.
 
 ---
 

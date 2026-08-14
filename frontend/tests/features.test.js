@@ -90,7 +90,7 @@ describe('the brand mark follows the feature', () => {
   });
 
   it('marks inherit their colour so the shell sets the ink once', async () => {
-    // .brand-logo-icon and .sidebar-peek set `color`; a mark that hardcoded its
+    // .brand-logo-icon sets `color`; a mark that hardcoded its
     // stroke would ignore that and could render invisibly on the lime chip.
     const { stroke } = await renderToDom(StackMark, { size: 18 });
     expect(stroke).toBe('currentColor');
@@ -128,14 +128,15 @@ describe('a page declares whether it is a document or a workspace', () => {
 
   it('the workspaces are the ones built out of panes', () => {
     const fills = FEATURES.filter((f) => f.fills).map((f) => f.id);
-    expect(fills.sort()).toEqual(['litgraph', 'write']);
+    expect(fills.sort()).toEqual(['library', 'litgraph', 'write']);
   });
 
-  it('the reading pages keep a measure', () => {
-    // prose set 1900px wide is unreadable; this is not an oversight
-    for (const id of ['library', 'bench']) {
-      expect(FEATURES.find((f) => f.id === id).fills).toBeFalsy();
-    }
+  it('Bench keeps a measure; Library does not need one', () => {
+    // The rule is about PROSE, not about being a pane. Bench is read -- its
+    // cards carry paragraphs about what a model is for. Library is a folio,
+    // three panels and a shelf, and capping it wasted a third of a wide window.
+    expect(FEATURES.find((f) => f.id === 'bench').fills).toBeFalsy();
+    expect(FEATURES.find((f) => f.id === 'library').fills).toBe(true);
   });
 
   it('every feature resolves from its own path', () => {
