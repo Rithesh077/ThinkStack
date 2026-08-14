@@ -10,6 +10,7 @@ import logging
 import re
 
 from infrastructure.local_vector_store import get_vector_store
+from domain.knowledge_base.author_codec import authors_display
 from domain.knowledge_base.embedding_service import generate_embedding
 from domain.search.models import SearchQuery, SearchResult
 
@@ -115,7 +116,7 @@ def search_papers(query: SearchQuery) -> list[dict]:
                 "doc_id": r.doc_id,
                 "score": r.score,
                 "title": r.metadata.get("title", ""),
-                "authors": r.metadata.get("authors", ""),
+                "authors": authors_display(r.metadata.get("authors", "")),
                 "year": r.metadata.get("year", ""),
                 "hits": [],
             }
