@@ -6,11 +6,13 @@ import {
 import {
   documentsApi, searchApi, graphApi, analysisApi, gapsApi, useLlmBusy, useJobs,
 } from '../utils/api';
+import PageHeader from './PageHeader';
 import useThemeColors from './charts/useThemeColors';
 import useCanvas from './litgraph/useCanvas';
 import { clampPanel, gapPassages } from './litgraph/panel';
 import { fetchPaper } from './litgraph/paperText';
 import PaperPanel from './litgraph/PaperPanel';
+import { earn, EARNED_BY } from '../utils/pigments';
 import './litgraph/litgraph.css';
 
 /**
@@ -29,6 +31,12 @@ import './litgraph/litgraph.css';
 
 const RUN_LABELS = { summarize: 'Summary', claims: 'Claims', themes: 'Themes' };
 const PANEL_W_KEY = 'lg-panel-w';
+const PICKED_KEY = 'lg-has-picked';
+
+// How long an error stays up on its own. Long enough to read a sentence twice;
+// short enough that a failure from five minutes ago is not still on the map.
+const ERROR_MS = 9000;
+let errorSeq = 0;
 
 // Recharts is 300 kB and this chart only appears inside the runs drawer when
 // a gap scan has actually produced gaps. Importing it at the top pulled all
@@ -44,7 +52,23 @@ export default function LitGraph() {
   const [graph, setGraph] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+
+  /* Errors are a queue, not a slot.
+     It was `useState('')`: the next failure overwrote the previous one before
+     it could be read, and the only way out was the × -- so a gap scan that
+     failed four ways showed you the fourth. A queue stacks them, drops
+     duplicates (a retry loop must not build a wall of the same sentence), and
+     lets each one time out on its own while the × still works. */
+  const [errors, setErrors] = useState([]);
+  const pushError = useCallback((text) => {
+    if (!text) return;
+    const id = ++errorSeq;
+    setErrors((q) => (q.some((e) => e.text === text) ? q : [...q, { id, text }]));
+    setTimeout(() => setErrors((q) => q.filter((e) => e.id !== id)), ERROR_MS);
+  }, []);
+  const dismissError = useCallback(
+    (id) => setErrors((q) => q.filter((e) => e.id !== id)), [],
+  );
 
   // canvas state
   const [matches, setMatches] = useState(new Map());
@@ -82,13 +106,37 @@ export default function LitGraph() {
   const loadGraph = useCallback(async () => {
     try {
       const [g, docs] = await Promise.all([graphApi.get(), documentsApi.list()]);
+      const files = docs.documents || [];
+
+      /* A paper whose PDF yielded no title metadata comes back from the API
+         titled with its own doc_id (`graph_builder.py`: `meta.get("title") or
+         doc_id`), so the canvas labelled it `08688c057d03` -- a hex string, on
+         a map whose entire job is to be read at a glance.
+
+         Repaired here rather than at the nine places a title is displayed:
+         the canvas label, the search row, the panel heading, the neighbour
+         list, the "closest to / furthest from" line and the gap evidence all
+         read `node.title`, so fixing the payload once fixes every one of them
+         and none of them has to know this can happen. The filename is not on
+         the graph node -- chunk metadata does not carry it -- which is why it
+         comes from the document list fetched alongside. */
+      const name = new Map(files.map((d) => [d.doc_id, d.filename]));
+      if (g?.nodes) {
+        g.nodes = g.nodes.map((n) =>
+          n.title === n.doc_id ? { ...n, title: name.get(n.doc_id) || n.doc_id } : n,
+        );
+      }
+
       setGraph(g);
-      setDocuments(docs.documents || []);
+      setDocuments(files);
+      // Slate is retrieval, and the map IS retrieval made visible -- but only
+      // once there is something on it. An empty map has nothing to colour.
+      if (g?.nodes?.length) earn(EARNED_BY.graphOpened);
     } catch (err) {
-      setError(err.message);
+      pushError(err.message);
     }
     setLoading(false);
-  }, []);
+  }, [pushError]);
 
   const loadRuns = useCallback(async () => {
     try {
@@ -102,19 +150,6 @@ export default function LitGraph() {
 
   useEffect(() => { loadGraph(); loadRuns(); }, [loadGraph, loadRuns]);
 
-  // Background analysis writes summaries, claims, themes and gaps straight to
-  // the stores the graph reads, so the canvas is stale until it re-fetches.
-  // Reload on the falling edge — when the queue drains — rather than on every
-  // poll, so a long batch does not re-render the scene every 1.5 s.
-  const wasBusy = useRef(false);
-  useEffect(() => {
-    if (wasBusy.current && !jobs.active) {
-      loadGraph();
-      loadRuns();
-    }
-    wasBusy.current = jobs.active;
-  }, [jobs.active, loadGraph, loadRuns]);
-
   // Read the graph through a ref, not the closure.
   //
   // The canvas attaches its click listeners once per STRUCTURAL render, so a
@@ -126,6 +161,71 @@ export default function LitGraph() {
   // the same hazard one function down.
   const graphRef = useRef(graph);
   useEffect(() => { graphRef.current = graph; }, [graph]);
+
+  /* Background analysis writes summaries, claims, themes and gaps straight to
+     the stores the graph reads, so the canvas goes stale as work lands.
+     It used to re-fetch on the falling edge -- when the queue drained -- and
+     redraw itself. Which meant: you are reading the map, a paper you uploaded
+     ten minutes ago finishes analysing, and every node moves. Not just the new
+     one. Positions are PCA over the whole library, so one arrival re-projects
+     the lot, and nothing had said it was about to.
+
+     So the map now holds still and raises a chip instead. `stale` counts the
+     papers that have landed since it was last drawn, which is also the state
+     that showed nowhere before: a paper ingested but not yet analysed was
+     invisible in every view, and there was no way to tell waiting from failed.
+
+     The run history is a list, not a picture, so it still refreshes itself --
+     nothing is holding your place in it. */
+  const [stale, setStale] = useState(0);
+  const wasBusy = useRef(false);
+  const batch = useRef(0);
+  useEffect(() => {
+    if (jobs.active) batch.current = Math.max(batch.current, jobs.total || 1);
+    if (wasBusy.current && !jobs.active) {
+      const n = batch.current || 1;
+      batch.current = 0;
+      loadRuns();
+      // An empty map has no place to hold and nothing to disturb, so the first
+      // papers of a fresh library draw themselves rather than asking.
+      if (!graphRef.current?.nodes?.length) loadGraph();
+      else setStale((s) => s + n);
+    }
+    wasBusy.current = jobs.active;
+  }, [jobs.active, jobs.total, loadGraph, loadRuns]);
+
+  const rebuild = useCallback(async () => {
+    setStale(0);
+    await loadGraph();
+  }, [loadGraph]);
+
+  /* Has this install ever selected anything? One flag, one key -- if it has,
+     the user knows how, and the first-open picker below never appears again. */
+  const [showPicker, setShowPicker] = useState(() => {
+    try { return !localStorage.getItem(PICKED_KEY); } catch { return true; }
+  });
+  const dismissPicker = useCallback(() => {
+    setShowPicker(false);
+    try { localStorage.setItem(PICKED_KEY, '1'); } catch { /* private mode */ }
+  }, []);
+
+  const toggleDoc = useCallback((id) => {
+    dismissPicker();
+    setMatches((m) => {
+      const next = new Map(m);
+      // score null, exactly as the lasso does it: a pick is a selection, not a
+      // ranking, so the node gets no relevance arc
+      if (next.has(id)) next.delete(id); else next.set(id, { doc_id: id, score: null });
+      return next;
+    });
+  }, [dismissPicker]);
+
+  const selectAllPapers = useCallback(() => {
+    dismissPicker();
+    setMatches(new Map(
+      (graphRef.current?.nodes || []).map((n) => [n.doc_id, { doc_id: n.doc_id, score: null }]),
+    ));
+  }, [dismissPicker]);
 
   const onSelect = useCallback((id, claimIndex, isGap, seek) => {
     if (!id) return;
@@ -213,12 +313,12 @@ export default function LitGraph() {
         setMatches(new Map(rows.map((r) => [r.doc_id, r])));
         if (rows.length) canvas.fitTo(rows.slice(0, 5).map((r) => r.doc_id), 170, 600, 2.4);
       } catch (err) {
-        setError(err.message);
+        pushError(err.message);
       }
       setSearching(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [query, canvas]);
+  }, [query, canvas, pushError]);
 
   // ---- panel width ----
   //
@@ -269,7 +369,6 @@ export default function LitGraph() {
 
   const doRun = async (action, pw = '') => {
     setRunning(action);
-    setError('');
     try {
       let data;
       if (action === 'gaps') data = await gapsApi.analyze(selection, pw);
@@ -278,10 +377,17 @@ export default function LitGraph() {
       else if (action === 'themes') data = await analysisApi.clusterThemes(selection, pw);
       setOpenRun({ type: action, result: data, ...data });
       setRunsOpen(true);
+      // Moss is evidence: the model has been through the papers and come back
+      // with something. Any of the three analyses counts.
+      if (action !== 'gaps') earn(EARNED_BY.analysisRun);
+      // The red pen is the last thing the app earns, and it is earned only by
+      // a scan that FOUND something. A gap scan that comes back empty is a
+      // scan that found no gaps -- there is nothing for a red pen to mark.
+      if (action === 'gaps' && (data?.gaps?.length ?? 0) > 0) earn(EARNED_BY.gapFound);
       await loadRuns();
       await loadGraph();   // themes/gaps/claims change what the canvas draws
     } catch (err) {
-      setError(err.message);
+      pushError(err.message);
     }
     setRunning('');
     setPassword('');
@@ -290,7 +396,7 @@ export default function LitGraph() {
 
   const startRun = (action) => {
     if (action === 'gaps' && selection.length < 2) {
-      setError('Gap analysis needs at least 2 papers selected.');
+      pushError('Gap analysis needs at least 2 papers selected.');
       return;
     }
     if (!selection.length) return;
@@ -305,7 +411,7 @@ export default function LitGraph() {
       else await analysisApi.deleteRun(runId);
       if (openRun?.run_id === runId) setOpenRun(null);
       await loadRuns();
-    } catch (err) { setError(err.message); }
+    } catch (err) { pushError(err.message); }
   };
 
   const fmtDate = (iso) => {
@@ -321,6 +427,8 @@ export default function LitGraph() {
   if (loading) {
     return (
       <div className="lg-page">
+      <PageHeader
+      />
         <div className="lg-empty"><div className="spinner spinner-lg" /><p>Building the map…</p></div>
       </div>
     );
@@ -328,6 +436,8 @@ export default function LitGraph() {
   if (!nodeCount) {
     return (
       <div className="lg-page">
+      <PageHeader
+      />
         <div className="lg-empty">
         <BookOpen size={44} />
         <h3>Nothing to map yet</h3>
@@ -341,6 +451,8 @@ export default function LitGraph() {
 
   return (
     <div className="lg-page">
+      <PageHeader
+      />
       <div ref={setRoot} className={`lg-root ${panel ? 'lg-has-panel' : ''}`}>
       {/* ---------- canvas ---------- */}
       <div className="lg-stage">
@@ -412,6 +524,15 @@ export default function LitGraph() {
             <span className="lg-stat-sep">·</span>
             <span><b>{analysed}</b>/{graph.nodes.length} analysed</span>
           </div>
+
+          {/* The map holds still; this is how it says it has fallen behind.
+              A button and not a banner, because redrawing is a decision --
+              every node moves when it happens. */}
+          {stale > 0 && !jobs.active && (
+            <button className="lg-rebuild" onClick={rebuild}>
+              <b>{stale}</b> new paper{stale === 1 ? '' : 's'} · rebuild the map
+            </button>
+          )}
         </div>
 
         {/* ---------- results list ---------- */}
@@ -429,7 +550,7 @@ export default function LitGraph() {
                 }}>
                 <span className="lg-score">{r.score.toFixed(2)}</span>
                 <span>
-                  <span className="lg-rtitle">{r.title || r.doc_id}</span>
+                  <span className="lg-rtitle">{r.title && r.title !== r.doc_id ? r.title : (documents.find((d) => d.doc_id === r.doc_id)?.filename || r.doc_id)}</span>
                   <span className="lg-rmeta">
                     {r.hits.length} matching chunk{r.hits.length === 1 ? '' : 's'}
                     {r.hits[0]?.page ? ` · from p.${r.hits[0].page}` : ''}
@@ -443,6 +564,41 @@ export default function LitGraph() {
         {/* The canvas hint that used to live here is now the shell's page guide
             -- the same "i" in the same corner, but on every screen and written
             once in features.js. See components/PageGuide.jsx. */}
+
+        {/* ---------- choosing, for the first time ----------
+            With nothing selected the action bar is hidden and nothing on this
+            page can be run. The only two ways in were typing a search or
+            knowing that shift-drag lassos a region -- one of which is not
+            discoverable at all, and the hint line at the bottom was the only
+            thing that said so.
+
+            So: a list, in the exact spot the action bar will occupy the moment
+            you use it, feeding the same `matches` map the search and the lasso
+            already write to. It shows only until the first selection is made
+            and then never again, because it is scaffolding for learning the
+            gestures, not a second permanent way to work. */}
+        {showPicker && !selection.length && (
+          <div className="lg-pick">
+            <div className="lg-pick-head">
+              <span>Choose papers to work on</span>
+              <button onClick={selectAllPapers}>Select all {nodeCount}</button>
+              <button className="lg-pick-x" onClick={dismissPicker} aria-label="Hide this">
+                <X size={13} />
+              </button>
+            </div>
+            <div className="lg-pick-list">
+              {graph.nodes.map((n) => (
+                <label key={n.doc_id} className="lg-pick-row">
+                  <input type="checkbox" checked={false} onChange={() => toggleDoc(n.doc_id)} />
+                  <span>{n.title}</span>
+                </label>
+              ))}
+            </div>
+            <p className="lg-pick-foot">
+              Or drag a box around a region of the map with shift held.
+            </p>
+          </div>
+        )}
 
         {/* ---------- the selection is what every action runs on ---------- */}
         {selection.length > 0 && (
@@ -514,7 +670,7 @@ export default function LitGraph() {
                   <circle
                     key={n.doc_id}
                     cx={n.x * canvas.W} cy={n.y * canvas.H} r={lit ? 30 : 22}
-                    fill={lit ? colors.accent : colors['text-3']}
+                    fill={lit ? colors.mark : colors['ink-4']}
                     fillOpacity={lit ? 0.95 : 0.4}
                   />
                 );
@@ -523,12 +679,12 @@ export default function LitGraph() {
                 const p = canvas.pos[g.gap_id];
                 return p ? (
                   <circle key={g.gap_id} cx={p.x} cy={p.y} r="20"
-                    fill={colors.warning} fillOpacity="0.75" />
+                    fill={colors.mark} fillOpacity="0.75" />
                 ) : null;
               })}
               <rect
-                id="lg-mm-vp" stroke={colors.accent} strokeWidth="11"
-                fill={colors.accent} fillOpacity="0.07"
+                id="lg-mm-vp" stroke={colors['ink-4']} strokeWidth="11"
+                fill={colors['ink-4']} fillOpacity="0.07"
               />
             </svg>
           </div>
@@ -548,7 +704,21 @@ export default function LitGraph() {
           </button>
         </div>
 
-        {error && <div className="lg-error">{error}<button onClick={() => setError('')}><X size={13} /></button></div>}
+        {/* newest at the bottom, nearest the map: the stack grows the way a
+            pile of notes grows, and the one that just landed is the one your
+            eye is already closest to */}
+        {errors.length > 0 && (
+          <div className="lg-errors" role="alert">
+            {errors.map((e) => (
+              <div key={e.id} className="lg-error">
+                {e.text}
+                <button onClick={() => dismissError(e.id)} aria-label="Dismiss">
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ---------- side panel ---------- */}

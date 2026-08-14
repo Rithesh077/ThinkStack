@@ -16,9 +16,11 @@ export default defineConfig({
   },
   plugins: [react()],
   server: {
-    port: 3000,
+    // 3001, not 3000: `frontend/` keeps 3000, so both dev servers can run at
+    // once and the two designs can be compared side by side.
+    port: 3001,
     // Bind every loopback family. Vite picked [::1] only on this machine, so
-    // http://127.0.0.1:3000 refused the connection while http://localhost:3000
+    // http://127.0.0.1:3001 refused the connection while http://localhost:3001
     // worked, which looks exactly like "the UI is not running".
     host: true,
     proxy: {

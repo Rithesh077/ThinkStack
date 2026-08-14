@@ -22,7 +22,14 @@ from pathlib import Path
 
 import pytest
 
+# Both interface trees are checked while the replacement is in progress. A
+# tree is skipped if it is not present, so deleting one needs no edit here.
 ROOT = Path(__file__).resolve().parent.parent
+
+FRONTEND_TREES = [
+    t for t in ("frontend",)
+    if (ROOT / t / "src" / "utils" / "api.js").exists()
+]
 HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 
 
@@ -59,9 +66,16 @@ def defined_routes() -> set[tuple[str, str]]:
     return found
 
 
-def frontend_calls() -> set[tuple[str, str]]:
-    """(METHOD, full path) for every call in the frontend's api client."""
-    src = (ROOT / "frontend" / "src" / "utils" / "api.js").read_text(encoding="utf-8")
+def frontend_calls(tree: str = "frontend") -> set[tuple[str, str]]:
+    """(METHOD, full path) for every call in a frontend's api client.
+
+    Parameterised by tree, which mattered while there were two of them: a
+    guard hardcoded to `frontend/` would have gone on proving things about a
+    directory nobody built once the replacement shipped -- passing while the
+    live client called routes that did not exist. There is one tree again, and
+    the parameter stays so the next replacement cannot repeat it.
+    """
+    src = (ROOT / tree / "src" / "utils" / "api.js").read_text(encoding="utf-8")
     calls: set[tuple[str, str]] = set()
     pattern = r"request\(\s*[`'\"]([^`'\"]+)[`'\"](?:\s*,\s*\{[^}]*method:\s*'(\w+)')?"
     for m in re.finditer(pattern, src):
@@ -89,13 +103,14 @@ class TestApiContract:
 
     def test_callers_were_found(self):
         """Same guard for the caller side: an empty set proves nothing."""
-        assert frontend_calls(), "no frontend calls parsed - the regex has drifted"
+        for tree in FRONTEND_TREES:
+            assert frontend_calls(tree), f"no {tree} calls parsed - the regex has drifted"
         assert validator_calls(), "no validator calls parsed - the regex has drifted"
 
-    @pytest.mark.parametrize("source", ["frontend", "validator"])
+    @pytest.mark.parametrize("source", [*FRONTEND_TREES, "validator"])
     def test_every_call_hits_a_real_route(self, source):
         routes = defined_routes()
-        calls = frontend_calls() if source == "frontend" else validator_calls()
+        calls = validator_calls() if source == "validator" else frontend_calls(source)
         missing = sorted(c for c in calls if c not in routes)
         assert not missing, (
             f"{source} calls routes the backend does not define:\n"

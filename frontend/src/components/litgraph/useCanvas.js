@@ -395,13 +395,21 @@ export default function useCanvas({
       });
 
     const alpha = makeAlpha(matches, focus, neighbours);
-    const hit = colors['accent-2'] || colors.accent;
+    // The red pen marks what the reader must act on, and a live selection is
+    // exactly that. It is the only red on the plate apart from the gaps.
+    const hit = colors.mark || colors.accent;
+    // Territory ink, resolved during render. Before the first render there is
+    // none, so fall back to plain ink rather than drawing nothing.
+    const inkOf = state.paint.inkOf || (() => colors['ink-3'] || colors['text-3']);
 
     nodes.forEach((n) => {
       const m = matches.get(n.id);
+      const pigment = inkOf(n.id);
       n.g.style.opacity = alpha(n.id);
-      n.circle.setAttribute('fill', n.id === focus ? colors.accent : colors.surface);
-      n.circle.setAttribute('stroke', m ? hit : colors.accent);
+      // A point of light: filled in its territory's pencil. Focus and match
+      // take the red pen; everything else stays the colour of its theme.
+      n.circle.setAttribute('fill', n.id === focus || m ? hit : pigment);
+      n.circle.setAttribute('stroke', 'none');
       // relevance arc. A lasso selection carries no score, so it draws no arc:
       // a full ring on every lassoed node would read as "perfect match". Hidden
       // rather than absent -- a zero-length dash with a round cap is a dot.
@@ -412,7 +420,9 @@ export default function useCanvas({
       } else {
         n.arc.style.display = 'none';
       }
-      n.label.style.fill = m ? hit : colors['text-2'];
+      // Every paper is labelled, so the map is read rather than decoded, and
+      // the label is set in the same pencil as the territory it sits in.
+      n.label.style.fill = m ? hit : pigment;
     });
 
     edges.forEach((e) => {
@@ -432,7 +442,7 @@ export default function useCanvas({
       gp.g.style.opacity = searching
         ? 0.12
         : focus && !on && !gp.doc_ids.includes(focus) ? 0.35 : 1;
-      gp.path.setAttribute('fill', on ? colors.warning : 'transparent');
+      gp.path.setAttribute('fill', on ? (colors.mark || colors.accent) : 'transparent');
       gp.path.setAttribute('fill-opacity', on ? 0.5 : 0.16);
     });
   }, [state, model, matches, focus, colors]);
@@ -470,20 +480,35 @@ export default function useCanvas({
     // end, because a label cannot know what will be drawn after it.
     const slots = [];
 
-    // theme hulls
+    // ---- territories ----
+    // The map is a plate gone over with coloured pencil: hue names a theme and
+    // nothing else. Three washed pigments cycle across the clusters, and red is
+    // never one of them -- it is withheld for the gaps, which is the whole
+    // reason it carries when one appears. A paper in no cluster is plain ink.
+    const TERRITORY = [colors.slate, colors.moss, colors.ochre].filter(Boolean);
+    const territory = {};
+    model.themes.forEach((t, i) => {
+      const pigment = TERRITORY.length ? TERRITORY[i % TERRITORY.length] : colors['ink-2'];
+      t.doc_ids.forEach((d) => { territory[d] = pigment; });
+    });
+    const inkOf = (id) => territory[id] || colors['ink-3'] || colors['text-3'];
+    state.paint.territory = territory;
+    state.paint.inkOf = inkOf;
+
+    // theme territories: washed, not filled, and outlined with a solid hairline
     if (state.layers.themes) {
-      model.themes.forEach((t) => {
+      model.themes.forEach((t, i) => {
         const pts = t.doc_ids.map((d) => state.pos[d]).filter(Boolean);
         if (!pts.length) return;
+        const pigment = TERRITORY.length ? TERRITORY[i % TERRITORY.length] : colors['ink-2'];
         L.hulls.appendChild(
           el('path', {
             d: hullPath(pts),
-            fill: colors.accent,
+            fill: pigment,
             'fill-opacity': 0.05,
-            stroke: colors.accent,
-            'stroke-opacity': 0.22,
+            stroke: pigment,
+            'stroke-opacity': 0.34,
             'stroke-width': 1,
-            'stroke-dasharray': '5 5',
           }),
         );
         const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
@@ -494,7 +519,7 @@ export default function useCanvas({
           y: cy + R * 0.82 + 18,
           'text-anchor': 'middle',
           class: 'lg-hull-label',
-          fill: colors.accent,
+          fill: pigment,
         });
         lb.textContent = t.label;
         // first in the list: a theme is the macro read, and losing its label
@@ -504,15 +529,20 @@ export default function useCanvas({
       });
     }
 
-    // similarity edges
+    // similarity edges: fine strokes, drawn in the territory they belong to.
+    // An edge inside one theme is that theme's pencil; an edge BETWEEN themes
+    // is plain graphite, because it belongs to neither.
     model.edges.forEach((e) => {
       const a = state.pos[e.source];
       const b = state.pos[e.target];
       if (!a || !b) return;
+      const ta = territory[e.source];
+      const same = ta && ta === territory[e.target];
       const line = el('line', {
         x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-        stroke: colors.accent,
-        'stroke-width': (e.weight * 3.4).toFixed(1),
+        stroke: same ? ta : (colors['ink-3'] || colors['text-3']),
+        'stroke-width': same ? (0.9 + e.weight * 1.4).toFixed(2) : '0.8',
+        'stroke-opacity': same ? (0.3 + e.weight * 0.34).toFixed(2) : '0.3',
       });
       line.dataset.a = e.source;
       line.dataset.b = e.target;
@@ -530,7 +560,7 @@ export default function useCanvas({
           if (!p) return;
           const line = el('line', {
             x1: gp.x, y1: gp.y, x2: p.x, y2: p.y,
-            stroke: colors.warning,
+            stroke: colors.mark || colors.accent,
             'stroke-dasharray': '3 3',
           });
           paint.gapEdges.push(line);
@@ -539,11 +569,14 @@ export default function useCanvas({
       });
     }
 
-    // paper nodes. geometry carries the data; colour never does.
+    // Paper nodes: points of light, not bubbles. The radius was 11 + chunks/14,
+    // which put a 25px disc on a long paper and turned the plate into a bubble
+    // chart -- so the labels had to dodge the discs rather than the positions.
+    // Size still tracks length, over a much narrower range.
     model.nodes.forEach((n) => {
       const p = state.pos[n.doc_id];
       if (!p) return;
-      const r = 11 + Math.min(n.chunks, 200) / 14;
+      const r = 4.5 + Math.min(n.chunks, 200) / 50;
       // outer <g> positions, inner <g> is what any animation may touch --
       // writing `transform` on the positioned group erases the translate.
       const outer = el('g', { transform: `translate(${p.x},${p.y})` });
@@ -593,24 +626,31 @@ export default function useCanvas({
       model.gaps.forEach((gp) => {
         const p = state.pos[gp.gap_id];
         if (!p) return;
-        const s = gp.severity === 'high' ? 13 : 10;
+        // A gap is not a warning triangle. It is the reader circling a spot on
+        // the plate: a point with two rings drawn round it, so it reads as
+        // "look here" rather than as an error the app is reporting.
+        const red = colors.mark || colors.accent;
+        const s = gp.severity === 'high' ? 1.15 : 1;
         const outer = el('g', { transform: `translate(${p.x},${p.y})` });
         const g = el('g', { class: 'lg-node' });
         g.dataset.id = gp.gap_id;
         g.dataset.gap = '1';
-        const tri = el('path', {
-          d: `M0 ${-s} L${s} ${s * 0.8} L${-s} ${s * 0.8} Z`,
-          stroke: colors.warning,
-          'stroke-width': 2,
-          'stroke-linejoin': 'round',
-        });
+        // `tri` keeps its name because restyle() fills it to show focus; it is
+        // the centre point now rather than a triangle.
+        const tri = el('circle', { r: 5 * s, stroke: red, 'stroke-width': 1.3 });
+        g.appendChild(el('circle', {
+          r: 17 * s, fill: 'none', stroke: red, 'stroke-width': 1.3, 'stroke-opacity': 0.8,
+        }));
+        g.appendChild(el('circle', {
+          r: 31 * s, fill: 'none', stroke: red, 'stroke-width': 1, 'stroke-opacity': 0.4,
+        }));
         g.appendChild(tri);
-        const t = el('text', { class: 'lg-label', y: s + 15, 'text-anchor': 'middle' });
+        const t = el('text', { class: 'lg-label lg-gap-label', y: 31 * s + 15, 'text-anchor': 'middle' });
         t.textContent = 'gap';
-        t.style.fill = colors.warning;
+        t.style.fill = red;
         g.appendChild(t);
         paint.labels.push(t);
-        slots.push({ el: t, text: 'gap', x: p.x, y: p.y + s + 15 });
+        slots.push({ el: t, text: 'gap', x: p.x, y: p.y + 31 * s + 15 });
         paint.gapNodes.push({ id: gp.gap_id, g, path: tri, doc_ids: gp.doc_ids });
         outer.appendChild(g);
         L.nodes.appendChild(outer);
@@ -643,9 +683,11 @@ export default function useCanvas({
           const x = o.x + Math.cos(a) * R;
           const y = o.y + Math.sin(a) * R;
           L.edges.appendChild(
+            // A claim is content, not something to act on, so it is drawn in
+            // graphite. Only the gaps and the live selection get the red pen.
             el('line', {
               x1: o.x, y1: o.y, x2: x, y2: y,
-              stroke: colors.accent, 'stroke-opacity': 0.4,
+              stroke: colors['ink-3'] || colors['text-3'], 'stroke-opacity': 0.4,
               'stroke-width': 1, 'stroke-dasharray': '2 3',
             }),
           );
@@ -655,7 +697,8 @@ export default function useCanvas({
           g.dataset.id = expanded;
           g.appendChild(
             el('circle', {
-              r: 7, fill: colors.surface, stroke: colors.accent,
+              r: 5, fill: colors.sheet || colors.surface,
+              stroke: colors['ink-3'] || colors['text-3'],
               'stroke-width': 1.2, 'stroke-opacity': 0.8,
             }),
           );

@@ -94,7 +94,14 @@ export function mode() {
   } catch {
     /* storage unavailable: fall back to the behaviour the app was built for */
   }
-  return MODES.includes(raw) ? raw : 'earn';
+  // Default 'full', not 'earn'. The strip that let anyone choose is gone
+  // pending a proper decision about the mechanic, and until then nothing may
+  // be withheld: --mark is not decoration, it is what distinguishes a gap
+  // marker from ordinary text on the map. An interface that greys out its own
+  // signal until a milestone is reached fails "the app tells you everything".
+  // The earning machinery below is untouched and still records what was
+  // earned, so switching the default back costs one word.
+  return MODES.includes(raw) ? raw : 'full';
 }
 
 /**

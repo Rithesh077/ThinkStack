@@ -126,16 +126,15 @@ describe('a page declares whether it is a document or a workspace', () => {
   // only out of room. Two beta checks -- "the panes can be dragged" -- would
   // have failed for every tester on a wide monitor.
 
-  it('the workspaces are the ones built out of panes, plus the dashboard', () => {
+  it('the workspaces are the ones built out of panes', () => {
     const fills = FEATURES.filter((f) => f.fills).map((f) => f.id);
     expect(fills.sort()).toEqual(['library', 'litgraph', 'write']);
   });
 
   it('Bench keeps a measure; Library does not need one', () => {
-    // The rule is about PROSE, not about being a pane. Bench is read: its
-    // cards carry paragraphs explaining what a model is for, and those are
-    // unreadable at 1900px. Library is a dashboard -- counts, three panels and
-    // a list -- and capping it left a third of a wide window empty.
+    // The rule is about PROSE, not about being a pane. Bench is read -- its
+    // cards carry paragraphs about what a model is for. Library is a folio,
+    // three panels and a shelf, and capping it wasted a third of a wide window.
     expect(FEATURES.find((f) => f.id === 'bench').fills).toBeFalsy();
     expect(FEATURES.find((f) => f.id === 'library').fills).toBe(true);
   });

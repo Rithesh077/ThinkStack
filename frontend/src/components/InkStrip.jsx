@@ -119,7 +119,7 @@ export default function InkStrip() {
             className={`ink-well ink-${p}${note === p ? ' is-inking' : ''}`}
           />
         ))}
-        {showHint && <span className="ink-hint">choose</span>}
+        {showHint && <span className="ink-hint">Choose</span>}
       </button>
 
       {open && (

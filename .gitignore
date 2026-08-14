@@ -32,9 +32,6 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.eslintcache
-new-frontend/node_modules/
-new-frontend/dist/
-new-frontend/.eslintcache
 *.local
 *-debug.log*
 

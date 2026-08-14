@@ -1,27 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, CheckCircle, FileText, BarChart2, Brain, Target, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, PenLine, Cpu, Search, Pencil, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
+         Lock, ShieldCheck, ShieldOff, Eye, EyeOff, Pencil, Search } from 'lucide-react';
 import { documentsApi, encryptionApi, papersApi, registryApi, useJobs } from '../utils/api';
 import { FEATURES } from '../features';
 import { libraryTourOpen, setLibraryTourOpen } from '../utils/firstRun';
 import UploadPanel from './UploadPanel';
+import PageHeader from './PageHeader';
+import ConfirmDialog from './ConfirmDialog';
 
-/**
- * Library - the paper collection.
- *
- * displays all ingested documents, allows upload of new papers,
- * and provides document deletion and encryption controls.
- * shows metadata, chunk counts, and encryption status for each paper.
- */
 // Everything except Library itself: this list sits ON Library, and a page does
-// not need to introduce itself. Read from FEATURES so a new feature appears
-// here without anyone remembering to add it, and its wording cannot drift from
-// the "i" guide that reads the same field.
+// not introduce itself. Read from FEATURES so a new feature appears here
+// without anyone remembering, and so the wording cannot drift from the "i".
 const OTHER_FEATURES = FEATURES.filter((f) => f.id !== 'library');
-
-// Rows shown at once. Small on purpose: the point of this screen is the whole
-// picture, and a list long enough to scroll buries the panels above it.
-const PAGE_SIZE = 5;
 
 // The routing table's task keys, in the words the rest of the app uses.
 const TASK_LABELS = {
@@ -31,40 +22,42 @@ const TASK_LABELS = {
   latex_writer: 'LaTeX writing',
 };
 
+// Rows at once. Small on purpose: this page is meant to be taken in at a
+// glance, and a list long enough to scroll buries whatever sits above it.
+const PAGE_SIZE = 5;
+
+/**
+ * Library - the paper collection.
+ *
+ * displays all ingested documents, allows upload of new papers,
+ * and provides document deletion and encryption controls.
+ * shows metadata, chunk counts, and encryption status for each paper.
+ */
 export default function Library() {
   const navigate = useNavigate();
-  // Expanded only for someone who has never run this app -- see
-  // libraryTourOpen(). Updating users have already found LitGraph and Scribe,
-  // and introducing them to their own workspace reads as a regression.
+  // Expanded only for someone who has never run this app. An update should not
+  // greet an existing user with an introduction to their own workspace.
   const [tourOpen, setTourOpen] = useState(libraryTourOpen);
+  const toggleTour = () => setTourOpen((open) => { setLibraryTourOpen(!open); return !open; });
 
-  const toggleTour = () => {
-    setTourOpen((open) => {
-      setLibraryTourOpen(!open);
-      return !open;
-    });
-  };
-
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(0);
-  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, total_chunks: 0, analyses: 0, gaps: 0 });
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [renamingDoc, setRenamingDoc] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
 
-  // What the background queue is doing. Analysis is queued AFTER the upload
-  // responds, so without this the user sees "ingested", opens LitGraph, finds
-  // it empty, and has no way to know a model is still working.
+  // Analysis is queued AFTER the upload responds, so without this the reader is
+  // told "read", opens LitGraph, finds it empty, and concludes it is broken.
   const jobs = useJobs();
   const wasBusy = useRef(false);
 
-  // Overview panels. `null` means not loaded yet or the call failed -- which
-  // the panels render differently, because "no papers" and "we could not ask"
-  // are different facts and a dash for both hides an outage.
+  // `null` means not loaded or the call failed -- rendered differently from
+  // "nothing yet", because an outage and an empty shelf are different facts.
   const [scribeProjects, setScribeProjects] = useState(null);
   const [benchModels, setBenchModels] = useState(null);
-  const [renamingDoc, setRenamingDoc] = useState(null);
-  const [renameValue, setRenameValue] = useState('');
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [docDetails, setDocDetails] = useState({});
 
@@ -107,16 +100,11 @@ export default function Library() {
   const loadBenchModels = useCallback(async () => {
     try {
       const snap = await registryApi.get();
-      // `routing`, not `models`. There is no "active model" -- the app routes
-      // per task, and which entry serves a task depends on every other entry
-      // (assignment, size against the memory free right now, rank). The
-      // backend computes that and says so at routes_registry.py:186: doing it
-      // again in javascript lets the two drift. Reading `models` and taking
-      // the first ready one names a model that may serve nothing.
-      // One row per TASK, not per model. Which model answers depends on the
-      // task, and collapsing them hid the interesting case: a library with two
-      // models installed routes Analysis to the bigger one and everything else
-      // to the small one, and that is worth being able to see at a glance.
+      // `routing`, not `models`. There is no single active model: work is
+      // routed per task, and which entry serves one depends on every other
+      // entry -- assignment, the memory free right now, rank. The backend
+      // computes that and says so at routes_registry.py:186; deciding it again
+      // here lets the two drift. One row per task.
       const routing = snap.routing || {};
       setBenchModels(
         Object.entries(routing)
@@ -135,13 +123,16 @@ export default function Library() {
     loadBenchModels();
   }, [loadDocuments, loadScribeProjects, loadBenchModels]);
 
-  // Refresh when the queue finishes, not while it runs. The counts only change
-  // at the end of a job, and re-fetching every poll would reload the list under
-  // the user's cursor twice a second. Same rule LitGraph uses.
+  // Refresh on the queue's FALLING edge, not every poll: the counts only change
+  // when a job ends, and re-fetching twice a second reloads the list under the
+  // reader's cursor.
   useEffect(() => {
     if (wasBusy.current && !jobs.active) loadDocuments();
     wasBusy.current = jobs.active;
   }, [jobs.active, loadDocuments]);
+
+  // A filter that leaves you on page four of one shows an empty list.
+  useEffect(() => { setPage(0); }, [query, onlyIncomplete]);
 
   const startRename = (doc) => {
     setRenamingDoc(doc.doc_id);
@@ -152,7 +143,7 @@ export default function Library() {
     const title = renameValue.trim();
     if (!title) return;
     // Optimistic: the write touches every chunk of the paper and the list is
-    // re-fetched anyway. Waiting to redraw makes a local edit feel remote.
+    // refetched anyway. Waiting to redraw makes a local edit feel remote.
     setDocuments((docs) => docs.map((d) => (
       d.doc_id === docId ? { ...d, metadata: { ...d.metadata, title } } : d
     )));
@@ -240,45 +231,30 @@ export default function Library() {
     setEncryptBusy(false);
   };
 
-  const isDocEncrypted = (doc) => {
-    const meta = doc.metadata || {};
-    return meta.is_encrypted === 'true' || meta.is_encrypted === true;
-  };
-
-  // Everything below is derived from the list already fetched -- no extra
-  // call, and no counter that can disagree with the rows underneath it.
-  const encrypted = documents.filter(isDocEncrypted).length;
-  // The gap between ingested and analysed is the useful number: it says how
-  // much of the library the app has actually read.
-  const pending = Math.max(0, documents.length - (stats.analyses || 0));
-
-  // A paper the extractor could not fully read. Worth surfacing because it is
-  // FIXABLE now: the title is editable inline, and these are the rows where
-  // the map label and any future citation would be wrong.
+  // All derived from the list already fetched -- no extra call, and no counter
+  // that can disagree with the rows beneath it.
   const hasAuthors = (d) => /[a-z]/i.test(d.metadata?.authors || '');
   const incomplete = documents.filter((d) => !hasAuthors(d) || !d.metadata?.year);
 
-  // Filter, not search. Semantic search over the text lives in LitGraph; what
-  // a list of fifty papers needs is "where is the one I am thinking of", which
-  // is a substring match over what the row already shows.
   const matchesQuery = (doc) => {
     if (!query.trim()) return true;
     const m = doc.metadata || {};
     return `${m.title || ''} ${m.authors || ''} ${doc.filename || ''}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase());
+      .toLowerCase().includes(query.trim().toLowerCase());
   };
 
   const visible = documents
     .filter(matchesQuery)
     .filter((d) => !onlyIncomplete || incomplete.includes(d));
 
-  // Paged, so a library of fifty papers does not become fifty rows of scroll.
-  // Library is meant to give the whole picture at a glance; a wall of files is
-  // the opposite of that.
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageDocs = visible.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  const isDocEncrypted = (doc) => {
+    const meta = doc.metadata || {};
+    return meta.is_encrypted === 'true' || meta.is_encrypted === true;
+  };
 
   const actionLabels = {
     encrypt: { title: 'encrypt paper', button: 'encrypt', icon: Lock },
@@ -288,28 +264,46 @@ export default function Library() {
 
   return (
     <div>
-      {/* What the other three screens are for.
-          The nav says "LitGraph" and "Scribe", which mean nothing to someone
-          who has just installed this. Each page's own "i" explains it, but you
-          have to already be there -- and you will not open a screen whose name
-          tells you nothing. Saying it once on the page everyone lands on is
-          what lets the page titles go. */}
+      {/* Four glass stat cards became one line of type, and that line has now
+          moved onto the masthead rule as the folio. It was drawing a second
+          horizontal rule directly under the first one to carry three numbers.
+          Refresh goes with it, as a header action. */}
+      <PageHeader
+        className="fade-up stagger-1"
+        folio={
+          <>
+            <span className="tally-item"><b>{stats.total || '—'}</b>papers</span>
+            <span className="tally-item"><b>{stats.analyses || '—'}</b>Read</span>
+            {stats.gaps > 0 && <span className="tally-item"><b>{stats.gaps}</b>gaps</span>}
+            <span className="tally-item"><b>{stats.total_chunks || '—'}</b>chunks</span>
+            {documents.filter(isDocEncrypted).length > 0 && (
+              <span className="tally-item">
+                <b>{documents.filter(isDocEncrypted).length}</b>encrypted
+              </span>
+            )}
+          </>
+        }
+      >
+        <button className="tally-action" onClick={loadDocuments}>
+          <RefreshCw size={12} /> Refresh
+        </button>
+      </PageHeader>
+
+      {/* What the other three screens are for. "LitGraph" and "Scribe" mean
+          nothing to someone who has just installed this, and each page's own
+          "i" cannot help -- you have to already be there. Saying it once, on
+          the page every launch opens, is what lets the page titles go. */}
       <section className="library-tour fade-up stagger-2">
-        <button
-          className="library-tour-toggle"
-          onClick={toggleTour}
-          aria-expanded={tourOpen}
-        >
-          {tourOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <button className="library-tour-toggle" onClick={toggleTour} aria-expanded={tourOpen}>
+          {tourOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           <span>What&apos;s here</span>
         </button>
-
         {tourOpen && (
           <ul className="library-tour-list">
             {OTHER_FEATURES.map(({ id, path, label, icon: Icon, summary }) => (
               <li key={id}>
                 <button className="library-tour-item" onClick={() => navigate(path)}>
-                  <Icon size={16} className="library-tour-icon" />
+                  <Icon size={15} className="library-tour-icon" />
                   <span className="library-tour-label">{label}</span>
                   <span className="library-tour-summary">{summary}</span>
                 </button>
@@ -319,94 +313,43 @@ export default function Library() {
         )}
       </section>
 
-      {/* An empty library has nothing to report, and four cards reading "-"
-          plus a chart with no data is what a new install used to open on. The
-          one visit where the dashboard has least to say is the one where the
-          user most needs telling what happens next. */}
-      {!loading && documents.length === 0 ? (
-        <section className="library-start fade-up stagger-2">
-          <h2>Start by adding a paper.</h2>
-          <p className="library-start-lede">
-            Drop a PDF below. Everything after that happens on this machine —
-            no account, no upload, no network.
-          </p>
-          <ol className="library-start-steps">
-            <li>
-              <span className="library-start-step">Read</span>
-              title, authors and year are taken from the page layout, not guessed
-            </li>
-            <li>
-              <span className="library-start-step">Split</span>
-              the text becomes passages small enough to search precisely
-            </li>
-            <li>
-              <span className="library-start-step">Embed</span>
-              each passage gets a vector, so you can search by meaning
-            </li>
-            <li>
-              <span className="library-start-step">Analyse</span>
-              claims and gaps are extracted in the background — this one takes a
-              minute, and the rest of the app stays usable
-            </li>
-          </ol>
-          <p className="library-start-then">
-            Then <button className="link-button" onClick={() => navigate('/litgraph')}>LitGraph</button> maps
-            what you have, and <button className="link-button" onClick={() => navigate('/scribe')}>Scribe</button> cites
-            it while you write.
-          </p>
-        </section>
-      ) : (
-      <div className="library-overview fade-up stagger-2">
-        <div className="library-panels">
-          <section className="stat-card panel">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Models in Use</span>
-              <Cpu size={16} className="stat-card-icon" />
-            </div>
+      {documents.length > 0 && (
+        <div className="library-panels fade-up stagger-2">
+          <section className="panel">
+            <h4 className="panel-head">Models in use</h4>
             {benchModels === null ? (
-              <p className="panel-empty">could not read the model registry</p>
+              <p className="panel-empty">Could not read the model registry</p>
             ) : benchModels.length === 0 ? (
-              <p className="panel-empty">no model is configured</p>
+              <p className="panel-empty">No model is configured</p>
             ) : (
-              <ul className="panel-list panel-list-scroll">
+              <ul className="panel-list">
                 {benchModels.map(({ task, label }) => (
-                  <li key={task} className="panel-row">
-                    <span className="panel-row-name">{TASK_LABELS[task] || task}</span>
-                    <span className="panel-row-meta">{label}</span>
+                  <li key={task}>
+                    <span className="panel-key">{TASK_LABELS[task] || task}</span>
+                    <span className="panel-val">{label}</span>
                   </li>
                 ))}
               </ul>
             )}
-            {/* The first-run banner says this once and never returns, and it
+            {/* The first-run note says this once and never returns, and it
                 lands people in Bench -- a screen they have no reason to open
-                again. Library is where they actually are, so the fact that a
-                model is running locally and can be swapped lives here too. */}
+                again. This is where they actually are. */}
             <p className="panel-note">
-              Runs on this machine. Nothing is uploaded.{' '}
+              Runs on this machine.{' '}
               <button className="link-button" onClick={() => navigate('/bench')}>
                 Change in Bench
               </button>
             </p>
           </section>
 
-          {/* Not a statistic -- a worklist. Extraction is right about 93% of
-              the time, so a few papers arrive without authors or a year, and
-              those are exactly the rows whose LitGraph label is wrong and
-              whose citation would be incomplete. Now that a title is editable
-              inline, this is the only place that says WHICH ones to fix. */}
           {incomplete.length > 0 && (
-            <section className="stat-card panel">
-              <div className="stat-card-top">
-                <span className="stat-card-label">Needs Attention</span>
-                <AlertTriangle size={16} className="stat-card-icon" />
-              </div>
-              <ul className="panel-list panel-list-scroll">
-                {incomplete.map((doc) => (
-                  <li key={doc.doc_id} className="panel-row">
-                    <span className="panel-row-name">
-                      {doc.metadata?.title || doc.filename}
-                    </span>
-                    <span className="panel-row-meta">
+            <section className="panel">
+              <h4 className="panel-head">Needs attention</h4>
+              <ul className="panel-list">
+                {incomplete.slice(0, 4).map((doc) => (
+                  <li key={doc.doc_id}>
+                    <span className="panel-key">{doc.metadata?.title || doc.filename}</span>
+                    <span className="panel-val">
                       {!hasAuthors(doc) && !doc.metadata?.year ? 'no authors, no year'
                         : !hasAuthors(doc) ? 'no authors' : 'no year'}
                     </span>
@@ -414,57 +357,62 @@ export default function Library() {
                 ))}
               </ul>
               <p className="panel-note">
-                {incomplete.length} of {documents.length} papers.{' '}
-                <button className="link-button"
-                        onClick={() => setOnlyIncomplete((on) => !on)}>
-                  {onlyIncomplete ? 'Show all papers' : 'Show only these'}
+                {incomplete.length} of {documents.length}.{' '}
+                <button className="link-button" onClick={() => setOnlyIncomplete((on) => !on)}>
+                  {onlyIncomplete ? 'Show all' : 'Show only these'}
                 </button>
               </p>
             </section>
           )}
 
-          <section className="stat-card panel">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Papers Being Written</span>
-              <PenLine size={16} className="stat-card-icon" />
-            </div>
+          <section className="panel">
+            <h4 className="panel-head">Being written</h4>
             {scribeProjects === null ? (
-              <p className="panel-empty">could not read Scribe projects</p>
+              <p className="panel-empty">Could not read Scribe projects</p>
             ) : scribeProjects.length === 0 ? (
-              <p className="panel-empty">nothing in progress</p>
+              <p className="panel-empty">
+                Nothing in progress.{' '}
+                <button className="link-button" onClick={() => navigate('/write')}>
+                  Start a paper
+                </button>
+              </p>
             ) : (
-              <ul className="panel-list panel-list-scroll">
-                {scribeProjects.map((proj) => (
-                  <li key={proj.project_id} className="panel-row">
-                    <PenLine size={12} className="panel-row-icon" />
-                    <span className="panel-row-name">{proj.name || proj.project_id}</span>
-                    {proj.has_pdf && <span className="badge badge-success">pdf</span>}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="panel-list">
+                  {scribeProjects.slice(0, 4).map((proj) => (
+                    <li key={proj.project_id}>
+                      <span className="panel-key">{proj.name || proj.project_id}</span>
+                      <span className="panel-val">{proj.has_pdf ? 'pdf' : 'draft'}</span>
+                    </li>
+                  ))}
+                </ul>
+                {/* One link, not one per row. Scribe has no route parameter and
+                    does not restore a project, so a click on "uxtest" would
+                    open whatever Scribe opens by default -- which is worse than
+                    a single honest door. Per-draft links want a /write/:id
+                    route first. */}
+                <p className="panel-note">
+                  {scribeProjects.length} in progress.{' '}
+                  <button className="link-button" onClick={() => navigate('/write')}>
+                    Continue writing
+                  </button>
+                </p>
+              </>
             )}
           </section>
         </div>
-      </div>
       )}
 
-      {/* Upload comes before the knowledge base it fills -- the action, then
-          what it produced. The chart is part of that section, not a preamble
-          to it, so it sits under the heading rather than above the dropzone. */}
+      {/* The upload zone stops being a five-rem dashed pit and becomes the
+          first row of the list it feeds. */}
       <div className="fade-up stagger-3">
         <UploadPanel onUploadComplete={loadDocuments} />
       </div>
 
-      {/* The counts used to be six cards across the top of the page, which put
-          the least actionable thing first and pushed the papers below the fold.
-          They belong beside the thing they count. */}
-      <div className="kb-heading fade-up stagger-4">
-        <div className="kb-heading-left">
-          <h3 className="section-heading">Knowledge Base</h3>
-        </div>
-        {documents.length > 0 && (
-          <div className="kb-search">
-            <Search size={14} className="kb-search-icon" />
+      {documents.length > 0 && (
+        <div className="kb-bar fade-up stagger-4">
+          <span className="kb-search">
+            <Search size={13} className="kb-search-icon" />
             <input
               type="search"
               value={query}
@@ -472,243 +420,171 @@ export default function Library() {
               placeholder={`Filter ${documents.length} papers by title, author or filename`}
               aria-label="Filter papers"
             />
-          </div>
-        )}
-      </div>
-
-      {/* The counts live in the section they describe, not across the top of
-          the page. Above the fold they were the first thing read and the least
-          worth reading; here they are a caption on the knowledge base.
-          Dropped from the original six: bytes on disk, which answered a
-          question nobody asked. */}
-      {documents.length > 0 && (
-        <div className="kb-counts fade-up stagger-4">
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Papers Ingested</span>
-              <FileText size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.total}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Knowledge Chunks</span>
-              <BarChart2 size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.total_chunks}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Analysed</span>
-              <Brain size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">
-              {stats.analyses}
-              {pending > 0 && <small> of {documents.length}</small>}
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Gaps Found</span>
-              <Target size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.gaps || '—'}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Encrypted</span>
-              <ShieldCheck size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{encrypted || '—'}</div>
-          </div>
-        </div>
-      )}
-
-      {/* The filter has to say it is on, and offer a way out. A list quietly
-          showing three of twenty papers is indistinguishable from a bug. */}
-      {onlyIncomplete && (
-        <div className="kb-filter-note">
-          <span>
-            Showing {visible.length} paper{visible.length === 1 ? '' : 's'} missing
-            an author list or a year. Click a title&apos;s pencil to correct it.
           </span>
-          <button className="btn btn-secondary btn-sm"
-                  onClick={() => setOnlyIncomplete(false)}>
-            Show all
-          </button>
+          {onlyIncomplete && (
+            <button className="link-button" onClick={() => setOnlyIncomplete(false)}>
+              showing {visible.length} needing attention &mdash; show all
+            </button>
+          )}
         </div>
       )}
 
-      {/* Ingestion returns before the analysis does. Without this the user is
-          told "ingested", opens LitGraph, finds nothing, and concludes it is
-          broken -- when a model is simply still working. */}
+      {/* Ingestion returns before the analysis does. Without this the reader is
+          told the paper is in, opens LitGraph, and finds nothing. */}
       {jobs.active && (
-        <div className="kb-progress" role="status">
+        <p className="kb-progress" role="status">
           <span className="spinner" />
-          <span className="kb-progress-label">
-            {jobs.label || 'Working through the queue'}
-          </span>
-          {jobs.total > 1 && (
-            <span className="kb-progress-count">{jobs.done} of {jobs.total}</span>
-          )}
-          {jobs.queued > 0 && (
-            <span className="kb-progress-count">{jobs.queued} queued</span>
-          )}
-        </div>
+          {jobs.label || 'Working through the queue'}
+          {jobs.total > 1 && <em> · {jobs.done} of {jobs.total}</em>}
+          {jobs.queued > 0 && <em> · {jobs.queued} queued</em>}
+        </p>
       )}
 
-      <div className="card fade-up stagger-4">
-        <div className="card-header">
-          <span className="card-title"></span>
-          <button className="btn btn-secondary btn-sm" onClick={loadDocuments}>
-            <RefreshCw size={14} />
-            <span>refresh</span>
-          </button>
-        </div>
-
+      <div className="paper-list fade-up stagger-4">
         {loading ? (
           <div className="loading-overlay">
             <div className="spinner spinner-lg" />
-            <span>loading papers...</span>
+            <span>Loading papers…</span>
           </div>
         ) : documents.length === 0 ? (
           <div className="empty-state">
-            <FileText size={48} />
-            <h3>no papers yet</h3>
-            <p>upload pdf research papers above to start building your knowledge base.</p>
+            <h3>Nothing read yet</h3>
+            <p>
+              Drop a PDF on the line above. ThinkStack reads it on this machine,
+              and the page starts to take its colour.
+            </p>
           </div>
         ) : visible.length === 0 ? (
           <div className="empty-state">
-            <Search size={48} />
-            <h3>no match</h3>
-            <p>nothing in {documents.length} papers matches &ldquo;{query.trim()}&rdquo;.</p>
+            <h3>No match</h3>
+            <p>Nothing in {documents.length} papers matches &ldquo;{query.trim()}&rdquo;.</p>
           </div>
         ) : (
           pageDocs.map((doc) => (
             <div key={doc.doc_id}>
+              {/* Columns, per §6: what it is, how much of it there is, what
+                  state it is in, and when. Serif for the title because it is
+                  read; mono for the rest because it is counted. */}
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
-                <div className="doc-icon">
-                  {isDocEncrypted(doc) ? (
-                    <Lock size={18} color="var(--accent-secondary)" />
-                  ) : (
-                    <CheckCircle size={18} color="var(--success)" />
-                  )}
-                </div>
-                <div className="doc-info">
-                  {renamingDoc === doc.doc_id ? (
-                    // Click-through would collapse the row out from under the
-                    // input the moment you tried to type in it.
-                    <form
-                      className="doc-rename"
-                      onClick={(e) => e.stopPropagation()}
-                      onSubmit={(e) => { e.preventDefault(); submitRename(doc.doc_id); }}
+                {/* The inner span is what the leader dots need: the text has to
+                    be its own box so the dotted rule can be a sibling that eats
+                    whatever width the title does not. */}
+                {renamingDoc === doc.doc_id ? (
+                  // Click-through would collapse the row out from under the
+                  // input the moment you tried to type in it.
+                  <form
+                    className="doc-rename"
+                    onClick={(e) => e.stopPropagation()}
+                    onSubmit={(e) => { e.preventDefault(); submitRename(doc.doc_id); }}
+                  >
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
+                      aria-label="Paper title"
+                    />
+                    <button type="submit" className="link-button">Save</button>
+                    <button type="button" className="link-button"
+                            onClick={() => setRenamingDoc(null)}>Cancel</button>
+                  </form>
+                ) : (
+                  <span className="doc-title" title={doc.metadata?.title || doc.filename}>
+                    <span className="doc-title-text">{doc.metadata?.title || doc.filename}</span>
+                    {/* Extraction is ~93% right, so about one paper in fourteen
+                        is filed under the wrong name -- and that name labels it
+                        on the map too. This is the only place to correct it. */}
+                    <button
+                      className="doc-rename-btn"
+                      title="Correct this title"
+                      aria-label="Correct this title"
+                      onClick={(e) => { e.stopPropagation(); startRename(doc); }}
                     >
-                      <input
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
-                        aria-label="Paper title"
-                      />
-                      <button type="submit" className="btn btn-primary btn-sm">save</button>
-                      <button type="button" className="btn btn-ghost btn-sm"
-                              onClick={() => setRenamingDoc(null)}>cancel</button>
-                    </form>
-                  ) : (
-                    <div className="doc-title">
-                      {/* The extracted title, not the filename. "2402.02414.pdf"
-                          tells a reader nothing, and the title is what labels
-                          this paper everywhere else in the app. */}
-                      {doc.metadata?.title || doc.filename}
-                      <button
-                        className="doc-rename-btn"
-                        title="Correct this title"
-                        aria-label="Correct this title"
-                        onClick={(e) => { e.stopPropagation(); startRename(doc); }}
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      {isDocEncrypted(doc) && (
-                        <span className="badge badge-warning">encrypted</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="doc-meta">
-                    {/* Papers ingested before the layout fix have author
-                        strings like ", ," -- joined separators with nothing
-                        between them. Truthy, and meaningless to show. */}
-                    {/[a-z]/i.test(doc.metadata?.authors || '') && (
-                      <span>{doc.metadata.authors}</span>
-                    )}
-                    {doc.metadata?.year && <span>{doc.metadata.year}</span>}
-                    <span><Clock size={12} /> {doc.filename}</span>
-                  </div>
-                </div>
-                <div className="doc-actions" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                      <Pencil size={12} />
+                    </button>
+                  </span>
+                )}
+                {/* Was the chunk count -- a bare "1" that told the reader
+                    nothing, being a detail of how we index the text. The
+                    authors are what identifies a paper at a glance, and we
+                    now extract them accurately enough to print. */}
+                <span className="doc-authors">
+                  {/[a-z]/i.test(doc.metadata?.authors || '')
+                    ? doc.metadata.authors
+                    : '—'}
+                </span>
+                <span className={`doc-state ${isDocEncrypted(doc) ? 'is-locked' : ''}`}>
+                  {isDocEncrypted(doc) ? 'encrypted' : 'read'}
+                </span>
+                {/* metadata.year, not a timestamp: the API has never returned
+                    one, so the old row fell through to new Date() and stamped
+                    every paper in the library with today. */}
+                <span className="doc-year">{doc.metadata?.year || '—'}</span>
+                <div className="doc-actions">
                   {isDocEncrypted(doc) ? (
                     <>
                       <button
                         className="btn-icon btn-icon-accent"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'view'); }}
-                        title="view decrypted text"
+                        title="View decrypted text"
                       >
-                        <Eye size={20} />
+                        <Eye size={15} />
                       </button>
                       <button
                         className="btn-icon btn-icon-warning"
                         onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'remove'); }}
-                        title="remove encryption"
+                        title="Remove encryption"
                       >
-                        <ShieldOff size={20} />
+                        <ShieldOff size={15} />
                       </button>
                     </>
                   ) : (
                     <button
                       className="btn-icon btn-icon-accent"
                       onClick={(e) => { e.stopPropagation(); openEncryptDialog(doc.doc_id, 'encrypt'); }}
-                      title="encrypt paper"
+                      title="Encrypt paper"
                     >
-                      <ShieldCheck size={20} />
+                      <ShieldCheck size={15} />
                     </button>
                   )}
                   <button
                     className="btn-icon btn-icon-danger"
                     onClick={(e) => { e.stopPropagation(); handleDelete(doc.doc_id); }}
-                    title="delete paper"
+                    title="Delete paper"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={15} />
                   </button>
                   {expandedDoc === doc.doc_id ? (
-                    <ChevronUp size={16} color="var(--text-muted)" />
+                    <ChevronUp size={13} color="var(--text-muted)" />
                   ) : (
-                    <ChevronDown size={16} color="var(--text-muted)" />
+                    <ChevronDown size={13} color="var(--text-muted)" />
                   )}
                 </div>
               </div>
+              {/* The opened paper: an indented extract, set in the reading
+                  serif, hung off the row it belongs to. It was a nested card
+                  on --bg-tertiary -- a box inside a box inside the page. */}
               {expandedDoc === doc.doc_id && docDetails[doc.doc_id] && (
-                <div style={{ padding: '0 1.25rem 1rem', marginTop: '-0.25rem' }}>
-                  <div className="card" style={{ background: 'var(--bg-tertiary)' }}>
-                    {isDocEncrypted(doc) ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--warning)', fontSize: '0.85rem' }}>
-                        <Lock size={14} />
-                        <span>this document is encrypted. use the view button to read.</span>
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7' }}>
-                        {docDetails[doc.doc_id].full_text?.substring(0, 800)}
-                        {docDetails[doc.doc_id].full_text?.length > 800 && '...'}
-                      </p>
-                    )}
-                  </div>
+                <div className="doc-extract">
+                  {isDocEncrypted(doc) ? (
+                    <p className="doc-extract-locked">
+                      <Lock size={14} />
+                      <span>This paper is encrypted. Use the view button to read it.</span>
+                    </p>
+                  ) : (
+                    <p>
+                      {docDetails[doc.doc_id].full_text?.substring(0, 800)}
+                      {docDetails[doc.doc_id].full_text?.length > 800 && '…'}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           ))
         )}
 
-        {/* One batch at a time, an arrow at each end. Library is meant to give
-            the whole picture at a glance, and a list long enough to scroll
-            buries everything above it. */}
+        {/* One batch at a time, a mark at each end. The shelf is meant to be
+            read at a glance; a list long enough to scroll buries the folio. */}
         {visible.length > PAGE_SIZE && (
           <div className="kb-pager">
             <button
@@ -717,11 +593,11 @@ export default function Library() {
               disabled={safePage === 0}
               aria-label="Previous papers"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={16} />
             </button>
             <span className="kb-pager-label">
-              {safePage * PAGE_SIZE + 1}&ndash;{Math.min((safePage + 1) * PAGE_SIZE, visible.length)}
-              {' of '}{visible.length}
+              {safePage * PAGE_SIZE + 1}&ndash;
+              {Math.min((safePage + 1) * PAGE_SIZE, visible.length)} of {visible.length}
             </span>
             <button
               className="kb-pager-btn"
@@ -729,111 +605,79 @@ export default function Library() {
               disabled={safePage >= pageCount - 1}
               aria-label="Next papers"
             >
-              <ChevronRight size={18} />
+              <ChevronRight size={16} />
             </button>
           </div>
         )}
       </div>
 
-      {/* ── Encryption Modal ── */}
+      {/* ── Encryption dialog ──
+          Was a hand-built overlay: `.modal-overlay` (a class with no rule
+          anywhere) plus eleven inline style objects, and none of the behaviour
+          -- no Escape, no focus handling, and `onClick` on the backdrop, so a
+          drag that started on the password field and finished outside the box
+          closed the dialog and threw the typing away. It is the shared
+          ConfirmDialog now, which is what that component's own docstring said
+          it was for. */}
       {encryptingDoc && encryptAction && (
-        <div
-          className="modal-overlay"
-          onClick={closeEncryptDialog}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
+        <ConfirmDialog
+          title={actionLabels[encryptAction]?.title}
+          icon={actionLabels[encryptAction]?.icon || Lock}
+          wide={Boolean(decryptedText)}
+          onCancel={closeEncryptDialog}
         >
-          <div
-            className="card"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '460px',
-              padding: '1.5rem', animation: 'fadeIn 0.2s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              {(() => { const Icon = actionLabels[encryptAction]?.icon || Lock; return <Icon size={20} />; })()}
-              <h3 style={{ margin: 0 }}>{actionLabels[encryptAction]?.title}</h3>
-            </div>
-
-            {decryptedText ? (
-              <div>
-                <div className="card" style={{ background: 'var(--bg-tertiary)', maxHeight: '400px', overflowY: 'auto' }}>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
-                    {decryptedText.substring(0, 3000)}
-                    {decryptedText.length > 3000 && '...'}
-                  </p>
-                </div>
+          {decryptedText ? (
+            <>
+              <div className="encrypt-read">
+                <p>
+                  {decryptedText.substring(0, 3000)}
+                  {decryptedText.length > 3000 && '…'}
+                </p>
+              </div>
+              <div className="confirm-actions">
+                <button className="btn btn-secondary" onClick={closeEncryptDialog}>Close</button>
+              </div>
+            </>
+          ) : (
+            <form onSubmit={handleEncryptSubmit}>
+              <div className="encrypt-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="input"
+                  placeholder="Enter password…"
+                  value={encryptPassword}
+                  onChange={(e) => setEncryptPassword(e.target.value)}
+                  autoFocus
+                />
                 <button
-                  className="btn btn-secondary"
-                  onClick={closeEncryptDialog}
-                  style={{ marginTop: '1rem', width: '100%' }}
+                  type="button"
+                  className="btn-icon btn-icon-accent"
+                  onClick={() => setShowPassword((v) => !v)}
+                  title={showPassword ? 'hide password' : 'show password'}
                 >
-                  close
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-            ) : (
-              <form onSubmit={handleEncryptSubmit}>
-                <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="input"
-                    placeholder="enter password…"
-                    value={encryptPassword}
-                    onChange={(e) => setEncryptPassword(e.target.value)}
-                    autoFocus
-                    style={{ width: '100%', paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn-icon btn-icon-accent"
-                    onClick={() => setShowPassword((v) => !v)}
-                    style={{ position: 'absolute', right: '0.25rem', top: '50%', transform: 'translateY(-50%)' }}
-                    title={showPassword ? 'hide password' : 'show password'}
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
 
-                {encryptError && (
-                  <div style={{
-                    color: 'var(--danger)', background: 'rgba(248,113,113,0.1)',
-                    padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
-                    fontSize: '0.85rem', marginBottom: '1rem',
-                  }}>
-                    {encryptError}
-                  </div>
-                )}
+              {encryptError && <div className="encrypt-error">{encryptError}</div>}
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeEncryptDialog}
-                    style={{ flex: 1 }}
-                  >
-                    cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className={`btn ${encryptAction === 'remove' ? 'btn-danger' : 'btn-primary'}`}
-                    disabled={encryptBusy}
-                    style={{ flex: 1 }}
-                  >
-                    {encryptBusy ? (
-                      <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                    ) : (
-                      actionLabels[encryptAction]?.button
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+              <div className="confirm-actions">
+                <button type="button" className="btn btn-secondary" onClick={closeEncryptDialog}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`btn ${encryptAction === 'remove' ? 'btn-danger' : 'btn-primary'}`}
+                  disabled={encryptBusy}
+                >
+                  {encryptBusy
+                    ? <div className="spinner" />
+                    : actionLabels[encryptAction]?.button}
+                </button>
+              </div>
+            </form>
+          )}
+        </ConfirmDialog>
       )}
     </div>
   );

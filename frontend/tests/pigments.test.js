@@ -22,7 +22,16 @@ beforeEach(() => {
   __resetPigments();
 });
 
+/** The earning behaviour is no longer the default, so a test that exercises it
+ *  asks for it. See the 'full by default' test below for why. */
+const earningMode = () => setMode('earn');
+
 describe('a fresh install', () => {
+  // These describe what EARNING does to <html>, so they ask for the lens that
+  // shows the record. The default inks everything -- see 'inks the full set by
+  // default' for why -- which would mask exactly what is under test.
+  beforeEach(earningMode);
+
   it('has earned nothing', () => {
     expect(earned()).toEqual([]);
     expect(hasEarned('mark')).toBe(false);
@@ -37,6 +46,11 @@ describe('a fresh install', () => {
 });
 
 describe('earning a pigment', () => {
+  // These describe what EARNING does to <html>, so they ask for the lens that
+  // shows the record. The default inks everything -- see 'inks the full set by
+  // default' for why -- which would mask exactly what is under test.
+  beforeEach(earningMode);
+
   it('persists it and puts it on <html>', () => {
     expect(earn('ochre')).toBe(true);
     expect(localStorage.getItem(KEY)).toBe('ochre');
@@ -75,6 +89,11 @@ describe('earning a pigment', () => {
 });
 
 describe('when localStorage throws', () => {
+  // These describe what EARNING does to <html>, so they ask for the lens that
+  // shows the record. The default inks everything -- see 'inks the full set by
+  // default' for why -- which would mask exactly what is under test.
+  beforeEach(earningMode);
+
   it('still paints the pigment for this session', () => {
     const setItem = Storage.prototype.setItem;
     Storage.prototype.setItem = () => { throw new Error('private mode'); };
@@ -106,7 +125,18 @@ describe('when localStorage throws', () => {
  * exactly what you actually earned -- not everything, and not nothing.
  */
 describe('choosing how colour arrives', () => {
-  it('earns by default, which is what the app was built for', () => {
+  it('inks the full set by default', () => {
+    // Was 'earn'. The strip that let anyone choose has been removed pending a
+    // decision about the mechanic, and with no control on screen nothing may
+    // be withheld: --mark is not decoration, it is what tells a gap marker
+    // from ordinary text on the map. Greying out your own signal until a
+    // milestone arrives fails "the app tells you everything".
+    expect(mode()).toBe('full');
+    expect(visible()).toEqual(PIGMENTS);
+  });
+
+  it('still earns, for anyone who asks for it', () => {
+    earningMode();
     expect(mode()).toBe('earn');
     expect(shouldAnnounce()).toBe(true);
   });
@@ -142,7 +172,7 @@ describe('choosing how colour arrives', () => {
 
   it('ignores a mode that does not exist', () => {
     setMode('sepia');
-    expect(mode()).toBe('earn');
+    expect(mode()).toBe('full');
   });
 
   it('announces only when there is something to see', () => {
@@ -156,6 +186,11 @@ describe('choosing how colour arrives', () => {
 });
 
 describe('the ceremony', () => {
+  // These describe what EARNING does to <html>, so they ask for the lens that
+  // shows the record. The default inks everything -- see 'inks the full set by
+  // default' for why -- which would mask exactly what is under test.
+  beforeEach(earningMode);
+
   it('fires once, on the call that earned the pigment', () => {
     const seen = [];
     const onEarned = (e) => seen.push(e.detail);
