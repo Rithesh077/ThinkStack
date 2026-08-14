@@ -119,6 +119,25 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   The separate floating logo is gone: one affordance, in one place, in both
   states.
 
+- **The interface is replaced.** ThinkStack now runs the *Paper and Ink*
+  interface — a sheet of paper on a desk, worked in ink, in place of the dark
+  glass one. It was built as a parallel tree while the old one shipped; both
+  called the same 44 routes, and every one of them was called against a running
+  backend before the swap. The old tree is deleted: one interface, one build.
+
+  Everything above carried across: the routing-table read, the correctable
+  titles, the paged shelf, the type scale (138 sizes here, six steps) and the
+  rail. They were made twice, once in each tree, which is what replacing a
+  running interface costs.
+
+- **Ingestion can be stopped.** Dropping thirty papers by mistake used to mean
+  waiting for thirty. The paper being read finishes and the queue stops there,
+  so nothing is left half-ingested.
+
+- **Bench no longer grades your machine.** The hardware "tier" is gone from
+  Bench and Diagnostics. It is a mark out of ten for someone's laptop and tells
+  them nothing they can act on; which models fit is what the cards already say.
+
 ### Known limitations
 
 - 43 of those 56 papers are exactly right on title, authors *and* year together.
