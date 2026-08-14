@@ -485,3 +485,36 @@ one worker per core, and on a 16-core laptop already running an editor that is
 sixteen node processes each with its own jsdom. `preflight.sh` now passes
 `--no-file-parallelism` locally; CI runners are small enough not to need it.
 The checks were never the problem, the concurrency was.
+
+## A type scale, and a sidebar that leaves something behind
+
+Two shell-wide changes. Both surfaced while Jitvan was reviewing Library's
+density — **that page and every decision about what it shows are his**; what
+follows is the part that turned out to have nothing to do with Library.
+
+**Twelve small font sizes.** `0.68`, `0.7`, `0.72`, `0.75`, `0.76`, `0.78`,
+`0.8`, `0.82`, `0.84`, `0.85`, `0.9`, `0.95rem` — across two stylesheets and
+161 declarations. Two-hundredths of a rem is not a decision anybody made; it is
+what happens when each component picks its own number, and the result reads as
+sloppy without any single value looking wrong. Six named steps now, and the
+root is fluid — `clamp(16px, 0.15vw + 14.6px, 18px)` — so every rem grows with
+the window instead of sitting at a fixed 16px on a 27" monitor.
+
+I got this wrong once first: `clamp(17px … 20px)` resolved near 20 on a wide
+display and read as *zoomed*, not legible. "Bigger" and "more readable" part
+company quickly.
+
+**The sidebar collapsed to zero.** Which sounds like the maximum amount of
+room and is the opposite: the two things you still need — the logo to bring it
+back, and the "i" explaining the page — then have to be drawn *on top of* the
+content. Collapsing the sidebar to get it out of the way put two things in the
+way. It collapses to a 64px rail now, and because `.main-content`'s margin
+reads the same variable, the page steps aside for it with no second
+measurement that could disagree.
+
+One bug from that is worth writing down. Moving the guide onto the rail made it
+disappear: the sidebar is `z-index: 100` and the guide is `40`, so on the rail
+it rendered behind it — present, correct, and invisible. Nothing about "move
+this 60px left" suggests a stacking problem, and nothing in the code says so
+either. I found it by looking at the screen and noticing the button was simply
+not there.

@@ -510,6 +510,71 @@ should keep a measure. That rule is about PROSE -- a line set 1900px wide is
 unreadable. Bench is read and keeps its measure; Library is counts, panels and
 a list, and capping it left a third of a wide window empty.
 
+## 2026-08-14: six named type steps, and a root size that is not fixed
+
+**Context.** The stylesheets carried twelve different small font sizes: 0.68,
+0.7, 0.72, 0.75, 0.76, 0.78, 0.8, 0.82, 0.84, 0.85, 0.9 and 0.95rem. The root
+was a flat `16px`.
+
+**Decision.** Six steps as variables -- `--text-xs` through `--text-2xl` -- and
+a fluid root, `clamp(16px, 0.15vw + 14.6px, 18px)`. 161 declarations across
+both stylesheets now resolve to them.
+
+**Consequences.** Two-hundredths of a rem is not a decision anyone made; it is
+what happens when each component picks a number on its own, and the result
+reads as sloppy without any single value looking wrong. Six steps are far
+enough apart to be deliberate, and the lower bound means nothing lands below
+about 13px.
+
+Fluid because this is a desktop application read at arm's length on whatever
+display it lands on: 16px is cramped on a 13" laptop and small on a 27"
+monitor. The range is narrow on purpose -- a first attempt at
+`clamp(17px .. 20px)` resolved near 20 on a wide monitor, which read as zoomed
+rather than as legible, and was rejected on sight.
+
+## 2026-08-14: a figure earns its place by answering a question
+
+**Context.** Library opened with six stat cards and a "chunks per paper" chart.
+The module's author said it was too much at once.
+
+**Decision.** The counts caption the Knowledge Base section instead of opening
+the page. Bytes on disk and the chunk count are removed rather than moved. The
+paper list pages five at a time.
+
+**Consequences.** The cards were the first thing read and the least worth
+reading, and they pushed the papers themselves below the fold. "175 KB" is the
+clearest case: it is accurate, it is cheap to compute, and no reader has ever
+wanted it -- nobody is short of 175 KB, and the number does not change what
+they do next. The chunk count is the same in a subtler way: it describes how
+the text is indexed, which is our concern rather than theirs.
+
+What replaced them says something: **analysed reads "15 of 20"**, so the
+distance between ingested and read is visible rather than implied.
+
+Paging follows from the same idea. Library exists to be taken in at a glance,
+and a list long enough to scroll buries everything above it, so the page is
+worth more than the rows.
+
+## 2026-08-14: the collapsed sidebar is a rail
+
+**Context.** Collapsing set `--sidebar-w: 0px`. The sidebar left the screen, so
+the logo was re-rendered as a floating button over the page and the "i" sat
+over the content beside it.
+
+**Decision.** Collapse to a 64px rail carrying the logo and the nav marks. The
+floating logo is deleted.
+
+**Consequences.** Zero width forces anything still needed to be drawn on top of
+the page, which is the problem collapsing was meant to solve. Because
+`.main-content`'s margin is the same variable, the content steps aside for the
+rail rather than sliding under it -- no second measurement, and no way for the
+two to disagree.
+
+The guide needed `z-index: 110` to sit on the rail. The sidebar is 100 and the
+guide 40, so on the rail it rendered *behind* it and simply vanished -- which
+is worth recording because nothing about the change suggests a stacking
+problem, and the symptom is an element that is present, correct, and invisible.
+
 ## 2026-08-13: the page titles go, and Library introduces the others
 
 **Context.** Every screen carried a heading repeating the nav item that was

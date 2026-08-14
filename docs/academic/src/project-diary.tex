@@ -948,6 +948,53 @@ filling a column whose neighbour then grew taller, and equalising panels whose
 contents were not equal --- before the layout was expressed as flow rather than
 as position.
 
+\subsection{14 August: a scale, and a sidebar that leaves a rail}
+
+The author of the collection screen judged that it presented too much at once,
+and reduced it: six summary figures that had opened the page were moved to
+caption the section they describe, two were removed outright, and the document
+list was divided into pages. The removals are the interesting part. One
+reported the number of bytes the stored papers occupy --- accurate, cheap to
+compute, and of no use to any reader, since nobody is short of the space in
+question and the figure changes nothing about what they do next. The other
+reported how many fragments the text had been divided into for indexing, which
+describes the implementation rather than the library. A figure earns its place
+by answering a question the reader would actually ask, and neither did.
+
+Two faults found during that review belonged to the shell rather than to the
+screen.
+
+The first was that the interface had twelve different small type sizes ---
+0.68, 0.70, 0.72, 0.75, 0.76, 0.78, 0.80, 0.82, 0.84, 0.85, 0.90 and 0.95 of
+the root size --- distributed across a hundred and sixty-one declarations in
+two stylesheets. Differences of two hundredths are not decisions; they are what
+accumulates when each component chooses independently, and the effect is an
+interface that reads as careless without any single value being identifiably
+wrong. These were consolidated to six named steps. The root size was also made
+to vary with the width of the window rather than being fixed, since the
+application is read at arm's length on displays between thirteen and
+twenty-seven inches. A first attempt allowed too wide a range and produced text
+that read as magnified rather than as legible; the range was narrowed.
+
+The second concerned the navigation panel, which collapsed to nothing. That
+sounds like the greatest possible gain of space and is the reverse: the two
+controls still required when it is closed --- the mark that reopens it, and the
+button explaining the current screen --- then have to be drawn on top of the
+page, obscuring whatever is beneath them. Collapsing the panel to get it out of
+the way therefore put two things in the way. It now collapses to a narrow rail
+that carries both, and because the page's margin is derived from the same
+declared width, the content moves aside for the rail rather than passing under
+it.
+
+One defect from that change is worth recording for its shape. Moving the
+explanatory button onto the rail made it vanish. The panel is drawn above it in
+the stacking order, so the button was rendered behind the rail: present,
+correctly positioned, and invisible. Nothing in the change suggested a stacking
+question, and nothing in the source indicated one; it was found by looking at
+the screen and observing that the control was not there. It is a reminder that
+a layout change is verified by looking, not by reasoning about what should
+follow.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
