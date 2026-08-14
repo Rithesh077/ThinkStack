@@ -71,6 +71,18 @@ docs/*.log
 docs/*.out
 docs/*.toc
 docs/*.synctex.gz
+# The sources build in place, so the same artefacts land beside them. The PDF
+# of record is the copy at docs/academic/*.pdf, not the one left in src/.
+docs/academic/src/*.aux
+docs/academic/src/*.log
+docs/academic/src/*.out
+docs/academic/src/*.toc
+docs/academic/src/*.lof
+docs/academic/src/*.lot
+docs/academic/src/*.synctex.gz
+docs/academic/src/*.fls
+docs/academic/src/*.fdb_latexmk
+docs/academic/src/*.pdf
 
 # ── IDE / Editor / OS ────────────────────────────────────
 # ignore local .vscode noise but SHARE the workspace config that fixes the

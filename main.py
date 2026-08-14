@@ -50,6 +50,7 @@ from api.routes_system import router as system_router
 from api.routes_encryption import router as encryption_router
 from api.routes_papers import router as papers_router
 from api.routes_paper_files import router as paper_files_router
+from api.routes_citations import router as citations_router
 from api.routes_models import router as models_router
 from api.routes_hf import router as hf_router
 from api.routes_registry import router as registry_router
@@ -102,6 +103,8 @@ app.include_router(papers_router, prefix="/api/papers", tags=["papers"])
 # The files inside a project. Same prefix on purpose: a project's files are part
 # of the project, not a separate resource.
 app.include_router(paper_files_router, prefix="/api/papers", tags=["papers"])
+# Citing the library from inside a project -- also part of the project.
+app.include_router(citations_router, prefix="/api/papers", tags=["papers"])
 app.include_router(models_router, prefix="/api/models", tags=["models"])
 # the registry shares the /api/models prefix on purpose: it is the same
 # resource, split across two modules because setup and management are

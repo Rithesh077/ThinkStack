@@ -28,7 +28,61 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 
 ## [Unreleased]
 
+### Added
+
+- **Cite a paper without leaving the sentence.** Type `cite` in Scribe and the
+  library drops down under the caret; keep typing and it filters on title,
+  author, year or key; Enter turns the word into `\cite{key}` and writes the
+  entry into the project's own `references.bib`. Dismiss it and `cite` is still
+  just a word, and a word compiles.
+
+  Citation *numbers* are not tracked anywhere, which is the point of emitting
+  keys: BibTeX renumbers every `\cite` on each recompile and generates the
+  reference list in the style's own order. Keys read the way a LaTeX user
+  expects — `vaswani2017attention` — because the whole value of a key is that a
+  human types it.
+
+  One `references.bib` per project, and the file is the authority: a key
+  already written there is never recomputed, so a `\cite` already typed cannot
+  break when the library grows. Entries carry a `thinkstackid` field that
+  BibTeX styles ignore, which is what lets you edit the file by hand — rename
+  a key, fix an author — and keep the mapping.
+
+- **A wrong reference can be corrected.** The Library's title edit now covers
+  authors and the year as well. Titles are extracted right about 93% of the
+  time and author lists 86%, so roughly one paper in seven is stored wrong, and
+  that data labels every node on the map, names every search hit, and is what a
+  BibTeX entry is built from. Fixing it once fixes every paper cited from then
+  on.
+
 ### Fixed
+
+- **Author lists were destroyed on the way into storage.** The vector store
+  holds strings, so the list was flattened with `", ".join(authors)` — and in
+  BibTeX the comma is *syntax*: `Vaswani, Ashish and Shazeer, Noam` is two
+  people. Read back, eight authors became sixteen half-names, and a
+  bibliography does not raise, it just prints them. Authors are JSON-encoded
+  now; rows written the old way are still read as written.
+
+- **The arXiv identifier and DOI were extracted and thrown away.** Both were
+  found while dating the paper and discarded. A reference carrying neither is a
+  dead one, so they are kept — on papers ingested from now on.
+
+- **`pdflatex` never ran BibTeX, so citations resolved to `[?]`.** Tectonic
+  drives BibTeX as part of its own build, so the bundled engine was fine and a
+  build from source was not — which is every developer's machine. The pass now
+  runs when the engine will not do it, driven off the `.aux` rather than the
+  source, because a `\cite` inside a commented-out paragraph is in one and not
+  the other.
+
+- **A document that cited papers but had no bibliography printed `[?]`.** The
+  reference list is typeset by `\bibliography`, and that command is also what
+  puts the `\bibdata` line in the `.aux` that invokes BibTeX at all — so a
+  document without it silently produced neither. It is added before
+  `\end{document}` when the document actually cites something *and* the
+  project has a `references.bib`; pointing at a file that is not there would
+  turn a working compile into a failed one.
+
 
 - **Every paper in the library had the wrong title, authors and year.** The
   extractor read the document as flat text and kept any of the first ten lines
@@ -86,6 +140,15 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 
 ### Changed
 
+- **Scribe's prompt is one control, not three.** An icon, a two-row field and a
+  labelled Generate button sat on a wrapping row, saying between them what the
+  placeholder already said — and the height came straight out of the editor.
+  There is one field with a round arrow in its corner. The keyboard hint and
+  the grounding toggle share a line instead of stacking. The editor itself no
+  longer has a fixed 460px height, which on a tall window stopped short and on
+  a short one pushed the prompt past the pane's hidden edge; it takes the
+  height it is given.
+
 - **Page titles are gone from all four screens.** The nav says where you are,
   the brand mark follows it, and Library now introduces the others by name. A
   heading reading "Scribe" above Scribe only cost the editor a strip of height.
@@ -119,6 +182,25 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   The separate floating logo is gone: one affordance, in one place, in both
   states.
 
+- **The interface is replaced.** ThinkStack now runs the *Paper and Ink*
+  interface — a sheet of paper on a desk, worked in ink, in place of the dark
+  glass one. It was built as a parallel tree while the old one shipped; both
+  called the same 44 routes, and every one of them was called against a running
+  backend before the swap. The old tree is deleted: one interface, one build.
+
+  Everything above carried across: the routing-table read, the correctable
+  titles, the paged shelf, the type scale (138 sizes here, six steps) and the
+  rail. They were made twice, once in each tree, which is what replacing a
+  running interface costs.
+
+- **Ingestion can be stopped.** Dropping thirty papers by mistake used to mean
+  waiting for thirty. The paper being read finishes and the queue stops there,
+  so nothing is left half-ingested.
+
+- **Bench no longer grades your machine.** The hardware "tier" is gone from
+  Bench and Diagnostics. It is a mark out of ten for someone's laptop and tells
+  them nothing they can act on; which models fit is what the cards already say.
+
 ### Known limitations
 
 - 43 of those 56 papers are exactly right on title, authors *and* year together.
@@ -127,6 +209,17 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 - Library's ingestion progress is per *batch* ("analysing paper 2 of 5"), not
   per document. Saying which row is being analysed needs the document id on the
   job record.
+- Papers ingested before this release carry no arXiv id or DOI, so they are
+  cited as `@misc` rather than `@article` with the preprint link. Their author
+  lists are read from the old comma-joined form, which is wrong wherever a name
+  was stored surname-first — not repairable from the string, but repairable by
+  hand in the Library.
+- Correcting a reference in the Library does not rewrite a `references.bib`
+  that already cites the paper. The file is the author's and may have been
+  edited by hand, so it keeps what it has; fix the reference before citing it,
+  or edit that project's `.bib`.
+- The new interface and the citation feature are verified on Linux only.
+  Windows and macOS are outstanding.
 
 ---
 

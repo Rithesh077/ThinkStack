@@ -7,6 +7,7 @@ chunking and embedding storage.
 """
 
 import logging
+import re
 from dataclasses import asdict
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -23,12 +24,15 @@ from domain.ingestion.pdf_parser import extract_layout, extract_text, get_page_c
 from domain.ingestion.chunker import chunk_pages
 from domain.ingestion.metadata_extractor import extract_metadata
 from domain.analysis.precompute import schedule_for_new_document
+from domain.knowledge_base.author_codec import (
+    authors_display, decode_authors, encode_authors,
+)
 from domain.knowledge_base.repository import (
     store_chunks,
     get_chunks_by_doc_id,
     delete_chunks_by_doc_id,
     get_collection_stats,
-    update_document_metadata_field,
+    update_document_metadata,
 )
 from infrastructure.analysis_cache import doc_analysis_cache
 from infrastructure.gap_history import gap_history
@@ -146,7 +150,7 @@ async def list_documents():
             first_meta = chunks["metadatas"][0]
             doc_metadata = {
                 "title": first_meta.get("title", ""),
-                "authors": first_meta.get("authors", ""),
+                "authors": authors_display(first_meta.get("authors", "")),
                 "year": first_meta.get("year", ""),
                 "is_encrypted": first_meta.get("is_encrypted", "false"),
             }
@@ -246,30 +250,72 @@ async def get_document_pdf(doc_id: str):
     )
 
 
-class TitleUpdate(BaseModel):
-    title: str
+class ReferenceUpdate(BaseModel):
+    """The bibliographic fields. Omit one to leave it as it is."""
+    title: str | None = None
+    authors: list[str] | None = None
+    year: str | None = None
 
 
-@router.patch("/{doc_id}/title")
-async def rename_document(doc_id: str, body: TitleUpdate):
-    """Correct a paper's title.
+MAX_AUTHORS = 60          # the largest real author lists run to about 50
+MAX_AUTHOR_CHARS = 120
 
-    Extraction is right about 93% of the time, which means roughly one paper
-    in fourteen is stored under something wrong -- and that title is what
-    labels the paper everywhere else, including every node on the LitGraph
-    map. This is the only place a user can repair it.
+
+@router.patch("/{doc_id}/metadata")
+async def correct_reference(doc_id: str, body: ReferenceUpdate):
+    """Correct what was extracted from a paper.
+
+    Extraction gets titles right about 93% of the time and author lists 86%,
+    so roughly one paper in seven is stored under something wrong. That data
+    is not cosmetic: it labels every node on the map, names every search hit,
+    and is what a BibTeX entry is built from. This is the only place to
+    repair it, and repairing it here fixes every paper cited from then on --
+    a references.bib already written keeps what it has, because that file is
+    the author's.
+
+    An empty year is allowed and an empty title is not. A paper with no stated
+    year is a fact the extractor reports honestly; a paper with no name cannot
+    be found again.
     """
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title cannot be empty")
-    if len(title) > 300:
-        raise HTTPException(status_code=400, detail="title is too long")
+    fields: dict = {}
 
-    updated = update_document_metadata_field(doc_id, "title", title)
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="A paper needs a title.")
+        if len(title) > 300:
+            raise HTTPException(status_code=400, detail="That title is too long.")
+        fields["title"] = title
+
+    if body.authors is not None:
+        names = [a.strip() for a in body.authors if a and a.strip()]
+        if len(names) > MAX_AUTHORS:
+            raise HTTPException(status_code=400, detail=f"At most {MAX_AUTHORS} authors.")
+        if any(len(n) > MAX_AUTHOR_CHARS for n in names):
+            raise HTTPException(status_code=400, detail="One of those names is too long.")
+        fields["authors"] = encode_authors(names)
+
+    if body.year is not None:
+        year = body.year.strip()
+        if year and not re.fullmatch(r"(1[89]|20)\d{2}", year):
+            raise HTTPException(status_code=400, detail="Use a four-digit year, or leave it blank.")
+        fields["year"] = year
+
+    if not fields:
+        raise HTTPException(status_code=400, detail="Nothing to change.")
+
+    updated = update_document_metadata(doc_id, fields)
     if not updated:
         raise HTTPException(status_code=404, detail="document not found")
 
-    return {"doc_id": doc_id, "title": title, "chunks_updated": updated}
+    return {
+        "doc_id": doc_id,
+        "metadata": {
+            **fields,
+            **({"authors": decode_authors(fields["authors"])} if "authors" in fields else {}),
+        },
+        "chunks_updated": updated,
+    }
 
 
 @router.delete("/{doc_id}")

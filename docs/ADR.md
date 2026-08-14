@@ -510,6 +510,55 @@ should keep a measure. That rule is about PROSE -- a line set 1900px wide is
 unreadable. Bench is read and keeps its measure; Library is counts, panels and
 a list, and capping it left a third of a wide window empty.
 
+## 2026-08-14: Paper and Ink replaces the interface
+
+**Context.** The dark glass interface had accumulated twelve ad-hoc type sizes,
+a sidebar that collapsed to nothing, and panes measured with `calc(100vh -
+11rem)`. Rithesh proposed replacing it outright rather than continuing to
+correct it; Aditya implemented the replacement as a parallel `new-frontend/`
+tree while the old one went on shipping.
+
+**Decision.** *Paper and Ink* -- a sheet of paper on a desk, worked in ink --
+is the interface. `new-frontend/` is `frontend/`, and the old tree is deleted.
+
+**Consequences.** A parallel tree is the right shape for this and has one
+failure mode: the two drift, and the one nobody is looking at rots. Two things
+were done about it. CI ran both through the same matrix, so neither could ship
+having been checked differently. And the contract test was parameterised over
+both trees, because it had hardcoded `frontend/src/utils/api.js` -- the moment
+the replacement shipped it would have gone on proving things about a directory
+nobody builds, passing while the live client called routes that did not exist.
+
+Parity before the swap was established three ways: both clients called the same
+44 routes, the contract test passed over both, and `local/check_api_reach.py`
+called every route against a running backend. The third is not the same
+guarantee as the first two -- reading both sides as text proves the paths
+MATCH; only calling them proves the handlers RUN.
+
+The replacement had already solved problems the old tree had not. Its folio --
+one line of type on the masthead -- says what four glass cards said and costs
+no vertical space, which is why the port kept it rather than reinstating cards.
+
+## 2026-08-14: two trees means every fix is made twice
+
+**Context.** The extractor work, the Library rebuild, the type scale and the
+rail all landed in `frontend/` while `new-frontend/` was being written.
+
+**Decision.** Port the DECISIONS into the new tree's idiom rather than copying
+its markup across.
+
+**Consequences.** Everything was built twice, and that is the real price of
+replacing a running interface -- not the rewrite, the double maintenance while
+both exist. Copying would have been faster and wrong: the new tree names its
+colours `--text`, `--text-2`, `--text-primary`, so the type scale is `--type-*`
+there and `--text-*` in the old one. A colour token answering to a size name is
+a trap somebody falls into later.
+
+The same applies to structure. The route wrapper is `.page-turn` here and was
+`.page-frame` there, and Scribe's root had no class at all -- so the height
+chain that fixes the panes had to be rebuilt, not pasted. It is one link per
+step and a missing one resolves `flex: 1` against nothing.
+
 ## 2026-08-14: six named type steps, and a root size that is not fixed
 
 **Context.** The stylesheets carried twelve different small font sizes: 0.68,
@@ -574,6 +623,96 @@ The guide needed `z-index: 110` to sit on the rail. The sidebar is 100 and the
 guide 40, so on the rail it rendered *behind* it and simply vanished -- which
 is worth recording because nothing about the change suggests a stacking
 problem, and the symptom is an element that is present, correct, and invisible.
+
+## 2026-08-14: the .bib file is the authority for a citation key
+
+**Context.** A key is derived from metadata, so two papers can collide and the
+tiebreak depends on what else is in the library. Derive it again after another
+paper is ingested and the same document can get a different key.
+
+**Decision.** `assign_keys` reads `references.bib` first and honours every key
+already written there; only documents the file has never seen get a new one.
+The document id travels in a `thinkstackid` field.
+
+**Consequences.** A `\cite{}` already typed into the source cannot break -- the
+alternative is a bibliography that silently stops resolving because an
+unrelated paper was added to the library. The id field is unknown to every
+`.bst`, which read only the fields they declare, so it never appears in the
+rendered bibliography. It also means the file can be edited by hand -- rename a
+key, fix an author list, paste an entry from elsewhere -- and the mapping back
+to the library survives, which is what makes hand-editing the per-project
+override rather than a thing that gets overwritten.
+
+## 2026-08-14: the comma is BibTeX syntax, so an author list is JSON
+
+**Context.** Chroma metadata holds str, int, float and bool. A list of authors
+has to be flattened to store it, and `", ".join(authors)` is the obvious way.
+
+**Decision.** JSON-encode the list. `decode` still accepts the comma form.
+
+**Consequences.** In BibTeX the comma separates surname from given name --
+`Vaswani, Ashish and Shazeer, Noam` is two people -- so re-splitting a joined
+list on commas turned eight authors into sixteen half-names. Nothing raised;
+a bibliography just printed them. The legacy path stays because a library is
+not re-ingested to fix a codec, and it is honest about its limit: rows written
+surname-first are wrong and are not repairable from the string, which is one
+of the reasons the Library gained an editor for them.
+
+## 2026-08-14: a citing document is given a bibliography, but only one to point at
+
+**Context.** `\cite{key}` alone renders `[?]` and prints no reference list.
+BibTeX is invoked by the `\bibdata` line that `\bibliography` writes into the
+`.aux`, and that same command is where the list is typeset.
+
+**Decision.** The compile-time heal adds `\bibliographystyle` and
+`\bibliography{references}` before `\end{document}` -- when the document
+actually cites something *and* the project has a `references.bib`.
+
+**Consequences.** A document with citations and no bibliography is not a style
+choice, it is the citation silently not working, and it looked exactly like the
+feature being broken. Both conditions are load-bearing: pointing
+`\bibliography` at a file that is not there turns a working compile into a
+failed one, and an author who typed `\cite` by hand has no such file. The
+engine matters too -- Tectonic runs BibTeX in its own driver and pdflatex does
+not, so a build from source needed the pass added explicitly.
+
+## 2026-08-14: a caret-anchored popup is positioned in viewport coordinates
+
+**Context.** The cite list is anchored under the caret in a `<textarea>`, which
+exposes a character offset and no coordinates. A mirror div wearing the
+textarea's computed styles gives the pixel position.
+
+**Decision.** `position: fixed`, coordinates from
+`getBoundingClientRect()` plus the caret offset, the caret's y clamped into the
+textarea's visible box, and the list flipped above the line when the window has
+no room below. `--z-over`, the same layer as the context menu.
+
+**Consequences.** Absolute-inside-the-pane was the intuitive choice and was
+wrong twice over: the editor pane sits inside `overflow: hidden`, so a list
+anchored near the foot of a long document was clipped away rather than scrolled
+to, and the compiled PDF beside it sits on `--z-sheet` and painted over the
+column holding the keys. The feature rendered correctly, with every row in it,
+1382px down a 1000px window. Layout bugs of this shape do not show up in jsdom,
+which has no layout; this one was found by driving the real page and reading
+the box back.
+
+## 2026-08-14: a wrong reference is repaired in the library, not in the bibliography
+
+**Context.** Titles extract right about 93% of the time and author lists 86%,
+so roughly one paper in seven is stored wrong. It can be corrected in two
+places: the library record, or the `references.bib` of a project citing it.
+
+**Decision.** The Library edits the record -- title, authors and year. Scribe
+gets no second editor; `references.bib` is already a file in the project tree.
+
+**Consequences.** The library is where the wrong data actually is, so fixing it
+there fixes every future citation, every node on the map and every search hit
+at once, while fixing the `.bib` fixes one project and the next one re-derives
+the same mistake. Two editors over one field would be two sources of truth. The
+ordering follows from the entry above: a `.bib` already written keeps what it
+has, so the reference is fixed before it is cited, or in that project's file.
+The one rule a user cannot guess is stated in the form -- authors separate on
+commas, or on semicolons when a name contains one.
 
 ## 2026-08-13: the page titles go, and Library introduces the others
 

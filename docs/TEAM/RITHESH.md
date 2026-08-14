@@ -518,3 +518,85 @@ it rendered behind it — present, correct, and invisible. Nothing about "move
 this 60px left" suggests a stacking problem, and nothing in the code says so
 either. I found it by looking at the screen and noticing the button was simply
 not there.
+
+## Replacing the interface
+
+The dark glass interface had reached the point where I was correcting the same
+class of thing repeatedly — twelve ad-hoc type sizes, a sidebar that collapsed
+to nothing, panes measured by subtracting a guess from the viewport. I proposed
+replacing it rather than continuing to patch it. **Aditya built the
+replacement** — *Paper and Ink*, a sheet of paper on a desk worked in ink — as
+a parallel `new-frontend/` tree while the old one went on shipping. My part
+after that was the migration: carrying the week's work across, proving parity,
+and deleting the old tree.
+
+**Two trees means every fix is made twice.** That is the real cost of replacing
+a running interface, and it is not the rewrite — it is the fortnight where both
+exist. The extractor work, the Library rebuild, the type scale and the rail all
+landed in `frontend/` while `new-frontend/` was being written, and every one of
+them had to be made again.
+
+Copying would have been faster and wrong. The new tree names its *colours*
+`--text`, `--text-2`, `--text-primary`, so the type scale had to be `--type-*`
+there — a colour token answering to a size name is a trap someone falls into
+six months later. Same for structure: the route wrapper is `.page-turn` there
+and was `.page-frame` here, and Scribe's root had no class at all, so the
+height chain had to be rebuilt rather than pasted.
+
+**Proving it was safe to delete a working interface.** Three things, in
+increasing strength:
+
+- both clients called the same 44 routes
+- the contract test passed over both trees
+- `local/check_api_reach.py` called every route against a running backend
+
+The third is the one that matters, and it is a different guarantee from the
+first two. Reading both sides as text proves the paths **match**; only calling
+them proves the handlers **run**. All 16 answered, including the metadata
+patch returning 404 for an absent paper: a 405 would have meant the method was
+never wired.
+
+I also found a guard about to point at nothing. `test_api_contract.py`
+hardcoded `frontend/src/utils/api.js`. The moment the replacement shipped it
+would have gone on proving things about a directory nobody builds — passing,
+while the live client called routes that did not exist. It takes the tree as a
+parameter now, and skips one that is absent, so the next replacement cannot
+repeat it.
+
+A guard aimed at the wrong subject is worse than no guard, because it reports
+success. That is the third time this month I have written that sentence about a
+different piece of this codebase.
+
+## Citations in Scribe
+
+The interaction is mine: you are already typing when you decide to cite, so the
+trigger is the word `cite` rather than a shortcut or a dialog. The library
+drops down under the caret, filters as you keep typing, and Enter turns the
+word into `\cite{key}`. Choose nothing and `cite` stays an ordinary word,
+which compiles — nothing is committed by opening the list.
+
+I had planned to track citation numbers and was talked out of it, correctly:
+BibTeX renumbers every `\cite` on each recompile and orders the reference list
+itself. That whole subsystem was free, and building it would have meant
+maintaining a second, worse copy of something the toolchain already does.
+
+Storage had to be fixed before any of it could work. Author lists were
+flattened with `", ".join(authors)` into the vector store, and in BibTeX the
+comma is *syntax* — `Vaswani, Ashish and Shazeer, Noam` is two people. Read
+back for a bibliography, eight authors became sixteen half-names. Nothing
+raised; it printed them. Same shape as the extractor bug I spent the week
+before on, and it is the shape I look for first now: **the failure is confident
+wrongness, not silence.**
+
+Then there is the ceiling nothing in the feature can lift. Extraction is 93%
+right on titles and 86% on author lists, so about one paper in seven cites
+wrongly however good the citation code is. The Library can now edit authors and
+the year, not only the title.
+
+I put that in the Library and not in Scribe on purpose. The library holds the
+record, so a fix there carries into every future citation, every node on the
+map and every search hit; a fix in one project's `.bib` fixes one paper.
+Scribe needs no editor of its own: `references.bib` is already a file in the
+project tree, and entries carry a `thinkstackid` field that BibTeX ignores, so
+a key or an author can be rewritten by hand and the link back to the library
+survives.

@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Save, Play, Download, Sparkles, FileText, Loader2, BookOpen, ChevronDown,
+  Save, Play, Download, ArrowUp, FileText, Loader2, BookOpen, ChevronDown,
 } from 'lucide-react';
 import { papersApi, documentsApi, projectFilesApi, useLlmBusy } from '../utils/api';
 import PageHeader from './PageHeader';
 import FileTree from './FileTree';
 import { isImage, isPdf } from '../utils/filekind';
 import useSplitter from '../utils/useSplitter';
+import useCitePicker from '../utils/useCitePicker';
+import { CitePicker } from './CitePicker';
 
 const AUTOCOMPILE_KEY = 'thinkstack.paperWriter.autoCompile';
 
@@ -453,8 +455,30 @@ export default function Scribe() {
 
   const handleGenerate = () => generateInto(prompt, null);
 
+  /** Replace a span of the source, then put the caret after what replaced it. */
+  const applyEdit = useCallback((from, to, text) => {
+    setSource((prev) => prev.slice(0, from) + text + prev.slice(to));
+    setDirty(true);
+    requestAnimationFrame(() => {
+      const el = editorRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(from + text.length, from + text.length);
+    });
+  }, []);
+
+  const cite = useCitePicker({
+    textareaRef: editorRef,
+    source,
+    projectId: activeId,
+    applyEdit,
+  });
+
   /** Ctrl/Cmd+Enter in the editor: rewrite the selection as LaTeX. */
   const handleEditorKeyDown = (e) => {
+    // The cite list gets first refusal, because while it is open Enter means
+    // "insert this one" and not "new line".
+    if (cite.onKeyDown(e)) return;
     if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
     const el = editorRef.current;
     if (!el) return;
@@ -593,6 +617,7 @@ export default function Scribe() {
                 <code>{`\\includegraphics[width=\\linewidth]{${imagePath}}`}</code>
               </div>
             ) : (
+            <>
             <textarea
               ref={editorRef}
               className="pw-textarea"
@@ -600,19 +625,26 @@ export default function Scribe() {
               spellCheck={false}
               onChange={(e) => { setSource(e.target.value); setDirty(true); }}
               onKeyDown={handleEditorKeyDown}
-              placeholder="Write plainly, select it, and press Ctrl+Enter to turn it into LaTeX."
+              onSelect={cite.onSelect}
+              placeholder="Write plainly, select it, and press Ctrl+Enter to turn it into LaTeX. Type cite to cite a paper."
             />
+            {/* Absolute inside .pw-editor, which is why the hook adds the
+                textarea's own offset to the caret coordinates. */}
+            <CitePicker picker={cite.picker} />
+            </>
             )}
-            <div className="pw-editor-hint">
-              {generating
-                ? 'Writing LaTeX…'
-                : 'Select any plain-English line and press Ctrl+Enter to turn it into LaTeX.'}
-              {undoSrc !== null && !generating && (
-                <button type="button" className="pw-undo" onClick={undoAiEdit}>Undo AI edit</button>
-              )}
-            </div>
-
-            <div className="pw-context">
+            {/* The hint and the grounding toggle share a line. They were two
+                stacked rows of chrome between the document and the prompt, and
+                every row here comes out of the editor's height. */}
+            <div className="pw-editor-foot">
+              <span className="pw-editor-hint">
+                {generating
+                  ? 'Writing LaTeX…'
+                  : 'Ctrl+Enter turns a selection into LaTeX · type cite to cite a paper'}
+                {undoSrc !== null && !generating && (
+                  <button type="button" className="pw-undo" onClick={undoAiEdit}>Undo AI edit</button>
+                )}
+              </span>
               <button
                 type="button"
                 className="pw-context-toggle"
@@ -622,6 +654,9 @@ export default function Scribe() {
                 <span>Ground on papers{groundDocs.length ? ` · ${groundDocs.length} selected` : ''}</span>
                 <ChevronDown size={14} className={showContext ? 'pw-rot' : ''} />
               </button>
+            </div>
+
+            <div className="pw-context">
               {showContext && (
                 <div className="pw-context-list">
                   {docs.length === 0 ? (
@@ -644,12 +679,16 @@ export default function Scribe() {
               )}
             </div>
 
+            {/* One control, not two. The button said "Generate" beside a field
+                whose placeholder already said what it generates, and between
+                them they took a quarter of the column off the editor. The
+                arrow sits inside the field because that is where the thing it
+                acts on is. */}
             <div className="pw-ai">
-              <Sparkles size={16} className="pw-ai-icon" />
               <textarea
                 className="input pw-ai-input"
-                rows={2}
-                placeholder={llmBusy && !generating ? 'Model busy - please wait…' : 'Describe a section, equation, table, or chart for the AI to write… (Shift+Enter for a new line)'}
+                rows={1}
+                placeholder={llmBusy && !generating ? 'Model busy…' : 'Describe a section, equation, table or chart…'}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(e) => {
@@ -660,9 +699,17 @@ export default function Scribe() {
                 }}
                 disabled={llmBusy && !generating}
               />
-              <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || llmBusy || !prompt.trim()}>
-                {generating || llmBusy ? <Loader2 size={16} className="pw-spin" /> : <Sparkles size={16} />}
-                <span>{generating ? 'Generating…' : llmBusy && !generating ? (label || 'Model busy…') : 'Generate'}</span>
+              <button
+                type="button"
+                className="pw-ai-send"
+                onClick={handleGenerate}
+                disabled={generating || llmBusy || !prompt.trim()}
+                title={generating ? 'Writing…' : llmBusy ? (label || 'Model busy') : 'Write this (Enter)'}
+                aria-label="Write this"
+              >
+                {generating || llmBusy
+                  ? <Loader2 size={15} className="pw-spin" />
+                  : <ArrowUp size={15} />}
               </button>
             </div>
           </div>

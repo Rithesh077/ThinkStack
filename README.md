@@ -132,7 +132,7 @@ domain/            ingestion · knowledge_base · search · litgraph · analysis
                    fine_tuning
 infrastructure/    llm client · vector store · hardware profiler · file manager
                    background job queue
-frontend/          react 19 + vite spa
+frontend/          react 19 + vite spa (the Paper and Ink interface)
 src-tauri/         tauri 2 desktop shell (rust): diagnosis, supervision, updates
 scripts/           devops: setup, dev, preflight, build, promote, release
 tests/             848 tests across 43 modules (plus 175 frontend)
