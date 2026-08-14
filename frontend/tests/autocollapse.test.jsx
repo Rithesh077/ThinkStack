@@ -137,21 +137,26 @@ describe('what the collapse is worth', () => {
     expect(localStorage.getItem('ts-sidebar-collapsed')).toBeNull();
   });
 
-  it('the peek button brings it back', async () => {
+  it('the rail logo brings it back', async () => {
     await mountApp();
     await press(el.querySelector('.main-content'));
     expect(shellStore.isCollapsed()).toBe(true);
-    el.querySelector('.sidebar-peek').click();
+    el.querySelector('.brand-logo-button').click();
     expect(shellStore.isCollapsed()).toBe(false);
   });
 
+  // The floating .sidebar-peek button that used to do this is gone. It existed
+  // because the sidebar collapsed to zero width and left nothing to click; it
+  // now collapses to a 64px rail, so the brand logo is still on screen and is
+  // the one control. One affordance, in one place, whatever the state.
+  //
   // The undo has to survive the action it was undoing. You reopen the nav in
   // order to use the page, so collapsing again on the next press made bringing
   // it back worth exactly one click -- and it read as the button not working.
   it('bringing it back is not undone by the next press', async () => {
     await mountApp();
     await press(el.querySelector('.main-content'));
-    el.querySelector('.sidebar-peek').click();
+    el.querySelector('.brand-logo-button').click();
 
     await press(el.querySelector('.main-content'));
     expect(shellStore.isCollapsed()).toBe(false);
@@ -161,7 +166,7 @@ describe('what the collapse is worth', () => {
   it('the automatic collapse resumes after navigating', async () => {
     await mountApp();
     await press(el.querySelector('.main-content'));
-    el.querySelector('.sidebar-peek').click();
+    el.querySelector('.brand-logo-button').click();
 
     shellStore.releaseFocus();   // what ReleaseFocusOnNavigate does on a route change
     await press(el.querySelector('.main-content'));

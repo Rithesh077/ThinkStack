@@ -1,14 +1,10 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target, PenLine, Cpu, Search, Pencil, HardDrive, AlertTriangle } from 'lucide-react';
+import { Clock, CheckCircle, FileText, BarChart2, Brain, Target, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, PenLine, Cpu, Search, Pencil, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { documentsApi, encryptionApi, papersApi, registryApi, useJobs } from '../utils/api';
 import { FEATURES } from '../features';
 import { libraryTourOpen, setLibraryTourOpen } from '../utils/firstRun';
 import UploadPanel from './UploadPanel';
-
-// Recharts is 300 kB and there is no chart to draw on an empty library, which
-// is exactly the state a first run opens in. It arrives with the first paper.
-const LibraryChart = lazy(() => import('./charts/LibraryChart'));
 
 /**
  * Library - the paper collection.
@@ -22,6 +18,10 @@ const LibraryChart = lazy(() => import('./charts/LibraryChart'));
 // here without anyone remembering to add it, and its wording cannot drift from
 // the "i" guide that reads the same field.
 const OTHER_FEATURES = FEATURES.filter((f) => f.id !== 'library');
+
+// Rows shown at once. Small on purpose: the point of this screen is the whole
+// picture, and a list long enough to scroll buries the panels above it.
+const PAGE_SIZE = 5;
 
 // The routing table's task keys, in the words the rest of the app uses.
 const TASK_LABELS = {
@@ -46,6 +46,7 @@ export default function Library() {
   };
 
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -246,14 +247,10 @@ export default function Library() {
 
   // Everything below is derived from the list already fetched -- no extra
   // call, and no counter that can disagree with the rows underneath it.
-  const bytes = documents.reduce((n, d) => n + (d.size_bytes || 0), 0);
-  const onDisk =
-    bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
-    : bytes >= 1e6 ? `${Math.round(bytes / 1e6)} MB`
-    // Twenty small papers round to "0 MB", which reads as a broken counter
-    // rather than as a small library.
-    : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
   const encrypted = documents.filter(isDocEncrypted).length;
+  // The gap between ingested and analysed is the useful number: it says how
+  // much of the library the app has actually read.
+  const pending = Math.max(0, documents.length - (stats.analyses || 0));
 
   // A paper the extractor could not fully read. Worth surfacing because it is
   // FIXABLE now: the title is editable inline, and these are the rows where
@@ -275,6 +272,13 @@ export default function Library() {
   const visible = documents
     .filter(matchesQuery)
     .filter((d) => !onlyIncomplete || incomplete.includes(d));
+
+  // Paged, so a library of fifty papers does not become fifty rows of scroll.
+  // Library is meant to give the whole picture at a glance; a wall of files is
+  // the opposite of that.
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageDocs = visible.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   const actionLabels = {
     encrypt: { title: 'encrypt paper', button: 'encrypt', icon: Lock },
@@ -353,53 +357,6 @@ export default function Library() {
         </section>
       ) : (
       <div className="library-overview fade-up stagger-2">
-        <div className="library-counts">
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Papers Ingested</span>
-              <FileText size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.total || '-'}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Knowledge Chunks</span>
-              <BarChart2 size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.total_chunks || '-'}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Analyses Run</span>
-              <Brain size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.analyses || '-'}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Gaps Found</span>
-              <Target size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{stats.gaps || '-'}</div>
-          </div>
-          {/* Everything runs on this machine, so what it costs this machine is
-              worth stating. Both are derived from the list already fetched. */}
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Papers on Disk</span>
-              <HardDrive size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{documents.length ? onDisk : '-'}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-card-top">
-              <span className="stat-card-label">Encrypted</span>
-              <ShieldCheck size={16} className="stat-card-icon" />
-            </div>
-            <div className="stat-value">{encrypted || '-'}</div>
-          </div>
-        </div>
-
         <div className="library-panels">
           <section className="stat-card panel">
             <div className="stat-card-top">
@@ -498,8 +455,13 @@ export default function Library() {
         <UploadPanel onUploadComplete={loadDocuments} />
       </div>
 
+      {/* The counts used to be six cards across the top of the page, which put
+          the least actionable thing first and pushed the papers below the fold.
+          They belong beside the thing they count. */}
       <div className="kb-heading fade-up stagger-4">
-        <h3 className="section-heading">Knowledge Base</h3>
+        <div className="kb-heading-left">
+          <h3 className="section-heading">Knowledge Base</h3>
+        </div>
         {documents.length > 0 && (
           <div className="kb-search">
             <Search size={14} className="kb-search-icon" />
@@ -514,8 +476,52 @@ export default function Library() {
         )}
       </div>
 
+      {/* The counts live in the section they describe, not across the top of
+          the page. Above the fold they were the first thing read and the least
+          worth reading; here they are a caption on the knowledge base.
+          Dropped from the original six: bytes on disk, which answered a
+          question nobody asked. */}
       {documents.length > 0 && (
-        <Suspense fallback={null}><LibraryChart documents={documents} /></Suspense>
+        <div className="kb-counts fade-up stagger-4">
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Papers Ingested</span>
+              <FileText size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Knowledge Chunks</span>
+              <BarChart2 size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total_chunks}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Analysed</span>
+              <Brain size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">
+              {stats.analyses}
+              {pending > 0 && <small> of {documents.length}</small>}
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Gaps Found</span>
+              <Target size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.gaps || '—'}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Encrypted</span>
+              <ShieldCheck size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{encrypted || '—'}</div>
+          </div>
+        </div>
       )}
 
       {/* The filter has to say it is on, and offer a way out. A list quietly
@@ -578,7 +584,7 @@ export default function Library() {
             <p>nothing in {documents.length} papers matches &ldquo;{query.trim()}&rdquo;.</p>
           </div>
         ) : (
-          visible.map((doc) => (
+          pageDocs.map((doc) => (
             <div key={doc.doc_id}>
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
                 <div className="doc-icon">
@@ -698,6 +704,34 @@ export default function Library() {
               )}
             </div>
           ))
+        )}
+
+        {/* One batch at a time, an arrow at each end. Library is meant to give
+            the whole picture at a glance, and a list long enough to scroll
+            buries everything above it. */}
+        {visible.length > PAGE_SIZE && (
+          <div className="kb-pager">
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.max(0, n - 1))}
+              disabled={safePage === 0}
+              aria-label="Previous papers"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="kb-pager-label">
+              {safePage * PAGE_SIZE + 1}&ndash;{Math.min((safePage + 1) * PAGE_SIZE, visible.length)}
+              {' of '}{visible.length}
+            </span>
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
+              disabled={safePage >= pageCount - 1}
+              aria-label="Next papers"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         )}
       </div>
 

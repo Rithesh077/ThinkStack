@@ -284,19 +284,7 @@ export default function App() {
       </div>
       <BrowserRouter>
         <div className={`app-layout ${collapsed ? 'is-collapsed' : ''}`}>
-          {/* Gives the sidebar back after any collapse, deliberate or automatic.
-              While the sidebar is shut this button is the only thing on screen
-              that says where you are, so it carries the ACTIVE feature's mark
-              rather than a fixed logo. */}
           <ReleaseFocusOnNavigate />
-          <button
-            className="sidebar-peek"
-            onClick={toggleSidebar}
-            aria-label="Show sidebar"
-            aria-expanded={!collapsed}
-          >
-            <ActiveMark size={18} />
-          </button>
           <aside className="sidebar">
             <div className="sidebar-brand">
               <div className="brand-logo-container">

@@ -90,7 +90,7 @@ describe('the brand mark follows the feature', () => {
   });
 
   it('marks inherit their colour so the shell sets the ink once', async () => {
-    // .brand-logo-icon and .sidebar-peek set `color`; a mark that hardcoded its
+    // .brand-logo-icon sets `color`; a mark that hardcoded its
     // stroke would ignore that and could render invisibly on the lime chip.
     const { stroke } = await renderToDom(StackMark, { size: 18 });
     expect(stroke).toBe('currentColor');
