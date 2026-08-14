@@ -131,6 +131,46 @@ def _ensure_packages(source: str) -> str:
     return inject + source
 
 
+_CITE_RE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\s*(?:\[[^\]]*\])*\s*\{")
+
+
+def _ensure_bibliography(source: str, project_dir: Path) -> str:
+    """Give a citing document somewhere to print its references.
+
+    `\\cite{key}` on its own resolves to `[?]` and prints no reference list.
+    BibTeX is only invoked at all because `\\bibliography` puts a `\\bibdata`
+    line in the .aux, and the entries are only typeset because that command is
+    also where the list goes. A document with citations and no bibliography is
+    not a style choice, it is the citation silently not working -- which is
+    exactly what it looked like.
+
+    Added at the end of the body, before `\\end{document}`, which is where a
+    reference list belongs and where the template already put it.
+
+    Only when the project actually has a references.bib. Pointing
+    `\\bibliography` at a file that is not there turns a working compile into
+    a failed one, and an author who has typed `\\cite` by hand without ever
+    using the picker has no such file.
+    """
+    if not _CITE_RE.search(source):
+        return source
+    if "\\bibliography" in source or "\\begin{thebibliography}" in source:
+        return source
+    if not (Path(project_dir) / "references.bib").is_file():
+        return source
+
+    end = source.rfind(r"\end{document}")
+    if end == -1:
+        return source
+
+    block = (
+        "\n% --- bibliography auto-added by thinkstack ---\n"
+        "\\bibliographystyle{plain}\n"
+        "\\bibliography{references}\n\n"
+    )
+    return source[:end] + block + source[end:]
+
+
 def _ensure_compilable(source: str) -> str:
     """guarantee the source is a complete, compilable document.
 
@@ -430,6 +470,46 @@ def _run_engine(engine: str, kind: str, tex_file: Path, project_dir: Path):
     )
 
 
+def _needs_bibtex_pass(project_dir: Path, tex_file: Path, kind: str) -> bool:
+    """Resolve citations if the engine will not do it itself. True if it ran.
+
+    Tectonic drives BibTeX as part of its own multi-pass build, so the bundled
+    engine needs nothing here. pdflatex does not: it writes `\\citation{...}`
+    into the .aux and stops, and every citation in the PDF renders as `[?]`
+    with the bibliography missing entirely. That is the state a machine
+    running from source is in, which is every developer's machine.
+
+    Driven off the .aux rather than off the source, because that is what
+    BibTeX itself reads -- a `\\cite` inside a commented-out paragraph is in
+    the source and not in the .aux.
+    """
+    if kind == "tectonic":
+        return False
+
+    aux = project_dir / f"{tex_file.stem}.aux"
+    try:
+        if "\\citation{" not in aux.read_text(encoding="utf-8", errors="replace"):
+            return False
+    except OSError:
+        return False
+
+    bibtex = shutil.which("bibtex")
+    if not bibtex:
+        logger.warning("bibtex is not installed; citations will render as [?]")
+        return False
+
+    try:
+        subprocess.run(
+            [bibtex, tex_file.stem],
+            capture_output=True, text=True, timeout=60, cwd=str(project_dir),
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        # A missing bibliography must not cost the author their PDF.
+        logger.warning("bibtex pass failed: %s", e)
+        return False
+    return True
+
+
 def _needs_index_pass(project_dir: Path, tex_file: Path) -> bool:
     """build the .ind if the document asked for an index. True if it changed.
 
@@ -484,7 +564,7 @@ def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
     # (fixes "Environment tikzpicture undefined" and similar).
     try:
         source = tex_file.read_text(encoding="utf-8")
-        fixed = _ensure_compilable(source)
+        fixed = _ensure_bibliography(_ensure_compilable(source), project_dir)
         if fixed != source:
             tex_file.write_text(fixed, encoding="utf-8")
             logger.info("auto-wrapped / healed latex for %s", project_id)
@@ -522,6 +602,10 @@ def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
             # \indexentry" -- imakeidx falling back to \input-ing the raw .idx.
             # Generated in Python rather than shelled out to makeindex, which is
             # not in the bundle and would put us back to needing a TeX install.
+            # BibTeX before the index: it rewrites the .aux, and \printindex
+            # reads what the pass after that leaves behind.
+            if _needs_bibtex_pass(project_dir, tex_file, kind):
+                _run_engine(engine, kind, tex_file, project_dir)
             if _needs_index_pass(project_dir, tex_file):
                 _run_engine(engine, kind, tex_file, project_dir)
             break
