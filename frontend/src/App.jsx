@@ -40,8 +40,15 @@ const pageMotion = {
   transition: { type: 'spring', stiffness: 260, damping: 30, mass: 0.7 },
 };
 
+/**
+ * The route transition wrapper.
+ *
+ * Classed because it sits between <main> and the page, so a workspace filling
+ * the window has to pass its height THROUGH it. Without the class the chain
+ * breaks here and `flex: 1` on the page below resolves against nothing.
+ */
 function Page({ children }) {
-  return <motion.div {...pageMotion}>{children}</motion.div>;
+  return <motion.div className="page-frame" {...pageMotion}>{children}</motion.div>;
 }
 
 /** FirstRunNote needs the router, which only exists below BrowserRouter. */
@@ -277,19 +284,7 @@ export default function App() {
       </div>
       <BrowserRouter>
         <div className={`app-layout ${collapsed ? 'is-collapsed' : ''}`}>
-          {/* Gives the sidebar back after any collapse, deliberate or automatic.
-              While the sidebar is shut this button is the only thing on screen
-              that says where you are, so it carries the ACTIVE feature's mark
-              rather than a fixed logo. */}
           <ReleaseFocusOnNavigate />
-          <button
-            className="sidebar-peek"
-            onClick={toggleSidebar}
-            aria-label="Show sidebar"
-            aria-expanded={!collapsed}
-          >
-            <ActiveMark size={18} />
-          </button>
           <aside className="sidebar">
             <div className="sidebar-brand">
               <div className="brand-logo-container">

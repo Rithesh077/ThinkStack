@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { Clock, CheckCircle, FileText, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, BarChart2, Brain, Target } from 'lucide-react';
-import { documentsApi, encryptionApi } from '../utils/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Clock, CheckCircle, FileText, BarChart2, Brain, Target, Trash2, RefreshCw, ChevronDown, ChevronUp, Lock, ShieldCheck, ShieldOff, Eye, EyeOff, PenLine, Cpu, Search, Pencil, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { documentsApi, encryptionApi, papersApi, registryApi, useJobs } from '../utils/api';
+import { FEATURES } from '../features';
+import { libraryTourOpen, setLibraryTourOpen } from '../utils/firstRun';
 import UploadPanel from './UploadPanel';
-import PageHeader from './PageHeader';
-
-// Recharts is 300 kB and there is no chart to draw on an empty library, which
-// is exactly the state a first run opens in. It arrives with the first paper.
-const LibraryChart = lazy(() => import('./charts/LibraryChart'));
 
 /**
  * Library - the paper collection.
@@ -15,10 +13,58 @@ const LibraryChart = lazy(() => import('./charts/LibraryChart'));
  * and provides document deletion and encryption controls.
  * shows metadata, chunk counts, and encryption status for each paper.
  */
+// Everything except Library itself: this list sits ON Library, and a page does
+// not need to introduce itself. Read from FEATURES so a new feature appears
+// here without anyone remembering to add it, and its wording cannot drift from
+// the "i" guide that reads the same field.
+const OTHER_FEATURES = FEATURES.filter((f) => f.id !== 'library');
+
+// Rows shown at once. Small on purpose: the point of this screen is the whole
+// picture, and a list long enough to scroll buries the panels above it.
+const PAGE_SIZE = 5;
+
+// The routing table's task keys, in the words the rest of the app uses.
+const TASK_LABELS = {
+  general: 'General',
+  analysis: 'Analysis',
+  gap_analysis: 'Gap finding',
+  latex_writer: 'LaTeX writing',
+};
+
 export default function Library() {
+  const navigate = useNavigate();
+  // Expanded only for someone who has never run this app -- see
+  // libraryTourOpen(). Updating users have already found LitGraph and Scribe,
+  // and introducing them to their own workspace reads as a regression.
+  const [tourOpen, setTourOpen] = useState(libraryTourOpen);
+
+  const toggleTour = () => {
+    setTourOpen((open) => {
+      setLibraryTourOpen(!open);
+      return !open;
+    });
+  };
+
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, total_chunks: 0 });
+  const [stats, setStats] = useState({ total: 0, total_chunks: 0, analyses: 0, gaps: 0 });
+
+  // What the background queue is doing. Analysis is queued AFTER the upload
+  // responds, so without this the user sees "ingested", opens LitGraph, finds
+  // it empty, and has no way to know a model is still working.
+  const jobs = useJobs();
+  const wasBusy = useRef(false);
+
+  // Overview panels. `null` means not loaded yet or the call failed -- which
+  // the panels render differently, because "no papers" and "we could not ask"
+  // are different facts and a dash for both hides an outage.
+  const [scribeProjects, setScribeProjects] = useState(null);
+  const [benchModels, setBenchModels] = useState(null);
+  const [renamingDoc, setRenamingDoc] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [docDetails, setDocDetails] = useState({});
 
@@ -36,16 +82,88 @@ export default function Library() {
     try {
       const data = await documentsApi.list();
       setDocuments(data.documents || []);
-      setStats({ total: data.total, total_chunks: data.total_chunks });
+      setStats({
+        total: data.total,
+        total_chunks: data.total_chunks,
+        analyses: data.analyses ?? 0,
+        gaps: data.gaps ?? 0,
+      });
     } catch (err) {
       console.error('failed to load documents:', err);
     }
     setLoading(false);
   }, []);
 
+  const loadScribeProjects = useCallback(async () => {
+    try {
+      const d = await papersApi.list();
+      setScribeProjects(d.projects || []);
+    } catch (err) {
+      console.error('failed to load scribe projects:', err);
+      setScribeProjects(null);
+    }
+  }, []);
+
+  const loadBenchModels = useCallback(async () => {
+    try {
+      const snap = await registryApi.get();
+      // `routing`, not `models`. There is no "active model" -- the app routes
+      // per task, and which entry serves a task depends on every other entry
+      // (assignment, size against the memory free right now, rank). The
+      // backend computes that and says so at routes_registry.py:186: doing it
+      // again in javascript lets the two drift. Reading `models` and taking
+      // the first ready one names a model that may serve nothing.
+      // One row per TASK, not per model. Which model answers depends on the
+      // task, and collapsing them hid the interesting case: a library with two
+      // models installed routes Analysis to the bigger one and everything else
+      // to the small one, and that is worth being able to see at a glance.
+      const routing = snap.routing || {};
+      setBenchModels(
+        Object.entries(routing)
+          .filter(([, r]) => r?.label)
+          .map(([task, r]) => ({ task, label: r.label })),
+      );
+    } catch (err) {
+      console.error('failed to load bench routing:', err);
+      setBenchModels(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadDocuments();
-  }, [loadDocuments]);
+    loadScribeProjects();
+    loadBenchModels();
+  }, [loadDocuments, loadScribeProjects, loadBenchModels]);
+
+  // Refresh when the queue finishes, not while it runs. The counts only change
+  // at the end of a job, and re-fetching every poll would reload the list under
+  // the user's cursor twice a second. Same rule LitGraph uses.
+  useEffect(() => {
+    if (wasBusy.current && !jobs.active) loadDocuments();
+    wasBusy.current = jobs.active;
+  }, [jobs.active, loadDocuments]);
+
+  const startRename = (doc) => {
+    setRenamingDoc(doc.doc_id);
+    setRenameValue(doc.metadata?.title || doc.filename || '');
+  };
+
+  const submitRename = async (docId) => {
+    const title = renameValue.trim();
+    if (!title) return;
+    // Optimistic: the write touches every chunk of the paper and the list is
+    // re-fetched anyway. Waiting to redraw makes a local edit feel remote.
+    setDocuments((docs) => docs.map((d) => (
+      d.doc_id === docId ? { ...d, metadata: { ...d.metadata, title } } : d
+    )));
+    setRenamingDoc(null);
+    try {
+      await documentsApi.rename(docId, title);
+    } catch (err) {
+      console.error('failed to rename document:', err);
+      loadDocuments();   // put the stored title back
+    }
+  };
 
   const handleDelete = async (docId) => {
     try {
@@ -127,6 +245,41 @@ export default function Library() {
     return meta.is_encrypted === 'true' || meta.is_encrypted === true;
   };
 
+  // Everything below is derived from the list already fetched -- no extra
+  // call, and no counter that can disagree with the rows underneath it.
+  const encrypted = documents.filter(isDocEncrypted).length;
+  // The gap between ingested and analysed is the useful number: it says how
+  // much of the library the app has actually read.
+  const pending = Math.max(0, documents.length - (stats.analyses || 0));
+
+  // A paper the extractor could not fully read. Worth surfacing because it is
+  // FIXABLE now: the title is editable inline, and these are the rows where
+  // the map label and any future citation would be wrong.
+  const hasAuthors = (d) => /[a-z]/i.test(d.metadata?.authors || '');
+  const incomplete = documents.filter((d) => !hasAuthors(d) || !d.metadata?.year);
+
+  // Filter, not search. Semantic search over the text lives in LitGraph; what
+  // a list of fifty papers needs is "where is the one I am thinking of", which
+  // is a substring match over what the row already shows.
+  const matchesQuery = (doc) => {
+    if (!query.trim()) return true;
+    const m = doc.metadata || {};
+    return `${m.title || ''} ${m.authors || ''} ${doc.filename || ''}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase());
+  };
+
+  const visible = documents
+    .filter(matchesQuery)
+    .filter((d) => !onlyIncomplete || incomplete.includes(d));
+
+  // Paged, so a library of fifty papers does not become fifty rows of scroll.
+  // Library is meant to give the whole picture at a glance; a wall of files is
+  // the opposite of that.
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageDocs = visible.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
   const actionLabels = {
     encrypt: { title: 'encrypt paper', button: 'encrypt', icon: Lock },
     view: { title: 'view encrypted paper', button: 'decrypt & view', icon: Eye },
@@ -135,51 +288,274 @@ export default function Library() {
 
   return (
     <div>
-      <PageHeader
-        className="fade-up stagger-1"
-        title="Library"
-      />
+      {/* What the other three screens are for.
+          The nav says "LitGraph" and "Scribe", which mean nothing to someone
+          who has just installed this. Each page's own "i" explains it, but you
+          have to already be there -- and you will not open a screen whose name
+          tells you nothing. Saying it once on the page everyone lands on is
+          what lets the page titles go. */}
+      <section className="library-tour fade-up stagger-2">
+        <button
+          className="library-tour-toggle"
+          onClick={toggleTour}
+          aria-expanded={tourOpen}
+        >
+          {tourOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <span>What&apos;s here</span>
+        </button>
 
-      <div className="stat-row fade-up stagger-2">
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Papers Ingested</span>
-            <FileText size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">{stats.total || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Knowledge Chunks</span>
-            <BarChart2 size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">{stats.total_chunks || '-'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Analyses Run</span>
-            <Brain size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">-</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-top">
-            <span className="stat-card-label">Gaps Found</span>
-            <Target size={16} className="stat-card-icon" />
-          </div>
-          <div className="stat-value">-</div>
+        {tourOpen && (
+          <ul className="library-tour-list">
+            {OTHER_FEATURES.map(({ id, path, label, icon: Icon, summary }) => (
+              <li key={id}>
+                <button className="library-tour-item" onClick={() => navigate(path)}>
+                  <Icon size={16} className="library-tour-icon" />
+                  <span className="library-tour-label">{label}</span>
+                  <span className="library-tour-summary">{summary}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* An empty library has nothing to report, and four cards reading "-"
+          plus a chart with no data is what a new install used to open on. The
+          one visit where the dashboard has least to say is the one where the
+          user most needs telling what happens next. */}
+      {!loading && documents.length === 0 ? (
+        <section className="library-start fade-up stagger-2">
+          <h2>Start by adding a paper.</h2>
+          <p className="library-start-lede">
+            Drop a PDF below. Everything after that happens on this machine —
+            no account, no upload, no network.
+          </p>
+          <ol className="library-start-steps">
+            <li>
+              <span className="library-start-step">Read</span>
+              title, authors and year are taken from the page layout, not guessed
+            </li>
+            <li>
+              <span className="library-start-step">Split</span>
+              the text becomes passages small enough to search precisely
+            </li>
+            <li>
+              <span className="library-start-step">Embed</span>
+              each passage gets a vector, so you can search by meaning
+            </li>
+            <li>
+              <span className="library-start-step">Analyse</span>
+              claims and gaps are extracted in the background — this one takes a
+              minute, and the rest of the app stays usable
+            </li>
+          </ol>
+          <p className="library-start-then">
+            Then <button className="link-button" onClick={() => navigate('/litgraph')}>LitGraph</button> maps
+            what you have, and <button className="link-button" onClick={() => navigate('/scribe')}>Scribe</button> cites
+            it while you write.
+          </p>
+        </section>
+      ) : (
+      <div className="library-overview fade-up stagger-2">
+        <div className="library-panels">
+          <section className="stat-card panel">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Models in Use</span>
+              <Cpu size={16} className="stat-card-icon" />
+            </div>
+            {benchModels === null ? (
+              <p className="panel-empty">could not read the model registry</p>
+            ) : benchModels.length === 0 ? (
+              <p className="panel-empty">no model is configured</p>
+            ) : (
+              <ul className="panel-list panel-list-scroll">
+                {benchModels.map(({ task, label }) => (
+                  <li key={task} className="panel-row">
+                    <span className="panel-row-name">{TASK_LABELS[task] || task}</span>
+                    <span className="panel-row-meta">{label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* The first-run banner says this once and never returns, and it
+                lands people in Bench -- a screen they have no reason to open
+                again. Library is where they actually are, so the fact that a
+                model is running locally and can be swapped lives here too. */}
+            <p className="panel-note">
+              Runs on this machine. Nothing is uploaded.{' '}
+              <button className="link-button" onClick={() => navigate('/bench')}>
+                Change in Bench
+              </button>
+            </p>
+          </section>
+
+          {/* Not a statistic -- a worklist. Extraction is right about 93% of
+              the time, so a few papers arrive without authors or a year, and
+              those are exactly the rows whose LitGraph label is wrong and
+              whose citation would be incomplete. Now that a title is editable
+              inline, this is the only place that says WHICH ones to fix. */}
+          {incomplete.length > 0 && (
+            <section className="stat-card panel">
+              <div className="stat-card-top">
+                <span className="stat-card-label">Needs Attention</span>
+                <AlertTriangle size={16} className="stat-card-icon" />
+              </div>
+              <ul className="panel-list panel-list-scroll">
+                {incomplete.map((doc) => (
+                  <li key={doc.doc_id} className="panel-row">
+                    <span className="panel-row-name">
+                      {doc.metadata?.title || doc.filename}
+                    </span>
+                    <span className="panel-row-meta">
+                      {!hasAuthors(doc) && !doc.metadata?.year ? 'no authors, no year'
+                        : !hasAuthors(doc) ? 'no authors' : 'no year'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="panel-note">
+                {incomplete.length} of {documents.length} papers.{' '}
+                <button className="link-button"
+                        onClick={() => setOnlyIncomplete((on) => !on)}>
+                  {onlyIncomplete ? 'Show all papers' : 'Show only these'}
+                </button>
+              </p>
+            </section>
+          )}
+
+          <section className="stat-card panel">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Papers Being Written</span>
+              <PenLine size={16} className="stat-card-icon" />
+            </div>
+            {scribeProjects === null ? (
+              <p className="panel-empty">could not read Scribe projects</p>
+            ) : scribeProjects.length === 0 ? (
+              <p className="panel-empty">nothing in progress</p>
+            ) : (
+              <ul className="panel-list panel-list-scroll">
+                {scribeProjects.map((proj) => (
+                  <li key={proj.project_id} className="panel-row">
+                    <PenLine size={12} className="panel-row-icon" />
+                    <span className="panel-row-name">{proj.name || proj.project_id}</span>
+                    {proj.has_pdf && <span className="badge badge-success">pdf</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
-
-      {documents.length > 0 && (
-        <Suspense fallback={null}><LibraryChart documents={documents} /></Suspense>
       )}
 
+      {/* Upload comes before the knowledge base it fills -- the action, then
+          what it produced. The chart is part of that section, not a preamble
+          to it, so it sits under the heading rather than above the dropzone. */}
       <div className="fade-up stagger-3">
         <UploadPanel onUploadComplete={loadDocuments} />
       </div>
 
-      <h3 className="section-heading fade-up stagger-4" style={{ marginTop: '2rem' }}>Ingested Papers</h3>
+      {/* The counts used to be six cards across the top of the page, which put
+          the least actionable thing first and pushed the papers below the fold.
+          They belong beside the thing they count. */}
+      <div className="kb-heading fade-up stagger-4">
+        <div className="kb-heading-left">
+          <h3 className="section-heading">Knowledge Base</h3>
+        </div>
+        {documents.length > 0 && (
+          <div className="kb-search">
+            <Search size={14} className="kb-search-icon" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Filter ${documents.length} papers by title, author or filename`}
+              aria-label="Filter papers"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* The counts live in the section they describe, not across the top of
+          the page. Above the fold they were the first thing read and the least
+          worth reading; here they are a caption on the knowledge base.
+          Dropped from the original six: bytes on disk, which answered a
+          question nobody asked. */}
+      {documents.length > 0 && (
+        <div className="kb-counts fade-up stagger-4">
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Papers Ingested</span>
+              <FileText size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Knowledge Chunks</span>
+              <BarChart2 size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.total_chunks}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Analysed</span>
+              <Brain size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">
+              {stats.analyses}
+              {pending > 0 && <small> of {documents.length}</small>}
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Gaps Found</span>
+              <Target size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{stats.gaps || '—'}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-top">
+              <span className="stat-card-label">Encrypted</span>
+              <ShieldCheck size={16} className="stat-card-icon" />
+            </div>
+            <div className="stat-value">{encrypted || '—'}</div>
+          </div>
+        </div>
+      )}
+
+      {/* The filter has to say it is on, and offer a way out. A list quietly
+          showing three of twenty papers is indistinguishable from a bug. */}
+      {onlyIncomplete && (
+        <div className="kb-filter-note">
+          <span>
+            Showing {visible.length} paper{visible.length === 1 ? '' : 's'} missing
+            an author list or a year. Click a title&apos;s pencil to correct it.
+          </span>
+          <button className="btn btn-secondary btn-sm"
+                  onClick={() => setOnlyIncomplete(false)}>
+            Show all
+          </button>
+        </div>
+      )}
+
+      {/* Ingestion returns before the analysis does. Without this the user is
+          told "ingested", opens LitGraph, finds nothing, and concludes it is
+          broken -- when a model is simply still working. */}
+      {jobs.active && (
+        <div className="kb-progress" role="status">
+          <span className="spinner" />
+          <span className="kb-progress-label">
+            {jobs.label || 'Working through the queue'}
+          </span>
+          {jobs.total > 1 && (
+            <span className="kb-progress-count">{jobs.done} of {jobs.total}</span>
+          )}
+          {jobs.queued > 0 && (
+            <span className="kb-progress-count">{jobs.queued} queued</span>
+          )}
+        </div>
+      )}
 
       <div className="card fade-up stagger-4">
         <div className="card-header">
@@ -201,8 +577,14 @@ export default function Library() {
             <h3>no papers yet</h3>
             <p>upload pdf research papers above to start building your knowledge base.</p>
           </div>
+        ) : visible.length === 0 ? (
+          <div className="empty-state">
+            <Search size={48} />
+            <h3>no match</h3>
+            <p>nothing in {documents.length} papers matches &ldquo;{query.trim()}&rdquo;.</p>
+          </div>
         ) : (
-          documents.map((doc) => (
+          pageDocs.map((doc) => (
             <div key={doc.doc_id}>
               <div className="doc-item" onClick={() => toggleExpand(doc.doc_id)} style={{ cursor: 'pointer' }}>
                 <div className="doc-icon">
@@ -213,16 +595,53 @@ export default function Library() {
                   )}
                 </div>
                 <div className="doc-info">
-                  <div className="doc-title">
-                    {doc.filename}
-                    {isDocEncrypted(doc) && (
-                      <span className="badge badge-warning" style={{ marginLeft: '0.5rem', fontSize: '0.65rem' }}>
-                        encrypted
-                      </span>
-                    )}
-                  </div>
+                  {renamingDoc === doc.doc_id ? (
+                    // Click-through would collapse the row out from under the
+                    // input the moment you tried to type in it.
+                    <form
+                      className="doc-rename"
+                      onClick={(e) => e.stopPropagation()}
+                      onSubmit={(e) => { e.preventDefault(); submitRename(doc.doc_id); }}
+                    >
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setRenamingDoc(null); }}
+                        aria-label="Paper title"
+                      />
+                      <button type="submit" className="btn btn-primary btn-sm">save</button>
+                      <button type="button" className="btn btn-ghost btn-sm"
+                              onClick={() => setRenamingDoc(null)}>cancel</button>
+                    </form>
+                  ) : (
+                    <div className="doc-title">
+                      {/* The extracted title, not the filename. "2402.02414.pdf"
+                          tells a reader nothing, and the title is what labels
+                          this paper everywhere else in the app. */}
+                      {doc.metadata?.title || doc.filename}
+                      <button
+                        className="doc-rename-btn"
+                        title="Correct this title"
+                        aria-label="Correct this title"
+                        onClick={(e) => { e.stopPropagation(); startRename(doc); }}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      {isDocEncrypted(doc) && (
+                        <span className="badge badge-warning">encrypted</span>
+                      )}
+                    </div>
+                  )}
                   <div className="doc-meta">
-                    <Clock size={12} /> {doc.metadata?.timestamp || new Date().toLocaleDateString()}
+                    {/* Papers ingested before the layout fix have author
+                        strings like ", ," -- joined separators with nothing
+                        between them. Truthy, and meaningless to show. */}
+                    {/[a-z]/i.test(doc.metadata?.authors || '') && (
+                      <span>{doc.metadata.authors}</span>
+                    )}
+                    {doc.metadata?.year && <span>{doc.metadata.year}</span>}
+                    <span><Clock size={12} /> {doc.filename}</span>
                   </div>
                 </div>
                 <div className="doc-actions" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
@@ -285,6 +704,34 @@ export default function Library() {
               )}
             </div>
           ))
+        )}
+
+        {/* One batch at a time, an arrow at each end. Library is meant to give
+            the whole picture at a glance, and a list long enough to scroll
+            buries everything above it. */}
+        {visible.length > PAGE_SIZE && (
+          <div className="kb-pager">
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.max(0, n - 1))}
+              disabled={safePage === 0}
+              aria-label="Previous papers"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="kb-pager-label">
+              {safePage * PAGE_SIZE + 1}&ndash;{Math.min((safePage + 1) * PAGE_SIZE, visible.length)}
+              {' of '}{visible.length}
+            </span>
+            <button
+              className="kb-pager-btn"
+              onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
+              disabled={safePage >= pageCount - 1}
+              aria-label="Next papers"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         )}
       </div>
 

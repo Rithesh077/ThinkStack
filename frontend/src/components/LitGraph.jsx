@@ -6,7 +6,6 @@ import {
 import {
   documentsApi, searchApi, graphApi, analysisApi, gapsApi, useLlmBusy, useJobs,
 } from '../utils/api';
-import PageHeader from './PageHeader';
 import useThemeColors from './charts/useThemeColors';
 import useCanvas from './litgraph/useCanvas';
 import { clampPanel, gapPassages } from './litgraph/panel';
@@ -322,9 +321,6 @@ export default function LitGraph() {
   if (loading) {
     return (
       <div className="lg-page">
-      <PageHeader
-        title="LitGraph"
-      />
         <div className="lg-empty"><div className="spinner spinner-lg" /><p>Building the map…</p></div>
       </div>
     );
@@ -332,9 +328,6 @@ export default function LitGraph() {
   if (!nodeCount) {
     return (
       <div className="lg-page">
-      <PageHeader
-        title="LitGraph"
-      />
         <div className="lg-empty">
         <BookOpen size={44} />
         <h3>Nothing to map yet</h3>
@@ -348,9 +341,6 @@ export default function LitGraph() {
 
   return (
     <div className="lg-page">
-      <PageHeader
-        title="LitGraph"
-      />
       <div ref={setRoot} className={`lg-root ${panel ? 'lg-has-panel' : ''}`}>
       {/* ---------- canvas ---------- */}
       <div className="lg-stage">

@@ -73,6 +73,36 @@ Planned models:
   extraction formats the application parses, addressing the cases where a
   general model returns prose where JSON was requested.
 
+### A layout classifier for metadata extraction
+
+Metadata extraction reads page geometry and applies hand-written rules. Measured
+over 56 papers sampled at random across 15 arXiv categories: 92.9% of titles and
+85.7% of author lists exactly right. The remaining failures are a long tail of
+typesetting conventions — mathematics inside a title, publisher cover pages,
+templates nobody has looked at — and each one currently costs another rule.
+
+The established answer is a small classifier over the *same* features the rules
+already read (font size, position, capitalisation, punctuation, row order),
+labelling each row as title, author, affiliation or body. That is what GROBID
+does with a CRF, and it has held around 90% F1 for a decade. It would be
+kilobytes rather than megabytes, CPU-instant, supervised rather than reinforced,
+and — unlike more rules — it degrades gracefully on templates it has not seen.
+
+Two things make this a genuine research direction rather than a port. GROBID
+needs a JVM and a model server; Nougat, the neural alternative, wants a GPU.
+**Nobody optimises this task for a CPU-only machine with no network**, which is
+the constraint this whole application is built under. Taking those two as
+accuracy ceilings and measuring how close a fixed memory and CPU budget gets is
+publishable whether the answer is "surprisingly close" or "here is exactly where
+it breaks".
+
+A cheaper step comes first, and does not need a model at all: **remember
+corrections**. When a user fixes a wrong title, store the page's layout
+fingerprint against the correction. Papers arrive in clusters from the same few
+venues, so one correction pays for itself repeatedly. That is adaptation without
+gradients — inspectable, revertible, and free of the catastrophic forgetting that
+on-device fine-tuning of a shared model would risk.
+
 ### A diversified model suite via Hugging Face
 
 Rather than two fixed models, offer a catalogue drawn from Hugging Face, with
