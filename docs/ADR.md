@@ -510,6 +510,55 @@ should keep a measure. That rule is about PROSE -- a line set 1900px wide is
 unreadable. Bench is read and keeps its measure; Library is counts, panels and
 a list, and capping it left a third of a wide window empty.
 
+## 2026-08-14: Paper and Ink replaces the interface
+
+**Context.** The dark glass interface had accumulated twelve ad-hoc type sizes,
+a sidebar that collapsed to nothing, and panes measured with `calc(100vh -
+11rem)`. Rithesh proposed replacing it outright rather than continuing to
+correct it; Aditya implemented the replacement as a parallel `new-frontend/`
+tree while the old one went on shipping.
+
+**Decision.** *Paper and Ink* -- a sheet of paper on a desk, worked in ink --
+is the interface. `new-frontend/` is `frontend/`, and the old tree is deleted.
+
+**Consequences.** A parallel tree is the right shape for this and has one
+failure mode: the two drift, and the one nobody is looking at rots. Two things
+were done about it. CI ran both through the same matrix, so neither could ship
+having been checked differently. And the contract test was parameterised over
+both trees, because it had hardcoded `frontend/src/utils/api.js` -- the moment
+the replacement shipped it would have gone on proving things about a directory
+nobody builds, passing while the live client called routes that did not exist.
+
+Parity before the swap was established three ways: both clients called the same
+44 routes, the contract test passed over both, and `local/check_api_reach.py`
+called every route against a running backend. The third is not the same
+guarantee as the first two -- reading both sides as text proves the paths
+MATCH; only calling them proves the handlers RUN.
+
+The replacement had already solved problems the old tree had not. Its folio --
+one line of type on the masthead -- says what four glass cards said and costs
+no vertical space, which is why the port kept it rather than reinstating cards.
+
+## 2026-08-14: two trees means every fix is made twice
+
+**Context.** The extractor work, the Library rebuild, the type scale and the
+rail all landed in `frontend/` while `new-frontend/` was being written.
+
+**Decision.** Port the DECISIONS into the new tree's idiom rather than copying
+its markup across.
+
+**Consequences.** Everything was built twice, and that is the real price of
+replacing a running interface -- not the rewrite, the double maintenance while
+both exist. Copying would have been faster and wrong: the new tree names its
+colours `--text`, `--text-2`, `--text-primary`, so the type scale is `--type-*`
+there and `--text-*` in the old one. A colour token answering to a size name is
+a trap somebody falls into later.
+
+The same applies to structure. The route wrapper is `.page-turn` here and was
+`.page-frame` there, and Scribe's root had no class at all -- so the height
+chain that fixes the panes had to be rebuilt, not pasted. It is one link per
+step and a missing one resolves `flex: 1` against nothing.
+
 ## 2026-08-14: six named type steps, and a root size that is not fixed
 
 **Context.** The stylesheets carried twelve different small font sizes: 0.68,

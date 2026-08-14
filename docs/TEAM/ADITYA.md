@@ -186,3 +186,26 @@ I set up the initial React app and the page shell (`PageHeader.jsx`, the loading
 screen, the recharts panels under `components/charts/`), and did the Tauri
 integration pass in `ee37d48`. On the docs side I wrote the first project
 documentation and `docs/academic/presentation.md`.
+
+## The Paper and Ink interface
+
+I built the replacement interface — the one the app now runs. Rithesh proposed
+replacing the dark glass UI rather than continuing to correct it, and I
+implemented it as a parallel `new-frontend/` tree while the old one went on
+shipping (`17b7012`, "the finished Paper and Ink interface"): one theme, a
+sheet of paper on a desk worked in ink, with the four surfaces, the ink ramp
+and the four pigments set out in `src/index.css`.
+
+It is `frontend/` now and the old tree is deleted. Rithesh did the migration —
+carrying the extractor and Library work across, proving route parity, and
+removing the old directory.
+
+> **This section is a placeholder for the design reasoning, which is mine to
+> write.** The decisions worth recording are not in the diff: why one radius
+> and two shadows rather than a scale of each, why the folio replaced four stat
+> cards, why the pigments are earned rather than given, and why serif reads
+> while mono counts. That last one is now an open question — the ink strip that
+> let anyone choose how colour arrives has been unmounted pending a decision,
+> because `--mark` turned out to be carrying meaning on the map rather than
+> decoration, and an interface that greys out its own signal until a milestone
+> arrives is withholding something the reader needs.

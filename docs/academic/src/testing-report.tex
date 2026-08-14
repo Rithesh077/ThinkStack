@@ -1,0 +1,474 @@
+% ThinkStack -- testing phase document.
+%
+% Every figure here was produced by running the suites named beside it, on the
+% machine described in §1.3. Nothing is estimated. Where a result is provisional
+% -- because a platform has not yet been re-tested since the interface was
+% replaced -- it says so rather than being omitted or rounded up.
+\documentclass[12pt,a4paper]{report}
+\input{preamble}
+
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries}{\chaptertitlename\ \thechapter}{12pt}{\LARGE}
+\titlespacing*{\chapter}{0pt}{-20pt}{24pt}
+
+\begin{document}
+
+\thispagestyle{empty}
+\begin{center}
+  \vspace*{0.8cm}
+  \includegraphics[width=0.42\linewidth]{assets/christ-logo.png}\par
+  \vspace{1.0cm}
+  {\LARGE\bfseries ThinkStack\par}
+  \vspace{0.5cm}
+  {\Large Testing Phase Document\par}
+  \vspace{2cm}
+  {\large Aditya Mehta (2440204)\par}
+  {\large Jitvan Chadha (2440222)\par}
+  {\large Ritesh K R (2440233)\par}
+  \vspace{1.5cm}
+  {\large Under the guidance of\par}
+  \vspace{0.3cm}
+  {\large\bfseries Dr. New Begin\par}
+  \vspace{2cm}
+  {\normalsize V Semester B.Sc. (Computer Science and Statistics)\par}
+  {\normalsize CHRIST (Deemed to be University)\par}
+  \vspace{1.5cm}
+  {\normalsize August 2026\par}
+\end{center}
+\clearpage
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% ============================================================
+\chapter{TEST PLAN}
+% ============================================================
+
+\section{Purpose and Scope}
+
+This document records how ThinkStack is tested, what the tests establish, and
+what they currently report. It covers the backend, the interface, the contract
+between them, and the packaged application as installed on a user's machine.
+
+It does not yet cover cross-platform verification of the replaced interface or
+of the Scribe writing path. Section~5.2 states precisely what is outstanding and
+why, rather than leaving the omission implicit.
+
+\section{Testing Strategy}
+
+Four layers, each establishing something the layer below it cannot.
+
+\begin{longtable}{@{}p{0.22\linewidth}p{0.30\linewidth}p{0.42\linewidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{Tool} & \textbf{What only this layer can establish} \\
+\midrule
+\endhead
+Unit (backend) & pytest & That a function computes what it claims, including
+  its failure modes. \\
+\addlinespace
+Unit (interface) & vitest, jsdom & That a component renders and behaves under
+  interaction, without a browser. \\
+\addlinespace
+Contract & pytest, source parsing & That both sides of the API agree,
+  parsed from source rather than asserted by hand. \\
+\addlinespace
+Reachability & live HTTP & That the handlers \emph{run}. Parsing proves the
+  paths match; only calling them proves anything executes. \\
+\addlinespace
+Packaged application & \texttt{validate\_bundle.py} & That the \emph{installed}
+  program works. A suite run from a source checkout cannot see what the
+  freezer omitted. \\
+\bottomrule
+\caption{Testing layers and what each establishes}
+\label{tab:strategy}
+\end{longtable}
+
+\evidence{\textbf{Why the last two layers exist.} Version 1.0.0 passed every
+test and every build, was published, and did not start: the frozen backend
+silently dropped the inference library's shared objects and the embedding
+model's data, because neither package ships a hook for the freezer. And when the
+interface was replaced, the contract test was found to be hardcoded to the old
+directory, the moment the replacement shipped it would have gone on passing
+while validating a tree nobody built.}
+
+\section{Test Environment}
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.64\linewidth}@{}}
+\toprule
+\textbf{Item} & \textbf{Value} \\
+\midrule
+\endhead
+Development machine & 16\,GB memory, 16-core x86-64 CPU, no usable accelerator \\
+Operating system & Fedora Linux (kernel 7.1.3) \\
+Python & 3.14, dependencies pinned exactly \\
+Node & 22.x \\
+Inference & llama.cpp via a local client; Qwen2.5 0.5B and 1.5B, Q4\_K\_M \\
+Embeddings & all-MiniLM-L6-v2, local \\
+Typesetting & Tectonic, bundled \\
+Continuous integration & GitHub Actions, Ubuntu runners \\
+\bottomrule
+\caption{Test environment}
+\label{tab:env}
+\end{longtable}
+
+Interface tests are run with file parallelism disabled. Vitest defaults to one
+worker per core; on a 16-core machine already running an editor that is sixteen
+Node processes each with its own DOM implementation, which exhausted memory and
+froze the machine. Single-threaded the same 198 tests complete in about five
+seconds.
+
+% ============================================================
+\chapter{TEST CASES}
+% ============================================================
+
+\section{Metadata Extraction}
+
+\begin{longtable}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.33\linewidth}p{0.10\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endhead
+ME-01 & Largest horizontal text at the top of page 1 & Exact title & Pass \\
+ME-02 & Rotated archive stamp larger than the title & Stamp ignored & Pass \\
+ME-03 & Horizontal margin furniture (journal banner) & Ignored & Pass \\
+ME-04 & Title wrapping to a second line & Both lines joined & Pass \\
+ME-05 & Same font reused lower on the page & Not joined to the title & Pass \\
+ME-06 & Small-capitals title (two sizes, one baseline) & Whole title & Pass \\
+ME-07 & Font change mid-word & No space inserted & Pass \\
+ME-08 & Ligature stored as one glyph & Expanded & Pass \\
+ME-09 & Accent stored before its letter & Recomposed & Pass \\
+ME-10 & Hyphenated title across a line break & De-hyphenated & Pass \\
+ME-11 & Authors in columns & Each cell a name & Pass \\
+ME-12 & Authors comma-separated in one cell & Split correctly & Pass \\
+ME-13 & One author per row with affiliation & Name kept, affiliation dropped
+  & Pass \\
+ME-14 & Affiliation row naming only some employers & Whole row rejected
+  & Pass \\
+ME-15 & Phrase repeated in the author region & Treated as an address & Pass \\
+ME-16 & Accented institution name & Still recognised & Pass \\
+ME-17 & Email in brace form & Not read as a name & Pass \\
+ME-18 & Scanned page, no text layer & Empty, not a guess & Pass \\
+ME-19 & Year from archive identifier vs. stray number & Identifier wins
+  & Pass \\
+ME-20 & Paper stating no year & Empty & Pass \\
+ME-21 & Implausible year & Refused & Pass \\
+ME-22 & Plausible title, no authors & Model fallback invoked & Pass \\
+ME-23 & Model returns an empty field & Good value retained & Pass \\
+ME-24 & Model disabled and result implausible & Returned unchanged & Pass \\
+\bottomrule
+\caption{Metadata extraction test cases}
+\label{tab:me}
+\end{longtable}
+
+\section{Documents, Storage and Encryption}
+
+\begin{longtable}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.33\linewidth}p{0.10\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endhead
+DS-01 & Upload a valid PDF & Ingested, chunks stored & Pass \\
+DS-02 & Upload a non-PDF & Rejected, 400 & Pass \\
+DS-03 & Upload an empty file & Rejected, 400 & Pass \\
+DS-04 & PDF yielding no text & 422, document not retained & Pass \\
+DS-05 & Layout extraction fails & Ingest still succeeds & Pass \\
+DS-06 & Analysis queue unavailable & Document retained, warning logged
+  & Pass \\
+DS-07 & Rename propagates to every chunk & All chunks updated & Pass \\
+DS-08 & Rename with a blank title & 400, nothing written & Pass \\
+DS-09 & Rename an absent document & 404 & Pass \\
+DS-10 & Delete removes chunks, file and cached analysis & All removed & Pass \\
+DS-11 & Encrypt, then read chunk text & Ciphertext stored & Pass \\
+DS-12 & Decrypt with the wrong password & Refused, detected & Pass \\
+DS-13 & PDF route for an encrypted document & 403 & Pass \\
+DS-14 & PDF served inline, not as an attachment & Inline & Pass \\
+\bottomrule
+\caption{Document lifecycle and encryption test cases}
+\label{tab:ds}
+\end{longtable}
+
+\section{Paper Writer}
+
+\begin{longtable}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.33\linewidth}p{0.10\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endhead
+PW-01 & Compile a valid document & PDF produced & Pass \\
+PW-02 & Missing package declaration & Inserted, compiles & Pass \\
+PW-03 & Bare fragment with no preamble & Wrapped, compiles & Pass \\
+PW-04 & One malformed figure & Document still produced & Pass \\
+PW-05 & Index requested & \texttt{.ind} generated in Python & Pass \\
+PW-06 & Figure referenced from a project directory & Resolves & Pass \\
+PW-07 & Filename escaping the project directory & Refused & Pass \\
+PW-08 & Symbolic link out of the project & Refused & Pass \\
+PW-09 & Rename a project & Compile, preview and paths unaffected & Pass \\
+\bottomrule
+\caption{Paper writer test cases}
+\label{tab:pw}
+\end{longtable}
+
+\section{Capability, Models and Release}
+
+\begin{longtable}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.33\linewidth}p{0.10\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endhead
+CM-01 & Model sized against available, not installed, memory & Correct budget
+  & Pass \\
+CM-02 & Prompt exceeding the loaded context & Map-reduce fallback & Pass \\
+CM-03 & Apple Silicon, no CUDA reported & GPU still used & Pass \\
+CM-04 & Vulkan device present, vendor tool absent & Advice still shown
+  & Pass \\
+CM-05 & Task routed to an assigned model & Correct model & Pass \\
+CM-06 & Assigned model too large for free memory & Falls back, states why
+  & Pass \\
+CM-07 & Version lower than published & Refused & Pass \\
+CM-08 & Release published as a draft & Detected and republished & Pass \\
+CM-09 & Update where the platform cannot prompt & Not installed & Pass \\
+\bottomrule
+\caption{Capability, model management and release test cases}
+\label{tab:cm}
+\end{longtable}
+
+\section{Interface}
+
+\begin{longtable}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.33\linewidth}p{0.10\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Case} & \textbf{Expected} & \textbf{Result} \\
+\midrule
+\endhead
+UI-01 & Press inside the page collapses the navigation & Collapses & Pass \\
+UI-02 & The collapse does not swallow the click causing it & Click delivered
+  & Pass \\
+UI-03 & Reopening survives the next press & Stays open & Pass \\
+UI-04 & Automatic collapse resumes after navigating & Resumes & Pass \\
+UI-05 & Every feature resolves from its own path & All resolve & Pass \\
+UI-06 & Nested path resolves to its parent feature & Resolves & Pass \\
+UI-07 & Unknown path & Falls back without error & Pass \\
+UI-08 & Workspace pages take the full window & Full width & Pass \\
+UI-09 & Update prompt with no confirmation available & Treated as not asked
+  & Pass \\
+UI-10 & Pigments: earning records and applies & Correct & Pass \\
+\bottomrule
+\caption{Interface test cases}
+\label{tab:ui}
+\end{longtable}
+
+% ============================================================
+\chapter{TEST RESULTS}
+% ============================================================
+
+\section{Suite Summary}
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.13\linewidth}p{0.20\linewidth}@{}}
+\toprule
+\textbf{Suite} & \textbf{Tests} & \textbf{Pass} & \textbf{Fail} &
+\textbf{Runtime} \\
+\midrule
+\endhead
+Backend (pytest)    & 984 & 984 & 0 & \textasciitilde13\,s \\
+Interface (vitest)  & 198 & 198 & 0 & \textasciitilde5\,s \\
+API contract        & 5   & 5   & 0 & $<$1\,s \\
+Route reachability  & 16  & 16  & 0 & $<$2\,s \\
+\midrule
+\textbf{Total}      & \textbf{1203} & \textbf{1203} & \textbf{0} & \\
+\bottomrule
+\caption{Automated suite results}
+\label{tab:suites}
+\end{longtable}
+
+\section{Metadata Extraction Accuracy}
+
+Two measurements, and the difference between them is the finding.
+
+\begin{longtable}{@{}p{0.32\linewidth}p{0.20\linewidth}p{0.20\linewidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Curated (18)} & \textbf{Random (56)} \\
+\midrule
+\endhead
+Title exactly correct       & 100\% & 92.9\% \\
+Author list exactly correct & 100\% & 85.7\% \\
+Year exactly correct        & 100\% & 92.9\% \\
+All three simultaneously    & 100\% & 76.8\% \\
+\bottomrule
+\caption{Extraction accuracy: chosen versus randomly sampled papers}
+\label{tab:acc}
+\end{longtable}
+
+The curated set was chosen by the authors. The random set was drawn across 15
+arXiv subject classifications through the public interface, and scored against
+the archive's own catalogue records, so neither the papers nor the expected
+answers were selected here.
+
+The first random measurement was \textbf{62.5\%} on all three fields. The whole
+difference was three typesetting conventions that had not been examined:
+
+\begin{enumerate}[leftmargin=*]
+  \item a physics template spacing a centred author line widely enough to be
+        indistinguishable from column separation, so two authors read as five
+        fragments and none as a name;
+  \item a template running from the affiliations into the abstract with no
+        heading, so the search for authors continued into the body and
+        collected section headings;
+  \item a margin threshold added to discard an archive stamp, which was also
+        discarding the first line of any centred title wide enough to begin
+        left of it.
+\end{enumerate}
+
+Of the 13 remaining failures, \textbf{three are not extraction errors}: the page
+reads ``M.~GRENDÁR'' and ``Audrey Quessadda-Vial'' where the archive record
+disagrees with the paper itself.
+
+\section{Ablation}
+
+To establish which rules carry the result, each was disabled and the corpus
+re-scored.
+
+\begin{longtable}{@{}p{0.42\linewidth}p{0.18\linewidth}p{0.34\linewidth}@{}}
+\toprule
+\textbf{Configuration} & \textbf{Exact} & \textbf{Failure mode} \\
+\midrule
+\endhead
+All rules                       & 7/7 &: \\
+No column splitting             & 1/7 & 38 names lost entirely \\
+No affiliation word list        & 4/7 & Employers admitted; no name lost \\
+No acronym rule                 & 6/7 & ``Google AI Language'' admitted \\
+\bottomrule
+\caption{Rule ablation on the curated set}
+\label{tab:ablation}
+\end{longtable}
+
+Splitting rows into cells is the load-bearing rule. The word list only ever
+admits extra rows and never loses a name, which is why it remains a tiebreaker
+rather than the mechanism.
+
+\section{Performance}
+
+\begin{longtable}{@{}p{0.40\linewidth}p{0.22\linewidth}p{0.30\linewidth}@{}}
+\toprule
+\textbf{Stage} & \textbf{Time} & \textbf{Share} \\
+\midrule
+\endhead
+Text extraction        & 6.0\,ms    & 0.2\% \\
+Metadata extraction    & 1.1\,ms    & 0.04\% \\
+Chunking               & 0.2\,ms    & 0.01\% \\
+Embedding and search   & 3073.8\,ms & 99.7\% \\
+\bottomrule
+\caption{Ingestion profile, one 40\,kB paper}
+\label{tab:perf}
+\end{longtable}
+
+This measurement prevented a rewrite. Everything a systems-language rewrite
+would have touched is 0.3\% of runtime, and the remaining 99.7\% is already
+compiled native code.
+
+% ============================================================
+\chapter{DEFECTS FOUND AND FIXED}
+% ============================================================
+
+\section{By Severity}
+
+\begin{longtable}{@{}p{0.05\linewidth}p{0.44\linewidth}p{0.14\linewidth}p{0.29\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Defect} & \textbf{Severity} & \textbf{Status} \\
+\midrule
+\endhead
+D-01 & Metadata wrong on every published paper tested & Critical & Fixed;
+  92.9\% on unseen papers \\
+D-02 & Released version 1.0.0 did not start & Critical & Fixed; packaged
+  validation added \\
+D-03 & Model fallback unreachable (guard tested for empty, failure was wrong)
+  & High & Fixed; plausibility check \\
+D-04 & Summarisation prompt exceeded its own context window & High & Fixed \\
+D-05 & Apple Silicon pinned to CPU & High & Fixed \\
+D-06 & Release published as a draft; testers told they were current & High &
+  Fixed; publish asserted \\
+D-07 & Graphics advice hidden from AMD/Intel/open-driver machines & High &
+  Fixed \\
+D-08 & Sidebar collapse swallowed the click that caused it & Medium & Fixed \\
+D-09 & Update prompt read a missing confirmation as ``declined'' & Medium &
+  Fixed \\
+D-10 & Interface panel displayed a model that served nothing & Medium & Fixed;
+  reads the routing table \\
+D-11 & Two dashboard figures never displayed a value in any release & Medium &
+  Fixed \\
+D-12 & Panes sized by a guessed constant; broke when a heading was removed &
+  Medium & Fixed \\
+D-13 & Contract test validated a directory that was about to be deleted &
+  Medium & Fixed; parameterised \\
+D-14 & Figure silently dropped while the compile reported success & Medium &
+  Fixed; PDF inspected \\
+D-15 & Ligatures and accents reached the search index & Low & Fixed \\
+\bottomrule
+\caption{Defects found during the testing phase}
+\label{tab:defects}
+\end{longtable}
+
+\section{The Recurring Defect Class}
+
+Five of the defects above, D-01, D-03, D-06, D-07 and D-11, are the same
+mistake: \emph{a check that tests for silence, when the failure mode is
+confident wrongness}. A guard asking whether a title is empty cannot catch a
+title that is wrong. A release asking whether a job failed cannot catch a job
+that succeeded into a draft. A dash meaning ``nothing yet'' cannot be
+distinguished from a dash meaning ``the request failed''.
+
+The correction is the same in each case: test for the shape of a right answer
+rather than for the absence of a wrong one.
+
+% ============================================================
+\chapter{STATUS AND OUTSTANDING WORK}
+% ============================================================
+
+\section{Current Status}
+
+All automated suites pass: 1203 tests across four layers. The application has
+been released publicly through fifteen versions, and the packaged installer has
+been validated on Linux by running it.
+
+\section{Outstanding Verification}
+
+This document is issued now because the testing phase is due, and it is
+\textbf{provisional in two specific respects}. Both are stated rather than
+omitted.
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.64\linewidth}@{}}
+\toprule
+\textbf{Outstanding} & \textbf{Why, and what is required} \\
+\midrule
+\endhead
+Cross-platform verification of the replaced interface &
+  The interface was replaced after the last full platform sweep. The automated
+  suites pass and the application has been run on Linux, but Windows and macOS
+  have not been re-verified against the new interface. Required: install the
+  packaged build on each and run the ingest, map, write and compile paths. \\
+\addlinespace
+Scribe on all platforms &
+  The writing and compilation path depends on the bundled typesetting engine and
+  on filesystem behaviour that differs between platforms. It is verified on
+  Linux. Required: compile a document containing a figure, a table and an index
+  on each platform, and confirm the PDF contains them. \\
+\bottomrule
+\caption{Verification not yet performed}
+\label{tab:outstanding}
+\end{longtable}
+
+Reporting these as complete would be the same defect this document spends a
+chapter on: claiming a result from the absence of a failure that was never
+looked for.
+
+\section{Revision}
+
+This document will be revised once the verification in Section~5.2 is complete.
+The suite figures in Chapter~3 are current as of the date of issue and are
+reproducible by running the suites named beside them.
+
+\end{document}
