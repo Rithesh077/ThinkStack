@@ -42,6 +42,15 @@ on:
       - 'THIRD-PARTY-NOTICES.md'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/CODEOWNERS'
+      # The download page and its fonts. Neither is a bundle resource and
+      # neither is referenced by the app -- tauri.conf.json ships
+      # dist/thinkstack-api, docs/**/*.md and docs/academic/*.pdf, and nothing
+      # else. A typeface on a web page cannot change a shipped byte, so it must
+      # not cost a three-OS build, ~2.8 GB of published assets, and a version
+      # number. deploy-pages.yml is what reacts to these, and it should be the
+      # only thing that does.
+      - 'landing.html'
+      - 'assets/**'
   schedule:
     - cron: '0 5 * * *'   # 05:00 UTC daily, nightly channel
   workflow_dispatch:
