@@ -245,6 +245,44 @@ def replay_landings(
     return (major, minor, patch), notes
 
 
+def minor_series_start() -> str | None:
+    """The earliest tag sharing the newest tag's X.Y, or None.
+
+    Y only ever moves because a person said so, so "when did this minor series
+    begin" is the same question as "when did anyone last make that call".
+    """
+    base, _ = newest_tag()
+    same: list[tuple[int, str]] = []
+    for line in _git("tag", "--list", "v*").splitlines():
+        m = VERSION_TAG.match(line.strip())
+        if not m:
+            continue
+        major, minor, patch = (int(g) for g in m.groups()[:3])
+        if (major, minor) == (base[0], base[1]):
+            same.append((patch, line.strip()))
+    return min(same)[1] if same else None
+
+
+def features_awaiting_a_minor() -> tuple[int, str | None]:
+    """How many features have landed since Y last moved, and from which tag.
+
+    Counted by REPLAYING the same landings the version itself is derived from,
+    rather than by reading commit subjects. The two disagree -- a `feat:`
+    subject inside a `fix/` branch is a fix here -- and a warning that counts
+    differently from the number it is warning about is worse than no warning.
+
+    Exists because the rule that X and Y are editorial has no enforcement: four
+    features landed between v2.1.9 and v2.1.16 and every one of them was
+    numbered as a patch, because moving Y requires someone to remember and
+    nothing said otherwise. The judgement stays with the human; the omission
+    stops being silent.
+    """
+    start = minor_series_start()
+    base, _ = newest_tag()
+    _, notes = replay_landings(base, start)
+    return sum(1 for n in notes if n.startswith("feature")), start
+
+
 def apply_bump(version: tuple[int, int, int], bump: str) -> str:
     """One explicit bump, obeying the same carry rule as the replay.
 
@@ -266,6 +304,9 @@ def main() -> int:
     g.add_argument("--bump", choices=["major", "minor", "patch"])
     g.add_argument("--infer", action="store_true")
     g.add_argument("--current", action="store_true")
+    g.add_argument("--pending-minor", action="store_true", dest="pending",
+                   help="print how many features have landed since Y last "
+                        "moved; 0 when the number is telling the truth")
     g.add_argument("--next", action="store_true", dest="next_",
                    help="replay every feat/ and fix/ branch merged since the "
                         "newest tag, applying one bump each, in order")
@@ -277,6 +318,18 @@ def main() -> int:
 
     if args.current:
         print("%d.%d.%d" % base)
+        return 0
+
+    if args.pending:
+        count, since = features_awaiting_a_minor()
+        if args.explain and count:
+            print(f"  {count} feature(s) have landed since {since}, the last "
+                  f"declared minor.", file=sys.stderr)
+            print("  This build numbers them as a patch. Rerun the release "
+                  "workflow", file=sys.stderr)
+            print("  with bump=minor if they amount to a feature release.",
+                  file=sys.stderr)
+        print(count)
         return 0
 
     if args.next_:
@@ -292,6 +345,14 @@ def main() -> int:
                 print("  landed since   : nothing that moves the version",
                       file=sys.stderr)
             print("  next           : v%d.%d.%d" % nxt, file=sys.stderr)
+            pending, since = features_awaiting_a_minor()
+            if pending:
+                print(f"  NOTE           : {pending} feature(s) have landed "
+                      f"since {since}, the last", file=sys.stderr)
+                print("                   declared minor, and this numbers "
+                      "them as a patch.", file=sys.stderr)
+                print("                   Rerun with bump=minor if they are a "
+                      "feature release.", file=sys.stderr)
         print("%d.%d.%d" % nxt)
         return 0
 

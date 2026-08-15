@@ -77,6 +77,14 @@ def current(repo: Path) -> str:
     return out.stdout.strip()
 
 
+def pending_minor(repo: Path) -> int:
+    out = subprocess.run(
+        [sys.executable, str(SCRIPT), "--pending-minor"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    )
+    return int(out.stdout.strip())
+
+
 class TestBaseNeverGoesBackwards:
     def test_a_beta_tag_outranks_an_older_stable_tag(self, repo):
         # The regression that shipped: stable 1.0.0, beta 1.6.7.
@@ -306,3 +314,90 @@ class TestWorkArrivingThroughAnotherBranch:
         git(repo, "checkout", "-q", "-b", "beta", "main")
         git(repo, "merge", "-q", "--no-ff", "--no-edit", "dev")
         assert next_version(repo) == "1.6.8"   # not 1.6.9
+
+
+class TestFeaturesLandingWithoutAMinor:
+    """X and Y are editorial, and the rule had no enforcement.
+
+    Between v2.1.9 and v2.1.16 four `feat:` commits arrived on two feature
+    branches, and every landing was numbered as a patch, because moving Y
+    requires a person to remember and nothing said otherwise. The judgement
+    stays with the human. The omission stops being silent.
+    """
+
+    def test_a_feature_landing_since_the_minor_is_counted(self, repo):
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "feat/citations")
+        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
+
+        assert pending_minor(repo) == 1
+
+    def test_it_counts_across_the_whole_minor_series(self, repo):
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "feat/one")
+        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
+        land(repo, "fix/thing")
+        git(repo, "tag", "-a", "v2.1.2", "-m", "p")
+        land(repo, "feat/two")
+        git(repo, "tag", "-a", "v2.1.3", "-m", "p")
+
+        assert pending_minor(repo) == 2
+
+    def test_fixes_alone_leave_nothing_pending(self, repo):
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "fix/one")
+        land(repo, "hotfix/two")
+        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
+
+        assert pending_minor(repo) == 0
+
+    def test_declaring_the_minor_clears_it(self, repo):
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "feat/citations")
+        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
+        assert pending_minor(repo) == 1
+
+        # the human runs the workflow with bump=minor, and that tag is cut
+        git(repo, "tag", "-a", "v2.2.0", "-m", "m")
+
+        assert pending_minor(repo) == 0
+
+    def test_it_counts_landings_and_not_commit_subjects(self, repo):
+        """The version is derived from branch names, so the warning must be.
+
+        A `feat:` subject inside a fix branch is a fix as far as the number is
+        concerned, and a warning that counted it would contradict the version
+        it is warning about.
+        """
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        git(repo, "checkout", "-q", "-b", "fix/small")
+        (repo / "f").write_text("x")
+        git(repo, "commit", "-qam", "feat: written as a feature, landed as a fix")
+        git(repo, "checkout", "-q", "main")
+        git(repo, "merge", "-q", "--no-ff", "--no-edit", "fix/small")
+
+        assert pending_minor(repo) == 0
+
+    def test_the_count_is_reported_where_the_beta_number_is_derived(self, repo):
+        """--next is what numbers a beta, so that is where it has to say so."""
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "feat/citations")
+
+        out = subprocess.run(
+            [sys.executable, str(SCRIPT), "--next", "--explain"],
+            cwd=repo, capture_output=True, text=True, check=True,
+        )
+
+        assert "1 feature(s) have landed" in out.stderr
+        assert "bump=minor" in out.stderr
+
+    def test_a_quiet_series_says_nothing(self, repo):
+        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
+        land(repo, "fix/one")
+
+        out = subprocess.run(
+            [sys.executable, str(SCRIPT), "--next", "--explain"],
+            cwd=repo, capture_output=True, text=True, check=True,
+        )
+
+        assert "feature(s) have landed" not in out.stderr

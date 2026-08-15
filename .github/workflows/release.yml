@@ -225,6 +225,26 @@ jobs:
               else
                 V="$(python3 scripts/next_version.py --next --explain)"
               fi
+
+              # Y is editorial, and until now nothing said when the judgement
+              # had been skipped: two features landed between v2.1.9 and
+              # v2.1.16 and every build numbered them as a patch. A warning,
+              # not a failure -- the same reasoning as the notice above, since
+              # a red X on the normal path is indistinguishable from a broken
+              # pipeline and trains everyone to ignore it.
+              PENDING="$(python3 scripts/next_version.py --pending-minor 2>/dev/null || echo 0)"
+              if [ "${PENDING:-0}" -gt 0 ]; then
+                echo "::warning::${PENDING} feature(s) have landed since Y last moved; this build is v$V, numbering them as a patch. Rerun with bump=minor if they are a feature release."
+                {
+                  echo "### Feature landings without a minor bump"
+                  echo ""
+                  echo "**${PENDING}** feature branch(es) have landed since the minor was last declared."
+                  echo "This build is \`v$V\`, which numbers them as a patch."
+                  echo ""
+                  echo "If they amount to a feature release, rerun this workflow with"
+                  echo "\`channel=beta\` and \`bump=minor\`."
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
               if git rev-parse "v$V" >/dev/null 2>&1; then
                 echo "v$V is already built; nothing that moves the version has landed"
                 RELEASE=false
