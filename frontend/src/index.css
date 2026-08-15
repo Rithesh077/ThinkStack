@@ -27,19 +27,35 @@
      directly on the desk uses --ink-2 or darker. Fixing that by darkening
      --ink-3 would collapse it into --ink-2 and cost the third step of the
      hierarchy, which is worth more than the one placement. */
-  --paper: #EBE6DA;      /* the desk behind everything */
-  --sheet: #FBF8F1;      /* the page you work on */
-  --sheet-2: #F3EFE4;    /* insets, source, spine */
-  --sheet-3: #E6E0D1;
+  /* The 2026-08-15 baseline. The page was #FBF8F1, 94% luminance, filling a
+     screen -- a tester on macOS reported it as tiring in a dim room (D-19) and
+     that is a physical complaint, not a preference. Chosen by looking at four
+     candidates on a real page rather than at swatches.
+
+     The glare was the PAGE at 94%, not the desk: the desk was already 79% and
+     rendered about 75% under the grain. So the page comes down to 89% and the
+     desk stays where it was. An earlier attempt took both down, to 75/61, and
+     read as mud rather than as paper -- luminance fell while chroma ROSE
+     (warmth 17 -> 38), and dark plus saturated brown is cardboard. Papyrus is
+     light and warm; the character belongs in the fibre, not in a lower tone.
+
+     The ink is also pulled back from 15:1 to 11.5:1, because near-black on
+     cream is its own fatigue: the eye re-adapts at the edge of every letter.
+     Every ink step passes AA on both surfaces; that was measured, not assumed. */
+  --paper: #F2EAD8;      /* the desk behind everything */
+  --sheet: #F8F2E6;      /* the page you work on */
+  --sheet-2: #EEE5D0;    /* insets, source, spine */
+  --sheet-3: #E7DCC4;
 
   /* ---- ink: the whole hierarchy ramp, before any colour ---- */
-  --ink: #191712;        /* prose, headings, values */
-  --ink-2: #575043;      /* secondary prose, controls */
-  --ink-3: #6B6455;      /* labels, metadata — the floor for text */
-  --ink-4: #B9B2A2;      /* rules and dividers only, never type */
+  --ink: #2E2A22;        /* prose, headings, values */
+  --ink-2: #5C5445;      /* secondary prose, controls */
+  --ink-3: #5A5445;      /* labels, metadata — the floor for text */
+  --ink-4: #B0A68E;      /* rules and dividers only, never type */
 
-  --rule: rgba(25, 23, 18, 0.13);
-  --rule-2: rgba(25, 23, 18, 0.27);
+  /* Derived from --ink, so they moved with it: 25,23,18 was the old #191712. */
+  --rule: rgba(46, 42, 34, 0.15);
+  --rule-2: rgba(46, 42, 34, 0.30);
   --on-mark: #FBF8F1;
 
   /* the laid fibre of the stock, drawn by body::after. A token because the
@@ -173,8 +189,9 @@
      the canvas, the charts' series colours, .status-dot, the ink strip. Those
      say var(--moss) and var(--slate) directly and stay grey until earned. */
   --success: #4A6B3C;
-  --warning: #8A6212;
-  --danger:  #A6392A;
+  /* 4.16:1 on the new stock, which is below AA. Deepened to clear it. */
+  --warning: #7A570F;
+  --danger:  #9C3527;
   --info:    #3C5468;
   --success-bg: color-mix(in srgb, var(--success) 10%, transparent);
   --warning-bg: color-mix(in srgb, var(--warning) 12%, transparent);
@@ -223,9 +240,12 @@
 :root[data-earned~="moss"]  { --moss:  #4A6B3C; }
 :root[data-earned~="slate"] { --slate: #3C5468; }
 :root[data-earned~="mark"] {
-  --mark: #A6392A;
-  --mark-soft: rgba(166, 57, 42, 0.09);
-  --mark-rule: rgba(166, 57, 42, 0.34);
+  /* Re-picked for the 75% stock. At #A6392A the pen fell to 4.93:1 here, and
+     it carries MEANING on the map rather than decoration, so it has to hold
+     its ground on both the sheet and the desk. */
+  --mark: #9C3527;
+  --mark-soft: rgba(156, 53, 39, 0.10);
+  --mark-rule: rgba(156, 53, 39, 0.34);
 }
 
 /* The fade lives on the elements that paint the pigment, not on the token.
@@ -320,7 +340,11 @@ body::after {
   inset: 0;
   z-index: var(--z-grain);
   pointer-events: none;
-  opacity: 0.085;
+  /* 0.085 -> 0.100. The grain is a fixed dark overlay, so lowering the stock
+     beneath it costs contrast: measured as pixel sigma over a flat area, the
+     texture fell from 2.20 to 1.85 when the sheet went to 75%. 0.100 puts it
+     back at 2.19. The stock must not become flat colour. */
+  opacity: 0.095;
   background-image:
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"),
     repeating-linear-gradient(90deg, var(--fibre) 0 1px, transparent 1px 5px),

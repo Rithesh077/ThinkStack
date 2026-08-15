@@ -69,22 +69,24 @@ jobs:
         run: |
           mkdir -p _site
           cp landing.html _site/index.html
-          # The fonts are served from this origin, so they have to travel with
-          # the page. They were a render-blocking <link> to fonts.googleapis.com:
-          # the browser painted nothing until Google answered, so on a slow or
-          # filtered network the page was blank while its own HTML had arrived
-          # in 200ms.
+          # The page now carries its own typefaces as base64 inside the HTML,
+          # so it needs nothing beside it: one request, and no directory that
+          # has to arrive on the right branch at the right moment for the page
+          # to render as designed.
           #
-          # Guarded, and NOT fatal. This job builds / from the default branch
-          # whatever branch triggered it, so between the fonts landing on beta
-          # and reaching main there is a window where main has no assets/ --
-          # and an unguarded `cp` failed the whole deploy in exactly that
-          # window, taking BOTH pages down to fix a typeface on one. A missing
-          # directory costs the fallback font; a failed deploy costs the site.
+          # The copy is kept because this job builds / from the DEFAULT branch
+          # whatever branch triggered it. Between the inlined page landing on
+          # beta and reaching main, main still serves the older page that does
+          # link assets/fonts/, and that page still needs them.
+          #
+          # Guarded and quiet, never fatal. An unguarded `cp` once failed the
+          # whole deploy in exactly this window, taking BOTH pages down to fix
+          # a typeface on one. Absence is now the expected end state rather
+          # than a fault, so it is not a warning.
           if [ -d assets ]; then
             cp -r assets _site/assets
           else
-            echo "::warning::no assets/ on the default branch -- the page will render in the fallback typeface until the fonts land there"
+            echo "no assets/ -- the page inlines its own typefaces"
           fi
 
       # -- beta page, from the beta branch --
@@ -110,13 +112,15 @@ jobs:
 
           mkdir -p _site/beta
 
-          # /beta/ is a separate directory, so the relative font URLs in its
-          # landing.html resolve to _site/beta/assets. Its own copy comes from
-          # the beta branch, which is where its landing.html comes from.
+          # /beta/ is a separate directory, so any relative font URL in its
+          # landing.html resolves to _site/beta/assets rather than the copy one
+          # level up. Its own copy therefore comes from the beta branch, which
+          # is also where its landing.html comes from. Once the inlined page
+          # has reached beta this does nothing, which is the intent.
           if [ -d .beta-src/assets ]; then
             cp -r .beta-src/assets _site/beta/assets
           else
-            echo "::warning::beta has no assets/ yet -- its fonts will 404 until the branch catches up"
+            echo "no assets/ on beta -- its page inlines its own typefaces"
           fi
 
           # The beta channel publishes to a ROLLING tag: every beta build
@@ -141,12 +145,21 @@ jobs:
           # stable will file bugs against the wrong build.
           python3 - <<'PY'
           import pathlib
+          # Red, not the acid green this used to be. The green predated the
+          # page's current design and read as a third-party bar pasted over
+          # someone else's site, which is the opposite of what a warning wants:
+          # a banner the reader files as "not part of this page" is a banner
+          # they stop seeing. Red is the one colour the product reserves for
+          # something being wrong, used nowhere decoratively, so it is still
+          # unmistakable at a glance -- and it belongs to the page it sits on.
+          #
+          # z-index 9999 clears the page's own grain overlay, which is at 5.
           banner = (
-              '<div style="position:sticky;top:0;z-index:9999;background:#95ff00;'
-              'color:#0a0a0a;padding:.6rem 1rem;text-align:center;'
-              'font:600 14px/1.5 system-ui,-apple-system,sans-serif">'
-              'Beta channel - pre-release software for invited testers. '
-              '<a href="../" style="color:#0a0a0a">Get the stable release instead</a></div>'
+              '<div style="position:sticky;top:0;z-index:9999;background:#9C3527;'
+              'color:#F8F2E6;padding:.6rem 1rem;text-align:center;'
+              'font:500 14px/1.5 \'IBM Plex Sans\',-apple-system,sans-serif">'
+              'Beta channel &mdash; pre-release software for invited testers. '
+              '<a href="../" style="color:#F8F2E6">Get the stable release instead</a></div>'
           )
           p = pathlib.Path("_site/beta/index.html")
           s = p.read_text(encoding="utf-8")
