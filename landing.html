@@ -5,10 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ThinkStack: Offline AI Research Assistant</title>
   <meta name="description" content="ThinkStack is an offline research assistant that runs on your own machine. Load in your papers, find the gaps in the literature, and write without anything leaving your laptop." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800;900&family=Caveat:wght@700&display=swap" rel="stylesheet" />
   <style>
+    /* ── Fonts, served from this origin ─────────────────
+       These were three families in nine weights pulled from
+       fonts.googleapis.com by a stylesheet in <head>. A stylesheet there is
+       RENDER-BLOCKING: the browser paints nothing until it answers, so on any
+       network where Google is slow or filtered this page sat blank for as long
+       as the browser was willing to wait. The HTML itself has always arrived in
+       about 200ms.
+
+       There is a second reason, and it is the product's: ThinkStack's whole
+       premise is that nothing leaves your machine, and its download page could
+       not draw itself without contacting Google first.
+
+       Inter and Outfit are VARIABLE fonts -- one file each covers every weight,
+       which is why nine URLs from Google were nine copies of three files. Each
+       is subset to the characters this page actually uses (107 of them), so all
+       three together are 44 KB rather than 364 KB.
+
+       Regenerate with scripts/fetch-landing-fonts.sh after changing the text or
+       the weights used here. */
+    @font-face {
+      font-family: 'Inter';
+      src: url('assets/fonts/inter-var.woff2') format('woff2-variations'),
+           url('assets/fonts/inter-var.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      /* swap, not block: the page paints immediately in the fallback and
+         re-renders when the file lands. A landing page that shows nothing is
+         worse than one that briefly shows the wrong typeface. */
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Outfit';
+      src: url('assets/fonts/outfit-var.woff2') format('woff2-variations'),
+           url('assets/fonts/outfit-var.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Caveat';
+      src: url('assets/fonts/caveat-700.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
     /* ── Reset & Base ──────────────────────────────────── */
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html { scroll-behavior: smooth; scroll-padding-top: 80px; }
