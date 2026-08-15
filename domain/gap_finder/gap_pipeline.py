@@ -9,6 +9,7 @@ remapped here to the gap ids we assign, so the api response keeps the same
 
 import json
 import logging
+import re
 import uuid
 
 from domain.analysis.parsing import as_dict, as_items, as_str_list, one_of
@@ -79,8 +80,34 @@ def _build_content(summaries: list[dict], claims: list[dict]) -> str:
     return content
 
 
+def _finding_key(description: str) -> str:
+    """What makes two entries the same finding.
+
+    Case, runs of whitespace and trailing punctuation only, deliberately. A
+    looser rule -- stemming, or a similarity threshold -- would eventually
+    merge two gaps that differ by one word, and the difference between
+    "evaluated on non-stationary streams" and "evaluated on stationary
+    streams" is the whole finding. Losing a real gap is worse than showing a
+    near-duplicate.
+    """
+    return re.sub(r"\s+", " ", description).strip().strip(".!?,;:").casefold()
+
+
 def _parse_gaps(gaps_data: list, doc_ids: list[str]) -> list[ResearchGap]:
-    gaps = []
+    """Parse the model's gaps, treating the reply as findings rather than rows.
+
+    D-17: the same gap was listed more than once. Every entry was given a fresh
+    uuid, so two identical descriptions became two distinct gaps -- each with
+    its own id, each drawn on the map, each counted. Small models repeat
+    themselves, and this one is handed a list format and asked to fill it.
+
+    A repeat is merged rather than dropped: the second copy often carries
+    evidence or a document the first did not, and discarding it would lose a
+    finding to fix a duplicate.
+    """
+    gaps: list[ResearchGap] = []
+    seen: dict[str, ResearchGap] = {}
+
     for entry in gaps_data:
         item = as_dict(entry, "description")
         description = item.get("description") or ""
@@ -90,14 +117,36 @@ def _parse_gaps(gaps_data: list, doc_ids: list[str]) -> list[ResearchGap]:
         # on the canvas, so membership is intersected with the papers actually
         # under analysis rather than trusted.
         related = [d for d in as_str_list(item.get("related_doc_ids")) if d in doc_ids]
-        gaps.append(ResearchGap(
+        severity = one_of(item.get("severity"), SEVERITIES, "medium")
+        evidence = as_str_list(item.get("evidence"))
+
+        key = _finding_key(str(description))
+        existing = seen.get(key)
+        if existing is not None:
+            for e in evidence:
+                if e not in existing.evidence:
+                    existing.evidence.append(e)
+            for d in related:
+                if d not in existing.related_doc_ids:
+                    existing.related_doc_ids.append(d)
+            # The worse reading of one finding is the one worth reporting.
+            # SEVERITIES runs worst-first ("high", "medium", "low"), so the
+            # more severe value is the LOWER index.
+            if SEVERITIES.index(severity) < SEVERITIES.index(existing.severity):
+                existing.severity = severity
+            continue
+
+        gap = ResearchGap(
             gap_id=uuid.uuid4().hex[:8],
             gap_type=one_of(item.get("gap_type"), GAP_TYPES, "under_explored"),
             description=str(description),
-            evidence=as_str_list(item.get("evidence")),
+            evidence=evidence,
             related_doc_ids=related or list(doc_ids),
-            severity=one_of(item.get("severity"), SEVERITIES, "medium"),
-        ))
+            severity=severity,
+        )
+        seen[key] = gap
+        gaps.append(gap)
+
     return gaps
 
 
