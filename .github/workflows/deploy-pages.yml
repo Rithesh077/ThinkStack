@@ -70,12 +70,22 @@ jobs:
           mkdir -p _site
           cp landing.html _site/index.html
           # The fonts are served from this origin, so they have to travel with
-          # the page. They were a render-blocking <link> to fonts.googleapis.com,
-          # which meant the browser painted nothing until Google answered -- on a
-          # slow or filtered network the page was blank while its own HTML had
-          # arrived in 200ms. Missing this copy puts it back, silently: the page
-          # still renders, in the fallback typeface, and only looks slightly off.
-          cp -r assets _site/assets
+          # the page. They were a render-blocking <link> to fonts.googleapis.com:
+          # the browser painted nothing until Google answered, so on a slow or
+          # filtered network the page was blank while its own HTML had arrived
+          # in 200ms.
+          #
+          # Guarded, and NOT fatal. This job builds / from the default branch
+          # whatever branch triggered it, so between the fonts landing on beta
+          # and reaching main there is a window where main has no assets/ --
+          # and an unguarded `cp` failed the whole deploy in exactly that
+          # window, taking BOTH pages down to fix a typeface on one. A missing
+          # directory costs the fallback font; a failed deploy costs the site.
+          if [ -d assets ]; then
+            cp -r assets _site/assets
+          else
+            echo "::warning::no assets/ on the default branch -- the page will render in the fallback typeface until the fonts land there"
+          fi
 
       # -- beta page, from the beta branch --
       # Checked out separately so testers get the beta branch's own landing.html.
