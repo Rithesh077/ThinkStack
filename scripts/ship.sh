@@ -131,8 +131,25 @@ if [ -n "$LATEST" ]; then
     ok "${VERSION} is ahead of the published ${LATEST}"
 fi
 
-git rev-parse "v${VERSION}" >/dev/null 2>&1 && fail "tag v${VERSION} already exists"
-ok "tag v${VERSION} is free"
+# An existing tag is the NORMAL case for a promotion, not an error.
+#
+# release.yml states the design in its own header: "merge into beta -> the tag
+# is created here; merge into main -> the SAME tag, reused". Beta cuts vX.Y.Z
+# when it builds, so by the time anything is worth promoting the tag always
+# exists -- and this guard refused every one of them. It was written for a
+# different mistake (dispatching the same stable release twice), which the
+# published-release check above already catches.
+#
+# What must not happen is a second STABLE release of a version already out, and
+# that is a question about releases, not tags.
+if gh release view "v${VERSION}" --repo "$REPO" >/dev/null 2>&1; then
+    fail "v${VERSION} is already published as a release"
+fi
+if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+    ok "tag v${VERSION} exists (cut by beta) - the promotion reuses it"
+else
+    ok "tag v${VERSION} is free"
+fi
 
 # ── confirm ─────────────────────────────────────────────────
 echo ""
