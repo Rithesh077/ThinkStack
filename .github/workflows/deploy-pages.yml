@@ -33,7 +33,7 @@ on:
     # the job always assembles / from main and /beta/ from beta, so a deploy
     # triggered by one branch can never publish a stale copy of the other.
     branches: [main, master, beta]
-    paths: ['landing.html', '.github/workflows/deploy-pages.yml']
+    paths: ['landing.html', 'assets/**', '.github/workflows/deploy-pages.yml']
   release:
     # a new prerelease changes which tag /beta/ must point at
     types: [published]
@@ -69,6 +69,13 @@ jobs:
         run: |
           mkdir -p _site
           cp landing.html _site/index.html
+          # The fonts are served from this origin, so they have to travel with
+          # the page. They were a render-blocking <link> to fonts.googleapis.com,
+          # which meant the browser painted nothing until Google answered -- on a
+          # slow or filtered network the page was blank while its own HTML had
+          # arrived in 200ms. Missing this copy puts it back, silently: the page
+          # still renders, in the fallback typeface, and only looks slightly off.
+          cp -r assets _site/assets
 
       # -- beta page, from the beta branch --
       # Checked out separately so testers get the beta branch's own landing.html.
@@ -92,6 +99,15 @@ jobs:
           fi
 
           mkdir -p _site/beta
+
+          # /beta/ is a separate directory, so the relative font URLs in its
+          # landing.html resolve to _site/beta/assets. Its own copy comes from
+          # the beta branch, which is where its landing.html comes from.
+          if [ -d .beta-src/assets ]; then
+            cp -r .beta-src/assets _site/beta/assets
+          else
+            echo "::warning::beta has no assets/ yet -- its fonts will 404 until the branch catches up"
+          fi
 
           # The beta channel publishes to a ROLLING tag: every beta build
           # republishes the same release, so this URL is permanent and needs no
