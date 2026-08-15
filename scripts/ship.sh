@@ -73,7 +73,12 @@ ok "working tree clean"
 # ahead", "does this tag exist" and "what is published" are all about a state
 # that may be hours old. Shipping the wrong tree to users on stale refs is the
 # exact failure this script exists to prevent.
-git fetch --quiet --tags origin \
+# --force, because `beta` and `nightly` are ROLLING tags: each build
+# republishes them at a new commit so that releases/download/beta/... stays a
+# permanent URL. Git will not move a tag it already has, so without this the
+# fetch exits non-zero with "would clobber existing tag" the second time anyone
+# runs it -- and every script here read that as the network being down.
+git fetch --quiet --tags --force origin \
     || fail "could not reach origin - refusing to ship from stale refs.
     Check the network, then re-run."
 ok "fetched origin"

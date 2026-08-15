@@ -120,7 +120,13 @@ fail() { echo -e "${RED}✗ $*${NC}"; exit 1; }
 # a promotion rewrites shared branches; doing that from a dirty or stale tree is
 # how half-finished work reaches users.
 [ -n "$(git status --porcelain)" ] && fail "working tree is dirty - commit or stash first"
-git fetch --quiet --tags origin 2>/dev/null || echo -e "  ${YELLOW}!${NC} could not reach origin"
+# --force, because `beta` and `nightly` are ROLLING tags: each build
+# republishes them at a new commit so that releases/download/beta/... stays a
+# permanent URL. Git will not move a tag it already has, so without this the
+# fetch exits non-zero with "would clobber existing tag" the second time anyone
+# runs it -- and every script here read that as the network being down.
+git fetch --quiet --tags --force origin 2>/dev/null \
+    || echo -e "  ${YELLOW}!${NC} could not reach origin"
 
 START_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 restore_branch() { git checkout --quiet "$START_BRANCH" 2>/dev/null || true; }

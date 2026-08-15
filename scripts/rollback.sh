@@ -58,7 +58,12 @@ ok()   { echo -e "  ${GREEN}✓${NC} $*"; }
 # from the API rather than from git, and hiding a bad release is the urgent
 # path -- refusing to help during an incident because a fetch failed would be
 # the wrong trade. --reship checks out a tag, so it insists separately below.
-git fetch --quiet --tags origin 2>/dev/null \
+# --force, because `beta` and `nightly` are ROLLING tags: each build
+# republishes them at a new commit so that releases/download/beta/... stays a
+# permanent URL. Git will not move a tag it already has, so without this the
+# fetch exits non-zero with "would clobber existing tag" the second time anyone
+# runs it -- and every script here read that as the network being down.
+git fetch --quiet --tags --force origin 2>/dev/null \
     || echo -e "  ${YELLOW}!${NC} could not reach origin - release list still read from the API"
 
 # Every stable release, newest first. Prereleases are excluded because betas
@@ -138,7 +143,7 @@ echo -e "  This is the only way to reach an app that already updated: forward."
 [ -z "$(git status --porcelain)" ] || fail "working tree is dirty - commit or stash first"
 
 # This half rewrites main from a tag, so the tag has to be the real one.
-git fetch --quiet --tags origin \
+git fetch --quiet --tags --force origin \
     || fail "could not reach origin - refusing to rewrite ${MAIN_BRANCH} from possibly stale tags"
 git rev-parse "refs/tags/${PREVIOUS}" >/dev/null 2>&1 \
     || fail "tag ${PREVIOUS} not found locally after fetch"
