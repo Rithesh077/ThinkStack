@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  makeAlpha, lassoFar, gestureFor, citedBy, edgeLit,
+  makeAlpha, lassoFar, gestureFor, citedBy, edgeLit, hitRadius,
 } from '../src/components/litgraph/useCanvas';
 
 const m = (...ids) => new Map(ids.map((id) => [id, { score: 1 }]));
@@ -126,5 +126,40 @@ describe('edgeLit', () => {
   it('leaves an edge with only one end in the gap alone', () => {
     const cited = new Set(['a', 'b']);
     expect(edgeLit(edge('b', 'z'), 'g1', cited)).toBe(false);
+  });
+});
+
+// ─────────────────────────── D-18: hitting a node ───────────────────────────
+//
+// Two testers, on different operating systems, said the same thing without
+// prompting: selecting a node needs more precision than it should. They are
+// describing the geometry. A paper is drawn as a point of light with a radius
+// of 4.5 to 8.5 units on a 1100x760 canvas, and the click listener sits on the
+// group, so the target IS the dot. Zoomed out to 0.79x that is a four-pixel
+// disc.
+//
+// The drawing is deliberate and stays: bubbles turned the plate into a bubble
+// chart. What changes is that the TARGET stops being the drawing.
+
+describe('hitRadius', () => {
+  it('gives the smallest node a target far bigger than its dot', () => {
+    expect(hitRadius(4.5)).toBeGreaterThanOrEqual(14);
+  });
+
+  it('never returns less than the dot it covers', () => {
+    for (const r of [4.5, 6, 8.5, 20]) {
+      expect(hitRadius(r)).toBeGreaterThanOrEqual(r);
+    }
+  });
+
+  it('grows with the node, so a big node is not harder to hit than a small one', () => {
+    expect(hitRadius(8.5)).toBeGreaterThan(hitRadius(4.5));
+  });
+
+  it('stays clear of the next node along', () => {
+    // graph_builder.MIN_SEP is 0.055 of a 1100-unit canvas, so the closest two
+    // nodes sit about 60 units apart. Two touching targets would make the
+    // denser clusters ambiguous, which is a worse bug than a small target.
+    expect(hitRadius(8.5) * 2).toBeLessThan(60);
   });
 });

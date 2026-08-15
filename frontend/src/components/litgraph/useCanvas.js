@@ -138,6 +138,26 @@ export function edgeLit(e, focus, cited) {
  * Whether a new lasso point is far enough from the last to be worth keeping.
  * `k` is the zoom, so the threshold stays 4 screen pixels at any scale.
  */
+/**
+ * How big the target is, given how big the dot is.
+ *
+ * D-18: two testers on different operating systems reported, without
+ * prompting, that selecting a node takes more precision than it should. They
+ * were describing the geometry. A paper is drawn at 4.5 to 8.5 units on an
+ * 1100x760 canvas and the listener sits on the group, so the target WAS the
+ * drawing -- about four pixels across once the plate is zoomed out to fit.
+ *
+ * The drawing does not change: discs turned the plate into a bubble chart, and
+ * that is why they are points of light. What changes is that the target stops
+ * being the drawing. An invisible circle carries the events instead.
+ *
+ * Bounded on both sides. At least 14 so the smallest paper is reachable, and
+ * small enough that two adjacent targets cannot touch: graph_builder keeps
+ * nodes MIN_SEP = 0.055 apart, which is about 60 units here, and overlapping
+ * targets in a dense cluster would be a worse bug than a small one.
+ */
+export const hitRadius = (r) => Math.max(14, r + 10);
+
 export const lassoFar = (a, b, k) => Math.hypot(b.x - a.x, b.y - a.y) >= 4 / k;
 
 /**
@@ -583,6 +603,10 @@ export default function useCanvas({
       const g = el('g', { class: 'lg-node' });
       g.dataset.id = n.doc_id;
 
+      // The target, first so it sits under everything and paints nothing.
+      // `fill: transparent` and not `none`: none is not hit-tested.
+      g.appendChild(el('circle', { r: hitRadius(r), fill: 'transparent' }));
+
       const circle = el('circle', {
         r,
         'stroke-width': 1.6 + Math.min((n.claims?.length || 0), 8) * 0.34,
@@ -638,6 +662,9 @@ export default function useCanvas({
         // `tri` keeps its name because restyle() fills it to show focus; it is
         // the centre point now rather than a triangle.
         const tri = el('circle', { r: 5 * s, stroke: red, 'stroke-width': 1.3 });
+        // The rings are stroke-only, so without this the inside of a gap --
+        // the part that most obviously reads as "the gap" -- is not clickable.
+        g.appendChild(el('circle', { r: 17 * s, fill: 'transparent' }));
         g.appendChild(el('circle', {
           r: 17 * s, fill: 'none', stroke: red, 'stroke-width': 1.3, 'stroke-opacity': 0.8,
         }));
