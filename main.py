@@ -8,6 +8,7 @@ and startup/shutdown lifecycle events.
 
 import logging
 import sys
+import mimetypes
 from contextlib import asynccontextmanager
 
 # ── before anything imports llama.cpp ───────────────────────────────────────
@@ -37,6 +38,45 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+
+def register_web_mime_types() -> None:
+    """Say what a JavaScript module is, before anything is asked to serve one.
+
+    D-16: on Windows the reader could not open a PDF, reporting
+
+        Failed to fetch dynamically imported module: .../pdf.worker.min-*.mjs
+
+    The file is present and is served. Its CONTENT TYPE is wrong, and the chain
+    that produces it is two lines:
+
+        mimetypes.init()        -> db.read_windows_registry()
+        starlette FileResponse  -> guess_type(path)[0] or "text/plain"
+
+    Python seeds its table from the Windows registry, which usually has no
+    entry for `.mjs` and often maps `.js` to text/plain. Starlette then falls
+    back to text/plain, and a browser refuses to execute a module script that
+    is not served as JavaScript. The asset arrives; the browser declines it.
+
+    None of this is visible on Linux or macOS, where the built-in table answers
+    correctly. That is why every suite passed while the reader was unusable on
+    a third of the platforms we ship to.
+
+    Called at import, not from a startup hook: StaticFiles is mounted below and
+    can answer a request the moment the app exists.
+    """
+    for suffix, kind in (
+        (".mjs", "text/javascript"),
+        (".js", "text/javascript"),
+        (".css", "text/css"),
+        (".json", "application/json"),
+        (".svg", "image/svg+xml"),
+        (".wasm", "application/wasm"),
+    ):
+        mimetypes.add_type(kind, suffix)
+
+
+register_web_mime_types()
 
 from infrastructure.file_manager import ensure_directories
 from infrastructure.jobs import job_queue
