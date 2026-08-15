@@ -126,3 +126,23 @@ def test_every_tag_fetch_can_survive_a_rolling_tag(script):
             f"{script}: `{stripped}` fetches tags without --force, so it will "
             f"fail as soon as the beta or nightly tag is republished"
         )
+
+
+def test_ship_does_not_refuse_a_tag_beta_already_cut():
+    """Beta creates vX.Y.Z when it builds; promoting reuses that exact tag.
+
+    release.yml says so in its own header. A guard that failed whenever the tag
+    existed therefore fired on every promotion the script exists to perform,
+    which is part of why stable sat at v2.1.9 while beta went to 2.1.18.
+    """
+    text = (SCRIPTS / "ship.sh").read_text()
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or "rev-parse" not in stripped:
+            continue
+        if "fail " in stripped and "already exists" in stripped:
+            raise AssertionError(
+                f"ship.sh refuses an existing tag: `{stripped}`. Beta cuts the "
+                f"tag first, so this blocks every promotion."
+            )
