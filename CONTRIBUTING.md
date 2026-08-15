@@ -551,7 +551,8 @@ api/               12 routers: documents, search, graph, analysis, gaps,
                    encryption, papers, paper_files, models, registry, hf,
                    system
 domain/            core logic, one package per capability:
-                     ingestion/       pdf_parser, chunker, metadata_extractor
+                     ingestion/       pdf_parser, layout, layout_metadata,
+                                      chunker, metadata_extractor
                      knowledge_base/  embedding_service, repository
                      search/          semantic search over chunk embeddings
                      analysis/        summarizer, claim_extractor, theme_clusterer
@@ -571,7 +572,7 @@ infrastructure/    ollama_client (llm runtime), local_vector_store, hardware,
                    facts), vulkan (what graphics devices exist), acceleration
                    + accel_download (the optional GPU engine), file_manager,
                    atomic_io, caches and histories
-frontend/          react 19 + vite spa
+frontend/          react 19 + vite spa (the Paper and Ink interface)
                      features.js      every feature declared once; the nav,
                                       the routes and the brand mark render
                                       from it

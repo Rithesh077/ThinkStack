@@ -39,8 +39,24 @@ Turns a PDF into searchable, analysable knowledge.
   for scanned or complex layouts.
 - **Chunking** — splits text into overlapping chunks that respect paragraph and
   sentence boundaries, keeping page numbers via word-overlap scoring.
-- **Metadata extraction** — pulls title, authors, abstract, and year via regex
-  heuristics, with a small-language-model fallback for non-standard formatting.
+- **Metadata extraction** — title and authors are read from the page *layout*,
+  not from the text. A PDF stores glyphs with a size and a position, and the
+  title is the largest horizontal text at the top of page 1 with the authors on
+  the rows beneath it; flattening the page to a string throws that away. Year
+  comes from the arXiv identifier or a stated copyright line, and is left empty
+  when the paper states none. A small-language-model fallback runs only when the
+  result fails a plausibility check, and is handed the font sizes rather than
+  the flat text.
+
+  Scored against 56 papers sampled at random across 15 arXiv categories, with
+  arXiv's own metadata as ground truth: **92.9% titles, 85.7% exact author
+  lists, 92.9% years**. Handles single and double column, 2 to 31 authors,
+  small-caps and hyphenated titles, ligatures, accents, and author blocks laid
+  out in columns, in one comma-separated line, or one author per row.
+- **Corrections** — one paper in seven is still stored under something wrong,
+  and that data labels every node on the map, names every search hit and is
+  what a BibTeX entry is built from. Title, authors and year are editable in
+  the Library, and the fix carries into every paper cited from then on.
 
 ## Offline knowledge base
 
@@ -197,11 +213,24 @@ no account, no queue and no time limit.
   - isolates a single broken figure/table behind a placeholder so the rest of the
     paper still produces a PDF, and as a last resort neutralises all figures
     rather than failing outright.
+- **Cite from your library, inline** — type `cite` and the library drops down
+  under the caret; keep typing to filter on title, author, year or key; press
+  Enter and the word becomes `\cite{vaswani2017attention}` with the entry
+  written into the project's own `references.bib`. Dismiss it and `cite` is
+  still just a word, and a word compiles.
+
+  Citation numbers are not tracked, deliberately: BibTeX renumbers every
+  `\cite` on each recompile and orders the reference list itself, so emitting
+  keys gets that for free. The `.bib` is the authority — a key already written
+  there is never recomputed, so a citation already typed cannot break when the
+  library grows, and the file stays yours to edit by hand.
 - **Bibliographies and indexes build themselves** — the bundled engine runs BibTeX
   on its own. It does *not* run makeindex, so `\printindex` used to fail with
   `Undefined control sequence \indexentry`; ThinkStack now generates the `.ind`
   itself (sub-entries, `sort@printed` keys, `|hyperpage` encapsulators and
-  `|(`…`|)` page ranges) and runs a second pass. Nothing extra to install.
+  `|(`…`|)` page ranges) and runs a second pass. Nothing extra to install. A
+  document that cites papers but never declared a bibliography is given one, so
+  a citation cannot silently resolve to `[?]`.
 - **Error surfacing** — when a compile fails, the parsed engine diagnostics (and
   missing-TeX-package install hints) show directly in the UI.
 
@@ -362,3 +391,13 @@ Planned and in-progress work:
   compiled; everything the app itself generates works offline.
 - **Ollama JSON retries** — GBNF makes `llama.cpp` output reliable, but there's no
   extensive retry logic if the optional Ollama runtime returns malformed JSON.
+- **Metadata extraction has a long tail** — 43 of 56 randomly sampled papers come
+  back exactly right on title, authors *and* year together. What still defeats it:
+  mathematics inside a title, publisher cover pages that precede the paper (an
+  Elsevier "Highlights" sheet is page 1), and brand-new arXiv submissions that
+  carry no stamp yet, where the year is reported empty rather than guessed. Rules
+  over layout features are what GROBID learns instead, from labelled papers; the
+  route past this plateau is a small classifier, not more rules.
+- **Scanned PDFs have no text layer** — no glyphs means no layout and no text, so
+  neither extraction nor search can recover anything. This needs OCR, which is
+  not shipped.

@@ -113,7 +113,7 @@ export default function Acceleration() {
                 {d.kind === 'software' ? 'software rendering' : d.kind}
               </span>
               {d.name === devices.would_use && (
-                <span className="accel-would">would be used</span>
+                <span className="accel-would">Would be used</span>
               )}
             </li>
           ))}

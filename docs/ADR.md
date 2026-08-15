@@ -369,6 +369,384 @@ it never opened. Papers can now be split across section files and keep a `.bib`
 beside them. Build artefacts are hidden from the tree; they are regenerated and
 mean nothing to an author.
 
+## 2026-08-12: a title is the biggest text on page 1, not the first line
+
+**Context.** `_extract_title` kept any of the first ten lines longer than ten
+characters, and `_extract_authors` matched two capitalised words. Both read
+`extract_text()`, which flattens a PDF into a string.
+
+**Decision.** `pdf_parser.extract_layout()` returns spans carrying size,
+position and baseline. The title is the largest horizontal text in the top of
+page 1; the authors are the rows beneath it.
+
+**Consequences.** A PDF has no title field -- 18 papers checked, every one
+carries only a creation date in its Info dictionary. What it has is glyphs
+with sizes, and the typesetter already encoded the answer in them. Flattening
+to a string throws away the only signal there was, which is why the old
+version returned Google's copyright notice as the title of *Attention Is All
+You Need* and 2014 as its year. No language change fixes that: the same regex
+returns `Google Brain` just as confidently in Rust. Measured cost of the whole
+pipeline is 6 ms extract, 1 ms metadata, against 3073 ms to embed.
+
+## 2026-08-12: geometry is a separate module from bibliography
+
+**Context.** The rules were accumulating inside two functions that both knew
+about fonts and about what a title is.
+
+**Decision.** `layout.py` turns spans into rows of cells and knows nothing
+about papers. `layout_metadata.py` decides what a title or an author is.
+
+**Consequences.** Three of the four worst bugs were geometry, not
+bibliography: rows grouped by bounding-box top instead of baseline split a
+small-caps title into `A : A M S O`; a font change mid-word inserted a space
+into `ADAM`; a loose accent glyph left `Doll ´ar` unsearchable. None of those
+are about papers, and none of them are visible while reading a function that
+is also deciding whether something is an author.
+
+## 2026-08-12: affiliations are removed by structure, never by naming employers
+
+**Context.** The obvious filter is a list of institutions. Google, Tsinghua,
+Mistral, NAVER -- a list that is always incomplete and always dating.
+
+**Decision.** Three rules, none naming a company. A *structural* word
+(university, institute, research) condemns a whole row. A short all-caps token
+beside ordinary words is an acronym, and disqualifies the candidate as a name.
+A phrase printed twice in the author band is an address, because a name
+appears once per paper.
+
+**Consequences.** The row-level test is what lets the word list stay small:
+attention.pdf's affiliation row is `Google Brain | Google Brain | Google
+Research | Google Research`, and only two of those four cells carry a listed
+word -- "Brain" is not in the list and never will be. The repetition rule
+needs no vocabulary at all, and is the only one that separates "United
+Kingdom" from "Kaiming He", which are identical to any test of spelling.
+Ablated: without the word list, 4 of 7 papers instead of 7 of 7, and it only
+ever admits extra rows -- it never loses a name.
+
+The acronym rule applies only to mixed-case text. A wholly capitalised
+candidate is a typesetting choice, not an abbreviation: acmart sets every
+byline that way, and `ANDREW CHU` was being read as an acronym.
+
+Tried and reverted, with the numbers kept in a comment so it is not re-added
+on the strength of the one case it helps: treating a bare acronym (`IEEE`) as
+an institution. It fixes `Wang, Senior Member, IEEE` and costs more elsewhere,
+85.7% down to 83.9% exact author lists.
+
+## 2026-08-12: a plausibility check, because the failure mode is not silence
+
+**Context.** An SLM fallback existed and was guarded on `not metadata.title`.
+It never once ran.
+
+**Decision.** `metadata_is_plausible()` replaces the emptiness test: a usable
+result needs a title that is not boilerplate *and* at least one author.
+
+**Consequences.** The regex never returned empty. It returned wrong, and
+confidently. A guard that tests for silence cannot catch that, so the better
+path was unreachable on exactly the papers it existed to rescue. This is the
+third bug of the same shape found in a month -- the graphics advice gated on
+`vram_gb`, the updater reading a missing `window.confirm` as "user declined",
+and this. When the model does run it is handed font sizes rather than the flat
+text, because a model given the same evidence makes the same mistake.
+
+## 2026-08-13: the interface reads the backend's answer, never recomputes it
+
+**Context.** Library's "Bench in use" panel did
+`models.find((m) => m.status === 'ready') || models[0]`.
+
+**Decision.** Read `routing` from the registry payload, one row per task. The
+UI does not decide which model serves a request.
+
+**Consequences.** `'ready'` is not a status this backend emits -- it says
+`'present'` -- so the find never matched and every render silently fell through
+to `models[0]`. Worse, the question has no single answer: routing is per task,
+and which entry serves one depends on every other entry (assignment, size
+against the memory free right now, rank). `routes_registry.py:186` had already
+written this down: *"computed here, not in the UI: it depends on every other
+entry, and duplicating that rule in javascript would let the two drift."* On
+this machine the 1.5B that serves Analysis was not in `models` at all. Anything
+the backend computes from global state is read, not re-derived.
+
+## 2026-08-13: a dash is not a number, and three states are not one
+
+**Context.** Two of Library's four stat cards were hardcoded `-`. The other
+panels rendered `-` for "loading", for "nothing yet", and for "the request
+failed" alike.
+
+**Decision.** Counts come from the call Library already makes. Absent, empty
+and failed are rendered as three different things.
+
+**Consequences.** "Analyses Run" and "Gaps Found" had never displayed a number
+in any release, which reads as broken software on the first screen a user sees.
+`gaps` is the newest run rather than a running total: a scan covers the whole
+library and supersedes the one before it, so summing every run counts the same
+gap once per rescan and only ever climbs. This is the same shape as the
+metadata guard from the day before -- a single value standing in for several
+distinct facts, so the interesting one cannot be seen.
+
+## 2026-08-13: a pane takes the height it is given
+
+**Context.** Scribe and LitGraph sized themselves with `calc(100vh - 11rem)`
+and `calc(100vh - 3rem)`, commented "the header is ~2.1rem of title plus its
+margin".
+
+**Decision.** The workspace is the viewport and its own scroll container.
+Panes declare `flex: 1`, and the height is handed down `<main>` ->
+`.page-frame` -> the page.
+
+**Consequences.** A constant standing in for a measurement is wrong the moment
+anything above it changes, and it fails silently -- removing the page titles
+left a strip of dead space at the bottom of Scribe with nothing to indicate
+why. It also has to be re-guessed per page, which is why there were two
+different constants for the same idea.
+
+The route transition wrapper had to be given a class. It sits between `<main>`
+and the page, and `flex: 1` resolves against the nearest flex parent: with an
+unclassed block in the chain both pages collapsed to the height of their own
+content. The height has to be passed at every step, and a missing link is
+invisible until it is rendered.
+
+**Library declares `fills` as well**, reversing the 2.1.9 decision that it
+should keep a measure. That rule is about PROSE -- a line set 1900px wide is
+unreadable. Bench is read and keeps its measure; Library is counts, panels and
+a list, and capping it left a third of a wide window empty.
+
+## 2026-08-14: Paper and Ink replaces the interface
+
+**Context.** The dark glass interface had accumulated twelve ad-hoc type sizes,
+a sidebar that collapsed to nothing, and panes measured with `calc(100vh -
+11rem)`. Rithesh proposed replacing it outright rather than continuing to
+correct it; Aditya implemented the replacement as a parallel `new-frontend/`
+tree while the old one went on shipping.
+
+**Decision.** *Paper and Ink* -- a sheet of paper on a desk, worked in ink --
+is the interface. `new-frontend/` is `frontend/`, and the old tree is deleted.
+
+**Consequences.** A parallel tree is the right shape for this and has one
+failure mode: the two drift, and the one nobody is looking at rots. Two things
+were done about it. CI ran both through the same matrix, so neither could ship
+having been checked differently. And the contract test was parameterised over
+both trees, because it had hardcoded `frontend/src/utils/api.js` -- the moment
+the replacement shipped it would have gone on proving things about a directory
+nobody builds, passing while the live client called routes that did not exist.
+
+Parity before the swap was established three ways: both clients called the same
+44 routes, the contract test passed over both, and `local/check_api_reach.py`
+called every route against a running backend. The third is not the same
+guarantee as the first two -- reading both sides as text proves the paths
+MATCH; only calling them proves the handlers RUN.
+
+The replacement had already solved problems the old tree had not. Its folio --
+one line of type on the masthead -- says what four glass cards said and costs
+no vertical space, which is why the port kept it rather than reinstating cards.
+
+## 2026-08-14: two trees means every fix is made twice
+
+**Context.** The extractor work, the Library rebuild, the type scale and the
+rail all landed in `frontend/` while `new-frontend/` was being written.
+
+**Decision.** Port the DECISIONS into the new tree's idiom rather than copying
+its markup across.
+
+**Consequences.** Everything was built twice, and that is the real price of
+replacing a running interface -- not the rewrite, the double maintenance while
+both exist. Copying would have been faster and wrong: the new tree names its
+colours `--text`, `--text-2`, `--text-primary`, so the type scale is `--type-*`
+there and `--text-*` in the old one. A colour token answering to a size name is
+a trap somebody falls into later.
+
+The same applies to structure. The route wrapper is `.page-turn` here and was
+`.page-frame` there, and Scribe's root had no class at all -- so the height
+chain that fixes the panes had to be rebuilt, not pasted. It is one link per
+step and a missing one resolves `flex: 1` against nothing.
+
+## 2026-08-14: six named type steps, and a root size that is not fixed
+
+**Context.** The stylesheets carried twelve different small font sizes: 0.68,
+0.7, 0.72, 0.75, 0.76, 0.78, 0.8, 0.82, 0.84, 0.85, 0.9 and 0.95rem. The root
+was a flat `16px`.
+
+**Decision.** Six steps as variables -- `--text-xs` through `--text-2xl` -- and
+a fluid root, `clamp(16px, 0.15vw + 14.6px, 18px)`. 161 declarations across
+both stylesheets now resolve to them.
+
+**Consequences.** Two-hundredths of a rem is not a decision anyone made; it is
+what happens when each component picks a number on its own, and the result
+reads as sloppy without any single value looking wrong. Six steps are far
+enough apart to be deliberate, and the lower bound means nothing lands below
+about 13px.
+
+Fluid because this is a desktop application read at arm's length on whatever
+display it lands on: 16px is cramped on a 13" laptop and small on a 27"
+monitor. The range is narrow on purpose -- a first attempt at
+`clamp(17px .. 20px)` resolved near 20 on a wide monitor, which read as zoomed
+rather than as legible, and was rejected on sight.
+
+## 2026-08-14: a figure earns its place by answering a question
+
+**Context.** Library opened with six stat cards and a "chunks per paper" chart.
+The module's author said it was too much at once.
+
+**Decision.** The counts caption the Knowledge Base section instead of opening
+the page. Bytes on disk and the chunk count are removed rather than moved. The
+paper list pages five at a time.
+
+**Consequences.** The cards were the first thing read and the least worth
+reading, and they pushed the papers themselves below the fold. "175 KB" is the
+clearest case: it is accurate, it is cheap to compute, and no reader has ever
+wanted it -- nobody is short of 175 KB, and the number does not change what
+they do next. The chunk count is the same in a subtler way: it describes how
+the text is indexed, which is our concern rather than theirs.
+
+What replaced them says something: **analysed reads "15 of 20"**, so the
+distance between ingested and read is visible rather than implied.
+
+Paging follows from the same idea. Library exists to be taken in at a glance,
+and a list long enough to scroll buries everything above it, so the page is
+worth more than the rows.
+
+## 2026-08-14: the collapsed sidebar is a rail
+
+**Context.** Collapsing set `--sidebar-w: 0px`. The sidebar left the screen, so
+the logo was re-rendered as a floating button over the page and the "i" sat
+over the content beside it.
+
+**Decision.** Collapse to a 64px rail carrying the logo and the nav marks. The
+floating logo is deleted.
+
+**Consequences.** Zero width forces anything still needed to be drawn on top of
+the page, which is the problem collapsing was meant to solve. Because
+`.main-content`'s margin is the same variable, the content steps aside for the
+rail rather than sliding under it -- no second measurement, and no way for the
+two to disagree.
+
+The guide needed `z-index: 110` to sit on the rail. The sidebar is 100 and the
+guide 40, so on the rail it rendered *behind* it and simply vanished -- which
+is worth recording because nothing about the change suggests a stacking
+problem, and the symptom is an element that is present, correct, and invisible.
+
+## 2026-08-14: the .bib file is the authority for a citation key
+
+**Context.** A key is derived from metadata, so two papers can collide and the
+tiebreak depends on what else is in the library. Derive it again after another
+paper is ingested and the same document can get a different key.
+
+**Decision.** `assign_keys` reads `references.bib` first and honours every key
+already written there; only documents the file has never seen get a new one.
+The document id travels in a `thinkstackid` field.
+
+**Consequences.** A `\cite{}` already typed into the source cannot break -- the
+alternative is a bibliography that silently stops resolving because an
+unrelated paper was added to the library. The id field is unknown to every
+`.bst`, which read only the fields they declare, so it never appears in the
+rendered bibliography. It also means the file can be edited by hand -- rename a
+key, fix an author list, paste an entry from elsewhere -- and the mapping back
+to the library survives, which is what makes hand-editing the per-project
+override rather than a thing that gets overwritten.
+
+## 2026-08-14: the comma is BibTeX syntax, so an author list is JSON
+
+**Context.** Chroma metadata holds str, int, float and bool. A list of authors
+has to be flattened to store it, and `", ".join(authors)` is the obvious way.
+
+**Decision.** JSON-encode the list. `decode` still accepts the comma form.
+
+**Consequences.** In BibTeX the comma separates surname from given name --
+`Vaswani, Ashish and Shazeer, Noam` is two people -- so re-splitting a joined
+list on commas turned eight authors into sixteen half-names. Nothing raised;
+a bibliography just printed them. The legacy path stays because a library is
+not re-ingested to fix a codec, and it is honest about its limit: rows written
+surname-first are wrong and are not repairable from the string, which is one
+of the reasons the Library gained an editor for them.
+
+## 2026-08-14: a citing document is given a bibliography, but only one to point at
+
+**Context.** `\cite{key}` alone renders `[?]` and prints no reference list.
+BibTeX is invoked by the `\bibdata` line that `\bibliography` writes into the
+`.aux`, and that same command is where the list is typeset.
+
+**Decision.** The compile-time heal adds `\bibliographystyle` and
+`\bibliography{references}` before `\end{document}` -- when the document
+actually cites something *and* the project has a `references.bib`.
+
+**Consequences.** A document with citations and no bibliography is not a style
+choice, it is the citation silently not working, and it looked exactly like the
+feature being broken. Both conditions are load-bearing: pointing
+`\bibliography` at a file that is not there turns a working compile into a
+failed one, and an author who typed `\cite` by hand has no such file. The
+engine matters too -- Tectonic runs BibTeX in its own driver and pdflatex does
+not, so a build from source needed the pass added explicitly.
+
+## 2026-08-14: a caret-anchored popup is positioned in viewport coordinates
+
+**Context.** The cite list is anchored under the caret in a `<textarea>`, which
+exposes a character offset and no coordinates. A mirror div wearing the
+textarea's computed styles gives the pixel position.
+
+**Decision.** `position: fixed`, coordinates from
+`getBoundingClientRect()` plus the caret offset, the caret's y clamped into the
+textarea's visible box, and the list flipped above the line when the window has
+no room below. `--z-over`, the same layer as the context menu.
+
+**Consequences.** Absolute-inside-the-pane was the intuitive choice and was
+wrong twice over: the editor pane sits inside `overflow: hidden`, so a list
+anchored near the foot of a long document was clipped away rather than scrolled
+to, and the compiled PDF beside it sits on `--z-sheet` and painted over the
+column holding the keys. The feature rendered correctly, with every row in it,
+1382px down a 1000px window. Layout bugs of this shape do not show up in jsdom,
+which has no layout; this one was found by driving the real page and reading
+the box back.
+
+## 2026-08-14: a wrong reference is repaired in the library, not in the bibliography
+
+**Context.** Titles extract right about 93% of the time and author lists 86%,
+so roughly one paper in seven is stored wrong. It can be corrected in two
+places: the library record, or the `references.bib` of a project citing it.
+
+**Decision.** The Library edits the record -- title, authors and year. Scribe
+gets no second editor; `references.bib` is already a file in the project tree.
+
+**Consequences.** The library is where the wrong data actually is, so fixing it
+there fixes every future citation, every node on the map and every search hit
+at once, while fixing the `.bib` fixes one project and the next one re-derives
+the same mistake. Two editors over one field would be two sources of truth. The
+ordering follows from the entry above: a `.bib` already written keeps what it
+has, so the reference is fixed before it is cited, or in that project's file.
+The one rule a user cannot guess is stated in the form -- authors separate on
+commas, or on semicolons when a name contains one.
+
+## 2026-08-13: the page titles go, and Library introduces the others
+
+**Context.** Every screen carried a heading repeating the nav item that was
+already highlighted.
+
+**Decision.** No page titles. Library carries a collapsible list of what the
+other screens are for, generated from `features.js`.
+
+**Consequences.** "LitGraph" and "Scribe" mean nothing to someone who has just
+installed this, and each page's own "i" cannot help -- you have to already be
+there, and you will not open a screen whose name tells you nothing. Saying it
+once on the page everyone lands on is what lets the headings go, and Scribe
+gets that strip back for its editor. Generated from `features.js` so a new
+feature appears without anyone remembering, and so the wording cannot drift
+from the "i" guide reading the same field. It expands only for someone who has
+never run the app: introducing an existing user to their own workspace after an
+update reads as a regression.
+
+## 2026-08-12: the extractor is scored on papers nobody here chose
+
+**Context.** A curated test set proves the rules match the papers the rules
+were written against.
+
+**Decision.** `local/eval_metadata.py` samples papers across 15 arXiv
+categories through the API and scores against arXiv's own metadata.
+
+**Consequences.** The curated 18 were 100%; the random 56 were 62.5%, and the
+gap was entirely templates nobody had looked at -- RevTeX spacing wide enough
+to read as columns, APS running from affiliations into an unlabelled abstract,
+and a margin cutoff that was deleting the first line of any centred title.
+Fixing those took the sample to 92.9% titles and 85.7% exact author lists. A
+number from papers you picked measures your test set, not your extractor.
+
 ## 2026-08-09: the advice asks Vulkan, not nvidia-smi
 
 **Context.** Two detectors answer "is there a GPU here". `vram_gb` comes from

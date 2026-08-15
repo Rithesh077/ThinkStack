@@ -1,19 +1,48 @@
-"""
-metadata extractor module.
+"""Bibliographic metadata: title, authors, abstract, year.
 
-extracts bibliographic metadata (title, authors, abstract, year) from
-research paper text using regex pattern matching with an optional slm
-fallback for papers with non-standard formatting.
+Three sources, in descending order of how much they know:
+
+    layout   font size and position on page 1 -- exact on standard papers
+    regex    patterns over flat text -- abstract and year only
+    slm      the local model, when the first two produce something implausible
+
+Layout comes first because the signal it reads (the title is the biggest text
+at the top) is the one the typesetter actually encoded. Flat text has already
+thrown that away.
 """
 
 import json
 import logging
 import re
+from datetime import datetime
 
-from domain.ingestion.models import DocumentMetadata
+from domain.ingestion.layout_metadata import (
+    NAME_SEPARATOR,
+    looks_like_name,
+    authors_from_layout,
+    layout_digest,
+    title_from_layout,
+)
+from domain.ingestion.models import DocumentMetadata, PageLayout
 from infrastructure.ollama_client import ollama_client
 
 logger = logging.getLogger(__name__)
+
+_CURRENT_YEAR = datetime.now().year
+
+
+def _line_is_authors(line: str) -> bool:
+    """Whether a line is the author list, judged without any layout.
+
+    Requires a separator to have been present: without one, "Deep Residual
+    Learning" reads as a name and the title would be thrown away. Two or more
+    separated parts that all look like people is a much safer signal, and it
+    is what stops the author line being glued onto the title -- the symptom
+    that made every stored BERT title read "...Language Understanding Jacob
+    Devlin".
+    """
+    parts = [p.strip() for p in NAME_SEPARATOR.split(line) if p.strip()]
+    return len(parts) >= 2 and all(looks_like_name(p) for p in parts)
 
 
 def _extract_title(text: str) -> str:
@@ -39,6 +68,8 @@ def _extract_title(text: str) -> str:
             continue
         lower = line.lower()
         if any(kw in lower for kw in ["abstract", "introduction", "keywords", "@"]):
+            break
+        if _line_is_authors(line):
             break
         if len(line) > 10:
             title_lines.append(line)
@@ -106,29 +137,57 @@ def _extract_abstract(text: str) -> str:
     return ""
 
 
+ARXIV_RE = re.compile(r"arXiv:\s*(\d{2})(\d{2})\.(\d{4,5})", re.IGNORECASE)
+DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
+
+
+def find_arxiv_id(text: str) -> str:
+    """The arXiv identifier, or "". `1706.03762` -- YYMM plus a serial."""
+    m = ARXIV_RE.search(text)
+    return f"{m.group(1)}{m.group(2)}.{m.group(3)}" if m else ""
+
+
+def find_doi(text: str) -> str:
+    """The first DOI, or "". Trailing sentence punctuation is stripped."""
+    m = DOI_RE.search(text)
+    return m.group(0).rstrip(".,;)") if m else ""
+
+
 def _extract_year(text: str) -> str:
-    """extract the publication year from the text.
+    """Publication year, or "" when the page does not state one.
 
-    looks for four-digit years in common academic formats such as
-    copyright notices, date lines, and citation patterns.
+    Ordered by how much the source actually knows:
 
-    args:
-        text: the full document text.
+        arXiv id     YYMM is the submission date, encoded in the identifier
+        stated year  a copyright line or "Published ... at VENUE 2019"
+        (nothing)    an empty year is a fact; a wrong one poisons a bibliography
 
-    returns:
-        year string, or empty string if not found.
+    The old version took the first four-digit number in the first 3000
+    characters, which on attention.pdf is 2014 -- part of Google's copyright
+    boilerplate, three years off the real date.
     """
-    patterns = [
-        r"(?:published|accepted|received|copyright|©)\s*:?\s*\w*\s*(\d{4})",
-        r"\b((?:19|20)\d{2})\b",
-    ]
+    # `arXiv:` is unambiguous, so it is worth finding wherever it is. The
+    # stamp is rotated in the left margin, and PyMuPDF emits rotated text
+    # after the page body -- past character 3000 on two of three papers here.
+    # The looser patterns below stay windowed; away from the front matter a
+    # bare year is as likely to belong to a reference as to this paper.
+    head = text[:3000]
 
-    first_section = text[:3000]
-    for pattern in patterns:
-        matches = re.findall(pattern, first_section, re.IGNORECASE)
-        for year in matches:
-            if 1950 <= int(year) <= 2030:
+    arxiv = find_arxiv_id(text)
+    if arxiv:
+        year = 2000 + int(arxiv[:2])
+        if 1990 <= year <= _CURRENT_YEAR + 1:
+            return str(year)
+
+    stated = [
+        r"(?:©|\(c\)\s|copyright)\s*(?:by\s+)?(?:\w+\s+)?((?:19|20)\d{2})",
+        r"(?:published|presented|accepted|appeared|to appear)\b[^.\n]{0,60}?((?:19|20)\d{2})",
+    ]
+    for pattern in stated:
+        for year in re.findall(pattern, head, re.IGNORECASE):
+            if 1950 <= int(year) <= _CURRENT_YEAR + 1:
                 return year
+
     return ""
 
 
@@ -152,27 +211,33 @@ def extract_metadata_regex(text: str) -> DocumentMetadata:
     )
 
 
-async def extract_metadata_slm(text: str) -> DocumentMetadata:
-    """extract paper metadata using the local slm via ollama.
+async def extract_metadata_slm(
+    text: str,
+    page: PageLayout | None = None,
+) -> DocumentMetadata:
+    """Metadata from the local model. Falls back to regex if it is unavailable.
 
-    sends the first portion of the paper text to the language model
-    with a structured extraction prompt. falls back to regex extraction
-    if the slm is unavailable or returns unparseable output.
-
-    args:
-        text: the full document text.
-
-    returns:
-        populated DocumentMetadata instance.
+    Given a page, the prompt carries font sizes rather than flat text -- see
+    `layout_digest`. Without them the model is looking at the same undifferentiated
+    string that produced the bug this module exists to fix.
     """
-    excerpt = text[:3000]
+    if page is not None and page.spans:
+        body = (
+            "page 1, one row per line, prefixed by its font size in points. "
+            "the title is normally the largest text near the top; the authors "
+            "are on the rows just below it.\n\n"
+            f"{layout_digest(page)}"
+        )
+    else:
+        body = f"paper text:\n{text[:3000]}"
 
     prompt = (
-        "extract the following metadata from this research paper text. "
+        "extract the following metadata from this research paper. "
         "return a json object with keys: title, authors (list of strings), "
-        "abstract, year. if a field cannot be determined, use an empty "
-        "string or empty list.\n\n"
-        f"paper text:\n{excerpt}"
+        "abstract, year. authors are people -- never institutions, "
+        "departments or email addresses. if a field cannot be determined, "
+        "use an empty string or empty list.\n\n"
+        f"{body}"
     )
 
     system = (
@@ -202,23 +267,109 @@ async def extract_metadata_slm(text: str) -> DocumentMetadata:
         return extract_metadata_regex(text)
 
 
-async def extract_metadata(text: str, use_slm: bool = True) -> DocumentMetadata:
-    """extract paper metadata with optional slm enhancement.
+# Page furniture that a "biggest text at the top" rule can legitimately pick up:
+# journal banners, licence boilerplate, cover pages.
+_NOT_A_TITLE = re.compile(
+    r"^(abstract|introduction|contents|references|keywords|acknowledg"
+    r"|provided proper attribution|copyright|©|downloaded from|licensed under"
+    r"|proceedings of|preprint|under review|submitted to|draft)",
+    re.IGNORECASE,
+)
 
-    tries regex extraction first. if the result is incomplete and
-    use_slm is enabled, falls back to slm-based extraction.
+TITLE_MIN_CHARS = 8
+TITLE_MAX_CHARS = 300
 
-    args:
-        text: the full document text.
-        use_slm: whether to attempt slm extraction for incomplete results.
 
-    returns:
-        populated DocumentMetadata instance.
+def title_is_plausible(title: str) -> bool:
+    """Whether a title is worth keeping, or whether something else should try.
+
+    Not "is this correct" -- nothing here can know that. This rejects the
+    shapes that are certainly wrong, so the model gets a turn on those and
+    only those.
     """
-    metadata = extract_metadata_regex(text)
+    title = title.strip()
+    if not (TITLE_MIN_CHARS <= len(title) <= TITLE_MAX_CHARS):
+        return False
+    if _NOT_A_TITLE.match(title):
+        return False
+    if len(title.split()) < 2:
+        return False
+    letters = sum(c.isalpha() for c in title)
+    return letters >= len(title) * 0.5
 
-    if use_slm and (not metadata.title or not metadata.abstract):
-        logger.info("regex extraction incomplete, trying slm")
-        metadata = await extract_metadata_slm(text)
 
+def metadata_is_plausible(metadata: DocumentMetadata) -> bool:
+    """A usable result has a plausible title AND at least one author.
+
+    Both halves matter. The shipped bug was a guard that only asked whether
+    the title was EMPTY -- and the broken extractor never returned empty, it
+    returned Google's copyright notice. A guard that tests for silence can
+    never catch confident wrongness, so the model path was unreachable on
+    every paper it existed to rescue.
+    """
+    return title_is_plausible(metadata.title) and bool(metadata.authors)
+
+
+def extract_metadata_layout(page: PageLayout, text: str) -> DocumentMetadata:
+    """Title and authors from geometry; abstract and year from the text."""
+    return DocumentMetadata(
+        title=title_from_layout(page),
+        authors=authors_from_layout(page),
+        abstract=_extract_abstract(text),
+        year=_extract_year(text),
+    )
+
+
+async def extract_metadata(
+    text: str,
+    page: PageLayout | None = None,
+    use_slm: bool = True,
+) -> DocumentMetadata:
+    """Best available metadata for one document.
+
+    Layout when there is a page to read, regex otherwise, and the model only
+    when what came back fails `metadata_is_plausible`. That last condition is
+    the point: the model is slow enough that running it on every upload is not
+    an option, and precise enough on cover pages and unusual templates to be
+    worth waiting for on the few that need it.
+
+    Whichever path answers, the identifiers are stamped on the way out. They
+    come from the raw text on all three, so finding them once here keeps the
+    extractors to the job their names describe.
+    """
+    metadata = await _best_metadata(text, page, use_slm)
+    metadata.arxiv_id = find_arxiv_id(text)
+    metadata.doi = find_doi(text)
     return metadata
+
+
+async def _best_metadata(
+    text: str,
+    page: PageLayout | None,
+    use_slm: bool,
+) -> DocumentMetadata:
+    """Title, authors, abstract and year -- the fields that need a strategy."""
+    if page is not None and page.spans:
+        metadata = extract_metadata_layout(page, text)
+        if metadata_is_plausible(metadata):
+            return metadata
+        logger.info("layout metadata implausible (title=%r), trying slm", metadata.title)
+    else:
+        metadata = extract_metadata_regex(text)
+        if metadata_is_plausible(metadata):
+            return metadata
+        logger.info("regex metadata implausible, trying slm")
+
+    if not use_slm:
+        return metadata
+
+    from_slm = await extract_metadata_slm(text, page=page)
+    # The model is a second opinion, not an override. Keep whichever fields
+    # it actually improved; a model that returns "" must not erase a good
+    # title that layout already found.
+    return DocumentMetadata(
+        title=from_slm.title if title_is_plausible(from_slm.title) else metadata.title,
+        authors=from_slm.authors or metadata.authors,
+        abstract=from_slm.abstract or metadata.abstract,
+        year=from_slm.year or metadata.year,
+    )

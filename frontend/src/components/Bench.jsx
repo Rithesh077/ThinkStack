@@ -132,9 +132,25 @@ export default function Bench() {
 
   return (
     <div>
+      {/* The folio counts what this page is about: how many models are on the
+          bench and how many of those are actually on disk.
+
+          The machine's TIER is deliberately not here. It is a grade we assign
+          to someone's hardware, and printing "low tier" on their own screen
+          tells them nothing they can act on -- what they can act on is which
+          models fit, which the cards below already say. It used to be readable
+          only by finding
+          it inside the machine card. */}
       <PageHeader
         className="fade-up stagger-1"
-        title="Bench"
+        folio={
+          <>
+            <span className="tally-item"><b>{models.length || '—'}</b>models</span>
+            <span className="tally-item">
+              <b>{models.filter((m) => m.status === 'present').length || '—'}</b>on disk
+            </span>
+          </>
+        }
       >
         <button className="btn btn-secondary" onClick={examine} disabled={examining}>
           <RefreshCw size={16} className={examining ? 'spin' : ''} />
@@ -142,14 +158,14 @@ export default function Bench() {
         </button>
       </PageHeader>
 
-      <div className="card fade-up stagger-2" style={{ marginBottom: '1.5rem' }}>
+      <div className="card fade-up stagger-2 bench-card">
         <div className="card-header">
-          <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span className="card-title">
             <Gauge size={16} /> Your machine
           </span>
         </div>
-        {examining && !report && <p style={{ color: 'var(--text-secondary)' }}>Examining this machine…</p>}
-        {reportError && <p style={{ color: 'var(--warning)' }}>Could not read this machine: {reportError}</p>}
+        {examining && !report && <p className="bench-wait">Examining this machine…</p>}
+        {reportError && <p className="bench-fail">Could not read this machine: {reportError}</p>}
         {report && <MachineReport report={report} />}
 
         {/* Beside the machine report on purpose: "your machine has graphics
@@ -159,9 +175,9 @@ export default function Bench() {
         <Acceleration />
       </div>
 
-      <div className="card fade-up stagger-3" style={{ marginBottom: '1.5rem' }}>
+      <div className="card fade-up stagger-3 bench-card">
         <div className="card-header">
-          <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span className="card-title">
             <HardDrive size={16} /> Models
           </span>
           {!importing && (
@@ -183,7 +199,7 @@ export default function Bench() {
           />
         )}
 
-        {!snapshot && <p style={{ color: 'var(--text-secondary)' }}>Reading the model list…</p>}
+        {!snapshot && <p className="bench-wait">Reading the model list…</p>}
 
         {/* Reachable by removing the included model, which is allowed. Says
             what stopped working and the three ways back, rather than showing

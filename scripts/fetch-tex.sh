@@ -84,9 +84,36 @@ fi
 # first user to trigger it needs a network connection we promised they would
 # not need.
 CACHE="$DEST/cache"
-if [ -d "$CACHE" ] && [ -n "$(ls -A "$CACHE" 2>/dev/null)" ]; then
+
+# Written only after a compile has actually produced a PDF, and checked instead
+# of "is the directory non-empty".
+#
+# A throttled run leaves the packages it managed to fetch behind, so a partial
+# cache is not an empty one. Treating non-empty as warm meant a second build on
+# the same machine skipped warming and bundled a cache missing everything after
+# the file that was throttled -- the failure would then surface on a user's
+# machine, on their first compile, with no network to recover from.
+STAMP="$DEST/.cache-warmed"
+
+# How hard to try before giving up. The packages come from one CDN, and the
+# three platform builds in CI hit it within seconds of each other; on
+# 2026-08-14 Linux warmed at 18:53:42, macOS started at 18:53:52 and was
+# answered 429 Too Many Requests until hyperref gave up. Nothing about that was
+# macOS: it lost a race the matrix creates on every run.
+#
+# The engine retries an individual file a few times and then stops, so the
+# retry has to be here, around the whole compile. The cache is deliberately NOT
+# cleared between attempts -- whatever arrived is still good, so each attempt
+# asks for less than the one before.
+WARM_ATTEMPTS="${TEX_WARM_ATTEMPTS:-4}"
+WARM_RETRY_DELAY="${TEX_WARM_RETRY_DELAY:-15}"
+
+if [ -f "$STAMP" ] && [ -d "$CACHE" ] && [ -n "$(ls -A "$CACHE" 2>/dev/null)" ]; then
     echo -e "  ${GREEN}cache already warm${NC} ($(du -sh "$CACHE" | cut -f1))"
 else
+    if [ -d "$CACHE" ] && [ -n "$(ls -A "$CACHE" 2>/dev/null)" ]; then
+        echo "  cache is present but was never proved -- warming it again"
+    fi
     echo "  warming the package cache (needs network, one time)..."
     WARM="$(mktemp -d)"
     cat > "$WARM/warm.tex" <<'TEX'
@@ -134,25 +161,42 @@ TEX
     # "warm", so capturing stdout there made LaTeX read this log as TeX source
     # and fail with "Missing $ inserted" on a download progress line.
     ENGINE_OUT="$(mktemp)"
-    set +e
-    TECTONIC_CACHE_DIR="$CACHE_ABS" "$DEST/$BIN" -X compile "$WARM/warm.tex" \
-        --outdir "$WARM" > "$ENGINE_OUT" 2>&1
-    WARM_RC=$?
-    set -e
+    attempt=1
+    while : ; do
+        set +e
+        TECTONIC_CACHE_DIR="$CACHE_ABS" "$DEST/$BIN" -X compile "$WARM/warm.tex" \
+            --outdir "$WARM" > "$ENGINE_OUT" 2>&1
+        WARM_RC=$?
+        set -e
 
-    if [ "$WARM_RC" -ne 0 ] || [ ! -f "$WARM/warm.pdf" ]; then
-        echo -e "${RED}TeX cache warm-up FAILED (exit ${WARM_RC})${NC}"
-        echo "  the engine said:"
-        sed 's/^/    /' "$ENGINE_OUT" 2>/dev/null | tail -40
-        echo ""
-        echo -e "${RED}Refusing to continue.${NC} Shipping an installer whose TeX cache is"
-        echo "  empty means the paper writer cannot compile a PDF on a user's machine,"
-        echo "  which is the entire reason this engine is bundled."
-        rm -rf "$WARM" "$ENGINE_OUT"
-        exit 1
-    fi
+        [ "$WARM_RC" -eq 0 ] && [ -f "$WARM/warm.pdf" ] && break
+
+        if [ "$attempt" -ge "$WARM_ATTEMPTS" ]; then
+            echo -e "${RED}TeX cache warm-up FAILED (exit ${WARM_RC}) after ${attempt} attempts${NC}"
+            echo "  the engine said:"
+            sed 's/^/    /' "$ENGINE_OUT" 2>/dev/null | tail -40
+            echo ""
+            echo -e "${RED}Refusing to continue.${NC} Shipping an installer whose TeX cache is"
+            echo "  empty means the paper writer cannot compile a PDF on a user's machine,"
+            echo "  which is the entire reason this engine is bundled."
+            rm -rf "$WARM" "$ENGINE_OUT"
+            exit 1
+        fi
+
+        # Say what happened at the time it happens. A silent retry that later
+        # succeeds hides a CDN that is throttling us, and the next person to
+        # see this fail has no idea it had been happening for weeks.
+        echo -e "  ${CYAN}attempt ${attempt} failed${NC} - $(grep -c '429 Too Many Requests' "$ENGINE_OUT" 2>/dev/null || echo 0) throttled request(s); retrying in ${WARM_RETRY_DELAY}s"
+        [ "$WARM_RETRY_DELAY" -gt 0 ] && sleep "$WARM_RETRY_DELAY"
+        # back off further each time; a rate limit that is still on does not
+        # care how eager we are
+        WARM_RETRY_DELAY=$((WARM_RETRY_DELAY * 2))
+        attempt=$((attempt + 1))
+    done
 
     rm -f "$ENGINE_OUT"
+    # only now is the cache known to be complete enough to compile the preamble
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$STAMP"
     echo -e "  ${GREEN}cache warm${NC} ($(du -sh "$CACHE" | cut -f1)) - compiles offline from here"
     rm -rf "$WARM"
 fi

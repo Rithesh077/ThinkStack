@@ -452,7 +452,7 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
               commitPending,
             )}
             {!files.length && !loading.has(pid) && !pending
-              && <p className="ft-empty ft-indent">empty</p>}
+              && <p className="ft-empty ft-indent">Empty</p>}
           </>
         )}
       </div>

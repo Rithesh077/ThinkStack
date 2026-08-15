@@ -376,8 +376,227 @@ LitGraph map.
 I found it by refusing to build citations on a layer I could not vouch for, and
 tracing one real PDF through every stage instead. The fix is not a rewrite: the
 title is the largest horizontal text near the top of page one, which PyMuPDF
-already knows and `extract_text()` throws away by flattening to a string. Fifteen
-lines got three of three published papers exactly right.
+already knows and `extract_text()` throws away by flattening to a string.
 
 The lesson I want to keep: **`0.0`, `False` and `""` are values, not absences.**
 Every one of these bugs was a guard that could not tell the difference.
+
+## Metadata extraction, and a number that was worth nothing
+
+I rebuilt the extractor to read the page rather than a string, and split it in
+two: one module that turns glyphs into rows of cells and knows nothing about
+papers, and one that decides what a title or an author is.
+
+The split earned itself immediately. Three of the four worst bugs were geometry,
+not bibliography — rows grouped by the top of their bounding box instead of the
+baseline they share, which turned a small-caps title into `A : A M S O`; a font
+change mid-word, which put a space inside `ADAM`; and an accent stored as its own
+glyph *before* its letter, leaving `Doll ´ar` where `Dollár` should be. None of
+those are about research papers, and none are visible inside a function that is
+also asking whether something is a name.
+
+I pushed back on one thing hard: the obvious way to drop employers from author
+lists is a list of employers. Google, Tsinghua, Mistral, NAVER — it is never
+finished and it dates. We used structure instead. A *structural* word
+(university, institute, research) condemns a whole row, not one cell, because
+attention.pdf's affiliation row is `Google Brain | Google Brain | Google Research
+| Google Research` and only half of those cells carry a word any list would hold.
+The rule I am most pleased with is mine: **a phrase printed twice in the author
+band is an address, because a name appears once per paper.** It needs no
+vocabulary at all, and it is the only thing that separates "United Kingdom" from
+"Kaiming He" — identical to any test of spelling.
+
+Then the part I did not expect. On our test papers it was perfect: every title,
+year and author exact. I asked for it to be tested on real papers we had not
+picked, so we sampled 56 across 15 arXiv categories through the API and scored
+against arXiv's own records. **62.5%.**
+
+Every point of that gap was a typesetting convention nobody had looked at. One
+physics template spaces a centred author line widely enough to read as columns,
+so two authors arrived as five fragments and none of them was a name. Another
+runs from affiliations straight into the abstract with no heading, so the search
+carried on into the body and collected `I. Introduction` as an author. And a
+margin cutoff I had added to kill an arXiv stamp was deleting the first line of
+any centred title wide enough to start left of it. Fixing those took it to
+**92.9% of titles and 85.7% of author lists exact**.
+
+Our test set was not dishonest. It was one field, and a template is a convention
+of a field. **A number measured over material you chose yourself describes your
+choice, not your method.** That is the thing I want to remember from this more
+than any of the rules.
+
+I also stopped a change that looked like a win: counting a bare acronym like
+`IEEE` as an institution fixes `Wang, Senior Member, IEEE` and costs more
+elsewhere — 85.7% down to 83.9%. It is reverted, with the numbers in a comment,
+so nobody re-adds it on the strength of the one case it helps.
+
+What is left is a long tail of the same kind: mathematics inside titles,
+publisher cover pages, submissions too new to carry a stamp. More rules will not
+clear it. The established answer is a classifier over the same layout features —
+which is what GROBID does, and is where I would stop expecting this approach to
+improve.
+
+## Supporting work on Library
+
+**Library is Jitvan's module** — the screen, the document list, the encryption
+controls and the overview panels are his. This section records what I changed
+underneath them, because the faults were in layers I own (the model registry
+contract, the ingest queue, the shell's layout) rather than in his interface.
+
+The panel meant to show which model was in use did this:
+
+```js
+models.find((m) => m.status === 'ready') || models[0]
+```
+
+`'ready'` is not a status our backend emits — it says `'present'` — so the find
+never matched and it silently fell through to whichever model was first. But
+the deeper problem is that the question has no single answer. Routing is **per
+task**, and which entry serves a task depends on every other entry. The backend
+already computes that and had said so in a comment I wrote weeks earlier:
+*"computed here, not in the UI: duplicating that rule in javascript would let
+the two drift."* On my machine the 1.5B that actually serves Analysis was not
+in the `models` array at all. It reads `routing` now.
+
+Two of the four stat cards had been hardcoded `-` since they were written, and
+a lone `-` was also standing in for "loading" and for "the request failed". The
+same shape as the metadata guard from the day before: one value covering
+several distinct facts, so the one you need cannot be seen.
+
+The layout taught me something I did not expect. Scribe and LitGraph sized
+themselves with `calc(100vh - 11rem)`, commented *"the header is ~2.1rem of
+title plus its margin"*. That is a constant standing in for a measurement, and
+it went wrong the moment we removed the page titles — silently, as a strip of
+dead space. I replaced it with `flex: 1` and **broke it worse**, because there
+is an unclassed `motion.div` between `<main>` and the page and a flex chain
+dies at the first link that isn't a flex parent. Both pages collapsed to the
+height of their own content, and I only found out from a screenshot.
+
+The lesson is narrow and I want to keep it: **I swapped a mechanism without
+checking what it sat inside.** The old code was fragile, but it was fragile in
+a way that worked; my replacement was correct in principle and wrong in that
+DOM. Three rounds of the same mistake followed — filling a column whose
+neighbour then grew taller, then equalising panels with unequal content —
+before I stopped positioning things by assumption and made the layout flow.
+
+Also worth recording: the frontend unit tests froze the machine for an hour
+during a push. Not a big suite — 175 tests, five seconds. Vitest defaults to
+one worker per core, and on a 16-core laptop already running an editor that is
+sixteen node processes each with its own jsdom. `preflight.sh` now passes
+`--no-file-parallelism` locally; CI runners are small enough not to need it.
+The checks were never the problem, the concurrency was.
+
+## A type scale, and a sidebar that leaves something behind
+
+Two shell-wide changes. Both surfaced while Jitvan was reviewing Library's
+density — **that page and every decision about what it shows are his**; what
+follows is the part that turned out to have nothing to do with Library.
+
+**Twelve small font sizes.** `0.68`, `0.7`, `0.72`, `0.75`, `0.76`, `0.78`,
+`0.8`, `0.82`, `0.84`, `0.85`, `0.9`, `0.95rem` — across two stylesheets and
+161 declarations. Two-hundredths of a rem is not a decision anybody made; it is
+what happens when each component picks its own number, and the result reads as
+sloppy without any single value looking wrong. Six named steps now, and the
+root is fluid — `clamp(16px, 0.15vw + 14.6px, 18px)` — so every rem grows with
+the window instead of sitting at a fixed 16px on a 27" monitor.
+
+I got this wrong once first: `clamp(17px … 20px)` resolved near 20 on a wide
+display and read as *zoomed*, not legible. "Bigger" and "more readable" part
+company quickly.
+
+**The sidebar collapsed to zero.** Which sounds like the maximum amount of
+room and is the opposite: the two things you still need — the logo to bring it
+back, and the "i" explaining the page — then have to be drawn *on top of* the
+content. Collapsing the sidebar to get it out of the way put two things in the
+way. It collapses to a 64px rail now, and because `.main-content`'s margin
+reads the same variable, the page steps aside for it with no second
+measurement that could disagree.
+
+One bug from that is worth writing down. Moving the guide onto the rail made it
+disappear: the sidebar is `z-index: 100` and the guide is `40`, so on the rail
+it rendered behind it — present, correct, and invisible. Nothing about "move
+this 60px left" suggests a stacking problem, and nothing in the code says so
+either. I found it by looking at the screen and noticing the button was simply
+not there.
+
+## Replacing the interface
+
+The dark glass interface had reached the point where I was correcting the same
+class of thing repeatedly — twelve ad-hoc type sizes, a sidebar that collapsed
+to nothing, panes measured by subtracting a guess from the viewport. I proposed
+replacing it rather than continuing to patch it. **Aditya built the
+replacement** — *Paper and Ink*, a sheet of paper on a desk worked in ink — as
+a parallel `new-frontend/` tree while the old one went on shipping. My part
+after that was the migration: carrying the week's work across, proving parity,
+and deleting the old tree.
+
+**Two trees means every fix is made twice.** That is the real cost of replacing
+a running interface, and it is not the rewrite — it is the fortnight where both
+exist. The extractor work, the Library rebuild, the type scale and the rail all
+landed in `frontend/` while `new-frontend/` was being written, and every one of
+them had to be made again.
+
+Copying would have been faster and wrong. The new tree names its *colours*
+`--text`, `--text-2`, `--text-primary`, so the type scale had to be `--type-*`
+there — a colour token answering to a size name is a trap someone falls into
+six months later. Same for structure: the route wrapper is `.page-turn` there
+and was `.page-frame` here, and Scribe's root had no class at all, so the
+height chain had to be rebuilt rather than pasted.
+
+**Proving it was safe to delete a working interface.** Three things, in
+increasing strength:
+
+- both clients called the same 44 routes
+- the contract test passed over both trees
+- `local/check_api_reach.py` called every route against a running backend
+
+The third is the one that matters, and it is a different guarantee from the
+first two. Reading both sides as text proves the paths **match**; only calling
+them proves the handlers **run**. All 16 answered, including the metadata
+patch returning 404 for an absent paper: a 405 would have meant the method was
+never wired.
+
+I also found a guard about to point at nothing. `test_api_contract.py`
+hardcoded `frontend/src/utils/api.js`. The moment the replacement shipped it
+would have gone on proving things about a directory nobody builds — passing,
+while the live client called routes that did not exist. It takes the tree as a
+parameter now, and skips one that is absent, so the next replacement cannot
+repeat it.
+
+A guard aimed at the wrong subject is worse than no guard, because it reports
+success. That is the third time this month I have written that sentence about a
+different piece of this codebase.
+
+## Citations in Scribe
+
+The interaction is mine: you are already typing when you decide to cite, so the
+trigger is the word `cite` rather than a shortcut or a dialog. The library
+drops down under the caret, filters as you keep typing, and Enter turns the
+word into `\cite{key}`. Choose nothing and `cite` stays an ordinary word,
+which compiles — nothing is committed by opening the list.
+
+I had planned to track citation numbers and was talked out of it, correctly:
+BibTeX renumbers every `\cite` on each recompile and orders the reference list
+itself. That whole subsystem was free, and building it would have meant
+maintaining a second, worse copy of something the toolchain already does.
+
+Storage had to be fixed before any of it could work. Author lists were
+flattened with `", ".join(authors)` into the vector store, and in BibTeX the
+comma is *syntax* — `Vaswani, Ashish and Shazeer, Noam` is two people. Read
+back for a bibliography, eight authors became sixteen half-names. Nothing
+raised; it printed them. Same shape as the extractor bug I spent the week
+before on, and it is the shape I look for first now: **the failure is confident
+wrongness, not silence.**
+
+Then there is the ceiling nothing in the feature can lift. Extraction is 93%
+right on titles and 86% on author lists, so about one paper in seven cites
+wrongly however good the citation code is. The Library can now edit authors and
+the year, not only the title.
+
+I put that in the Library and not in Scribe on purpose. The library holds the
+record, so a fix there carries into every future citation, every node on the
+map and every search hit; a fix in one project's `.bib` fixes one paper.
+Scribe needs no editor of its own: `references.bib` is already a file in the
+project tree, and entries carry a `thinkstackid` field that BibTeX ignores, so
+a key or an author can be rewritten by hand and the link back to the library
+survives.
