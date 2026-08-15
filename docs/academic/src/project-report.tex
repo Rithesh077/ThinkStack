@@ -1152,7 +1152,9 @@ and which drafts are open. The shelf lists the papers themselves.}
 \centering
 \includegraphics[width=\linewidth]{assets/screens/litgraph.png}
 \caption{LitGraph. Papers are placed by semantic similarity, themes are drawn
-as regions, and links show the strongest relations. Search, gap finding and the
+as regions, and links show the strongest relations. The two clusters are the
+change-point detection and post-quantum cryptography literatures; the space
+between them is where the gap finder looks. Search, gap finding and the
 encrypted vault are reached from this one view.}
 \label{fig:litgraph}
 \end{figure}
@@ -1449,10 +1451,6 @@ precisely because the tree nobody is looking at is the one that rots.
         repeatedly. This is adaptation without gradients: inspectable,
         reversible, and free of the forgetting that on-device fine-tuning of a
         shared model would risk.
-  \item \textbf{Citations in Scribe.} The application has already read the
-        paper, so the entry a hosted editor makes the author fetch by hand is
-        already in the library. The compiler already runs BibTeX, so this needs
-        no compiler change.
   \item \textbf{Source-to-output synchronisation.} The compiler already emits a
         SyncTeX map on every build and nothing reads it. Click-through in both
         directions is available for the cost of parsing a file already on disk.
