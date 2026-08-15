@@ -1111,6 +1111,52 @@ instead when any are present, because a name written surname first contains a
 comma. Splitting on it is precisely the defect the morning had been spent
 removing from the storage layer.
 
+\subsection{15 August: what other people's machines found}
+
+Version 2.3.0 reached the stable channel and, for the first time, testers on
+macOS and Windows ran the replaced interface and the writing feature on
+hardware nobody here owns. The round produced four defects in an afternoon,
+after a fortnight in which every automated suite had been green.
+
+None of the four was a regression. All had been present in earlier builds and
+none had been observed, which is the useful part of the result: the suites were
+not wrong, they were looking at the wrong layer.
+
+Two are worth recording for their shape.
+
+On Windows the reader could not display a paper, and the message named a file
+rather than a document, so the tester reasonably deleted the papers and ingested
+them again. Nothing changed, because no paper was involved. Python assembles its
+table of media types partly from the Windows registry, which has no entry for
+the extension the viewer's worker module uses; the server therefore described
+that module as plain text, and a browser refuses to execute plain text as a
+program. The file arrived intact and was declined on the doorstep. On Linux and
+macOS the built-in table answers correctly, so nothing in development or in the
+test matrix could have seen it: the defect is a browser's reaction to a header,
+and no test in the suite reads headers.
+
+The second was raised independently by testers on two different operating
+systems within an hour of each other: selecting a point on the map takes more
+precision than it should. When two people on different machines describe the
+same difficulty without prompting, the cause is the design rather than the
+hardware. It was geometry. A paper is drawn as a point a few units across and
+the click target was the drawing itself, which is about six pixels once the map
+is scaled to show everything. The drawing was left alone, since larger discs
+were removed months ago for turning the map into a bubble chart, and an
+invisible target now carries the selection at a constant size on screen however
+far the view is zoomed. The label was also unselectable, which mattered more:
+it is thirteen times the area of the point, and a reader who has found the
+paper they want has almost always found it by reading the title.
+
+A third finding was not a defect at all. A tester said the reading surface was
+tiring in a dim room, which is a physical report rather than a preference: the
+page was at 94\% luminance and filling the screen. Lowering it turned out to
+have a trap in it. An intermediate version lowered the page and the surface
+beneath it together and was rejected on sight as looking dusty, because
+luminance had fallen while colour intensity rose, and dark with strong colour
+reads as dirt rather than as paper. The final version lowers only the page, and
+puts the character of the stock into its warmth instead of into its darkness.
+
 \section{Division of Work}
 \markboth{Division of Work}{}
 
@@ -1176,23 +1222,23 @@ automated gate, including changes by the member who wrote those rules.
 \toprule
 \textbf{Measure} & \textbf{Value} \\
 \midrule
-Commits & 336 \\
-Pull requests merged & 82 \\
+Commits & 347 \\
+Pull requests merged & 86 \\
 Application code (Python) & 14\,438 lines, 83 modules \\
-Test code & 8\,375 lines, 46 modules, 1\,042 tests \\
-Interface tests & 213 tests, including every screen mounted \\
+Test code & 8\,375 lines, 48 modules, 1\,085 tests \\
+Interface tests & 222 tests, including every screen mounted \\
 Interface code & 13\,930 lines, 23 components \\
 Desktop shell (Rust) & 777 lines \\
 Build and release tooling & 4\,484 lines, 22 scripts, 7 workflows \\
 REST endpoints & 63 \\
 Architecture decisions recorded & 78 \\
-Releases published & 12, most recently v2.1.15 \\
+Releases published & 13, most recently v2.3.0 \\
 Platforms built and validated automatically & 3 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Figures are counted on the working branch at 14 August and include the citation
+Figures are counted on the working branch at 15 August and include the citation
 work described above, which is complete and tested but not yet released. The
 totals are of tracked files only: generated output, dependencies and the local
 evaluation scripts are excluded, so the counts describe what the team wrote
@@ -1206,9 +1252,9 @@ rather than what the repository contains.
 \toprule
 \textbf{Platform} & \textbf{Status} \\
 \midrule
-Linux & automatically validated, and the replaced interface, the paper editor and citations exercised by hand on physical hardware \\
-Windows & automatically validated; confirmed working by a human tester before the interface was replaced, and not driven by a person since \\
-macOS & automatically validated; exercised by a tester before the interface was replaced, and not driven by a person since. Unsigned applications are still obstructed on first launch \\
+Linux & fully verified. The development platform: every suite runs here, and the replaced interface, the paper editor, citations and the map are exercised by hand on physical hardware, including against 2.3.0 \\
+Windows & verified. 2.3.0 installed and exercised by a tester: writing, citing and compiling confirmed working. The reader defect of 15 August was found here and is fixed \\
+macOS & verified. 2.3.0 installed and exercised by a tester: writing, citing and compiling confirmed working, including the citation list. Unsigned applications are still obstructed on first launch, which is a signing matter rather than a defect \\
 In-application update & working; testers update in place from the beta channel \\
 \bottomrule
 \end{tabularx}
