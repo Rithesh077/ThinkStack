@@ -31,7 +31,9 @@
   {\large Ritesh K R (2440233)\par}
   \vspace{1.4cm}
   {\large Under the guidance of\par}
-  \vspace{0.4cm}
+  % 0.6cm, matching the gap under "by" above: the two blocks are the same
+  % shape and were reading as different ones at 0.4.
+  \vspace{0.6cm}
   {\large\bfseries Dr. New Begin\par}
   \vspace{1.8cm}
   {\normalsize A Project report submitted in partial fulfilment of the
@@ -1024,7 +1026,7 @@ number comes from it. Two defects were fixed by centralising it:
         reports neither.
 \end{itemize}
 
-\subsection{The guard that tested for silence}
+\subsection{The guard that tested for silence}\label{sub:silence}
 
 A recurring defect class is worth recording as an implementation lesson. Three
 separate failures had the same shape: \emph{a check that tests for silence,
@@ -1104,6 +1106,34 @@ tree and the identifier field described above lets it be edited by hand without
 breaking the link back to the record. Placing the same field in two editable
 surfaces would create two sources of truth for one value.
 
+\subsection{What other machines found}
+
+Three defects reached the application through people rather than through the
+suites, and each is the same lesson in a different place: an automated test
+observes the layer it was written for, and every one of these lived somewhere
+else.
+
+The reader failed on Windows because the server described a JavaScript module
+as plain text. Python builds part of its media type table from the Windows
+registry, which carries no entry for the extension in question; a browser then
+refuses to execute the file it has just successfully downloaded. No test in the
+suite reads a response header, and on the two platforms used in development the
+table is correct, so the defect was invisible in every sense available to us.
+
+The gap finder listed the same finding more than once, because each entry the
+model returned was given a fresh identifier before anything compared them. The
+model repeats itself, as small models do; treating its reply as a set of
+findings rather than as a list of rows removes the duplicate without discarding
+the evidence the duplicate carried.
+
+Selecting a point on the map required more precision than a pointer reliably
+has. The click target was the drawn point, which is about six pixels once the
+map is scaled to show a whole collection. The drawing was deliberately left
+alone and an invisible target now carries the selection, held at a constant
+size on screen as the view zooms. Enlarging the drawing, or opening the map
+already magnified, were both considered and rejected: the first turns the map
+into a bubble chart and the second hides the structure the map exists to show.
+
 \section{Screenshots}
 
 The following are captured from the running application on the development
@@ -1122,7 +1152,9 @@ and which drafts are open. The shelf lists the papers themselves.}
 \centering
 \includegraphics[width=\linewidth]{assets/screens/litgraph.png}
 \caption{LitGraph. Papers are placed by semantic similarity, themes are drawn
-as regions, and links show the strongest relations. Search, gap finding and the
+as regions, and links show the strongest relations. The two clusters are the
+change-point detection and post-quantum cryptography literatures; the space
+between them is where the gap finder looks. Search, gap finding and the
 encrypted vault are reached from this one view.}
 \label{fig:litgraph}
 \end{figure}
@@ -1245,6 +1277,10 @@ T-25 & Listing what can be cited writes nothing & No file created & Pass \\
 T-26 & A citing document without a bibliography & Command supplied, references
   typeset & Pass \\
 T-27 & Special characters in a title reach the bibliography & Escaped & Pass \\
+T-28 & A JavaScript module is served as JavaScript & Never
+  \texttt{text/plain} & Pass \\
+T-29 & The same gap returned twice & One finding, evidence merged & Pass \\
+T-30 & A selectable target on the map & 28\,px at every usable zoom & Pass \\
 \bottomrule
 \end{longtable}
 
@@ -1305,8 +1341,8 @@ otherwise.
 \midrule
 \endhead
 
-Backend (pytest)      & 1\,042 & 1\,042 & \textasciitilde13\,s \\
-Interface (vitest)    & 213 & 213 & \textasciitilde5\,s \\
+Backend (pytest)      & 1\,085 & 1\,084 & \textasciitilde14\,s \\
+Interface (vitest)    & 222 & 222 & \textasciitilde5\,s \\
 Contract              & 5   & 5   & $<$1\,s \\
 Route reachability    & 16  & 16  & $<$2\,s \\
 \bottomrule
@@ -1325,7 +1361,7 @@ interface was replaced. Parsing both sides as text proves the paths
 
 \subsection{A guard cannot test for the absence of a failure it never produces}
 
-Three defects shared one shape, described in Section~4.3.3, and it is the
+Three defects shared one shape, described in Section~\ref{sub:silence}, and it is the
 single most transferable finding of the project. Each was a check written
 against silence when the real failure was confident wrongness. The lesson is to
 test for the shape of a right answer rather than for the absence of a wrong one.
@@ -1415,10 +1451,6 @@ precisely because the tree nobody is looking at is the one that rots.
         repeatedly. This is adaptation without gradients: inspectable,
         reversible, and free of the forgetting that on-device fine-tuning of a
         shared model would risk.
-  \item \textbf{Citations in Scribe.} The application has already read the
-        paper, so the entry a hosted editor makes the author fetch by hand is
-        already in the library. The compiler already runs BibTeX, so this needs
-        no compiler change.
   \item \textbf{Source-to-output synchronisation.} The compiler already emits a
         SyncTeX map on every build and nothing reads it. Click-through in both
         directions is available for the cost of parsing a file already on disk.

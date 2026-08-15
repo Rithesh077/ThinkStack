@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  makeAlpha, lassoFar, gestureFor, citedBy, edgeLit,
+  makeAlpha, lassoFar, gestureFor, citedBy, edgeLit, hitRadius, hitRadiusAt,
 } from '../src/components/litgraph/useCanvas';
 
 const m = (...ids) => new Map(ids.map((id) => [id, { score: 1 }]));
@@ -126,5 +126,73 @@ describe('edgeLit', () => {
   it('leaves an edge with only one end in the gap alone', () => {
     const cited = new Set(['a', 'b']);
     expect(edgeLit(edge('b', 'z'), 'g1', cited)).toBe(false);
+  });
+});
+
+// ─────────────────────────── D-18: hitting a node ───────────────────────────
+//
+// Two testers, on different operating systems, said the same thing without
+// prompting: selecting a node needs more precision than it should. They are
+// describing the geometry. A paper is drawn as a point of light with a radius
+// of 4.5 to 8.5 units on a 1100x760 canvas, and the click listener sits on the
+// group, so the target IS the dot. Zoomed out to 0.79x that is a four-pixel
+// disc.
+//
+// The drawing is deliberate and stays: bubbles turned the plate into a bubble
+// chart. What changes is that the TARGET stops being the drawing.
+
+describe('hitRadius', () => {
+  it('gives the smallest node a target far bigger than its dot', () => {
+    expect(hitRadius(4.5)).toBeGreaterThanOrEqual(14);
+  });
+
+  it('never returns less than the dot it covers', () => {
+    for (const r of [4.5, 6, 8.5, 20]) {
+      expect(hitRadius(r)).toBeGreaterThanOrEqual(r);
+    }
+  });
+
+  it('grows with the node, so a big node is not harder to hit than a small one', () => {
+    expect(hitRadius(8.5)).toBeGreaterThan(hitRadius(4.5));
+  });
+
+  it('stays clear of the next node along', () => {
+    // graph_builder.MIN_SEP is 0.055 of a 1100-unit canvas, so the closest two
+    // nodes sit about 60 units apart. Two touching targets would make the
+    // denser clusters ambiguous, which is a worse bug than a small target.
+    expect(hitRadius(8.5) * 2).toBeLessThan(60);
+  });
+});
+
+describe('hitRadiusAt', () => {
+  it('holds the target at a usable size when the plate is zoomed out to fit', () => {
+    // 22 papers fit at about 0.66, where a fixed 28-unit target measured 19px
+    expect(hitRadiusAt(4.5, 0.66) * 2 * 0.66).toBeGreaterThanOrEqual(27);
+  });
+
+  it('clears the WCAG 2.2 minimum of 24px wherever that is geometrically possible', () => {
+    // Not at every zoom, because below about 0.41 it cannot be: the nodes
+    // themselves are only MIN_SEP * k apart on screen, so a 24px target would
+    // overlap its neighbour. Not touching wins -- an ambiguous click is worse
+    // than a small one, and at that zoom the dots overlap anyway.
+    for (const k of [0.45, 0.66, 1, 1.6, 2.4]) {
+      expect(hitRadiusAt(4.5, k) * 2 * k).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  it('gets as close as it can when even that is impossible', () => {
+    // at 0.15 the whole 60-unit gap is 9px; the target takes what it can
+    expect(hitRadiusAt(4.5, 0.15) * 2 * 0.15).toBeGreaterThan(8);
+  });
+
+  it('never lets two targets touch, however far out', () => {
+    // graph_builder.MIN_SEP is about 60 units on this canvas
+    for (const k of [0.05, 0.15, 0.5]) {
+      expect(hitRadiusAt(8.5, k) * 2).toBeLessThan(60);
+    }
+  });
+
+  it('does not shrink below the un-zoomed target when zoomed in', () => {
+    expect(hitRadiusAt(4.5, 3)).toBeGreaterThanOrEqual(hitRadius(4.5));
   });
 });

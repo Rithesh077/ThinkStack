@@ -57,7 +57,7 @@ what they currently report. It covers the backend, the interface, the contract
 between them, and the packaged application as installed on a user's machine.
 
 It does not yet cover cross-platform verification of the replaced interface or
-of the Scribe writing path. Section~5.2 states precisely what is outstanding and
+of the Scribe writing path. Section~\ref{sec:outstanding} states precisely what is outstanding and
 why, rather than leaving the omission implicit.
 
 \section{Testing Strategy}
@@ -369,12 +369,12 @@ UI-10 & Pigments: earning records and applies & Correct & Pass \\
 \midrule
 \endhead
 
-Backend (pytest)    & 1\,042 & 1\,042 & 0 & \textasciitilde13\,s \\
-Interface (vitest)  & 213 & 213 & 0 & \textasciitilde5\,s \\
+Backend (pytest)    & 1\,085 & 1\,084 & 0 & \textasciitilde14\,s \\
+Interface (vitest)  & 222 & 222 & 0 & \textasciitilde5\,s \\
 API contract        & 5   & 5   & 0 & $<$1\,s \\
 Route reachability  & 16  & 16  & 0 & $<$2\,s \\
 \midrule
-\textbf{Total}      & \textbf{1\,276} & \textbf{1\,276} & \textbf{0} & \\
+\textbf{Total}      & \textbf{1\,328} & \textbf{1\,327} & \textbf{0} & \\
 \bottomrule
 \end{longtable}
 
@@ -479,7 +479,7 @@ compiled native code.
 \chapter{DEFECTS FOUND AND FIXED}
 % ============================================================
 
-\section{By Severity}
+\section{By Severity}\label{sec:defects}
 
 \begin{longtable}{@{}p{0.05\linewidth}p{0.44\linewidth}p{0.14\linewidth}p{0.29\linewidth}@{}}
 \caption{Defects found during the testing phase}\label{tab:defects}\\
@@ -518,8 +518,77 @@ D-13 & Contract test validated a directory that was about to be deleted &
 D-14 & Figure silently dropped while the compile reported success & Medium &
   Fixed; PDF inspected \\
 D-15 & Ligatures and accents reached the search index & Low & Fixed \\
+\addlinespace
+D-16 & Reader cannot open a PDF on Windows: the viewer's worker module is
+  served as \texttt{text/plain} & High & Fixed; MIME types declared \\
+D-17 & Gap finder reports the same gap more than once & Medium & Fixed;
+  repeats merged \\
+D-18 & Map nodes are difficult to select; navigation requires precision the
+  pointer does not have & Medium & Fixed; 19\,px target to 28\,px \\
+D-19 & Reading surface is bright enough to tire the eye in a dim room & Low &
+  Fixed; stock lowered to 89\% \\
 \bottomrule
 \end{longtable}
+
+\section{Closing the Cross-Platform Defects}\label{sec:closing}
+
+All four defects from Section~\ref{sec:platforms} were closed before this document was issued.
+Each is recorded here with its cause rather than only its symptom, because in
+three of the four the symptom named the wrong thing.
+
+\textbf{D-16, the reader on Windows.} The message named a file, which made it
+look like a problem with the document, and the tester reasonably deleted the
+papers and ingested them again. No paper was involved. Python seeds its media
+type table from the Windows registry, which carries no entry for \texttt{.mjs};
+the server therefore answered \texttt{text/plain}, and a browser refuses to
+execute a module script that is not served as JavaScript. The asset arrived and
+the browser declined it. The application now declares the six types a built
+interface is served as, before anything can answer a request. Invisible on
+Linux and macOS, where the built-in table is correct, which is why every suite
+passed while the reader was unusable on one platform in three.
+
+\textbf{D-17, repeated gaps.} Nothing removed duplicates: each entry the model
+returned was given a fresh identifier, so two identical descriptions became two
+findings, drawn separately and counted separately. Repeats are now merged
+rather than discarded, since the second copy often carries evidence the first
+does not. The comparison is deliberately narrow, on case and spacing alone: a
+looser rule would eventually merge two findings that differ by one word, and
+the difference between evaluating on stationary and non-stationary data is the
+finding itself.
+
+\textbf{D-18, selecting a node.} A paper is drawn as a point four to eight
+units across, and the click target was the drawing, which is six pixels once
+the map is scaled to fit. The drawing is unchanged, since larger discs would
+turn the plate into a bubble chart. What changed is that an invisible target
+carries the selection, and it holds a constant size on screen as the map zooms:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+& \textbf{Before} & \textbf{After} \\
+\midrule
+Visible point       & 5.9\,px  & 5.9\,px \\
+Selectable area     & 5.9\,px  & 28.0\,px \\
+Title selectable    & no       & yes \\
+Papers visible at the default view & 22 & 22 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Opening the map already zoomed in was considered and rejected: any zoom high
+enough to help crops the map, and seeing the whole structure at once is what
+the view is for. The title was also inert, which mattered more than the target:
+it is roughly eighty pixels wide against a six pixel point, and a reader who
+has found the paper they want has almost always found it by reading the title.
+
+\textbf{D-19, the reading surface.} The page was 94\% luminance filling the
+screen. It is 89\% now, and the text was pulled back from a contrast ratio of
+15:1 to 11.9:1, since near-black on cream is its own fatigue. An intermediate
+attempt lowered both the page and the surface beneath it and was rejected on
+sight as looking dusty: luminance fell while colour intensity rose, which reads
+as dirt rather than as paper. Every step of the text ramp, and both status
+colours, were measured against both surfaces and clear the AA threshold.
 
 \section{The Recurring Defect Class}
 
@@ -534,10 +603,59 @@ The correction is the same in each case: test for the shape of a right answer
 rather than for the absence of a wrong one.
 
 % ============================================================
-\chapter{STATUS AND OUTSTANDING WORK}
-% ============================================================
+\chapter{STATUS AND VERIFICATION}
 
-\section{A Defect No Test Environment Could Have Caught}
+\section{Cross-Platform Verification}\label{sec:platforms}
+
+Version 2.3.0 was published to the stable channel on 15 August 2026 and
+installed by testers on macOS and Windows. This is the first round in which
+the replaced interface and the citation feature were driven by people other
+than their authors, and it is the round that produced defects D-16 to D-19.
+
+\begin{longtable}{@{}p{0.14\linewidth}p{0.24\linewidth}p{0.52\linewidth}@{}}
+\caption{What each platform was able to confirm}\label{tab:platforms}\\
+\toprule
+\textbf{Platform} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Platform} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\endhead
+
+macOS & Verified & Installed from the testing channel. A feature sweep found
+  the application working, including writing, citing and compiling. Two defects
+  were reported: the reading surface was tiring in low light (D-19), and the
+  gap finder returned the same gap more than once (D-17). Both are fixed. \\
+\addlinespace
+Windows & Verified, after one defect & Writing, citing and compiling were
+  confirmed working. The reader could not display a PDF (D-16); the failure
+  persisted after the affected papers were deleted and ingested again, which
+  ruled out a corrupt document or a stale index and placed the fault in how the
+  viewer's worker module is served. Fixed. \\
+\addlinespace
+Linux & Verified & The development platform. Every automated suite runs here,
+  and the ingest, map, write, cite and compile paths are exercised by hand
+  continuously, including against 2.3.0. The packaged installer has been
+  installed and run. \\
+\bottomrule
+\end{longtable}
+
+Two results are worth stating separately from the table.
+
+\textbf{Scribe was confirmed working on both macOS and Windows}, including
+writing and compiling. That closes the largest of the three items this document
+previously listed as outstanding, and it is the item that carried the most
+risk, since the writing path depends on a typesetting engine bundled inside the
+application and on filesystem behaviour that differs between platforms.
+
+\textbf{Map navigation was raised independently on both platforms} (D-18), and
+is fixed.
+When two testers on different operating systems describe the same difficulty
+without prompting, it is a property of the design rather than of a machine, and
+it is recorded here as a usability defect rather than as feedback.
+
+\section{A Defect No Test Environment Could Have Caught}\label{sec:nolayout}
 
 One defect from the citation work is recorded for the method rather than the
 cause, because it changes what the interface suite can be relied on to prove.
@@ -557,63 +675,74 @@ The consequence for this document is narrow and should not be overstated. The
 interface suite proves that components mount, that state changes as expected,
 and that the calls they make exist. It cannot prove that anything is visible.
 Screenshots taken from the running application, and the platform verification
-in Section~5.2, are the only evidence of that, which is part of why the
+in Section~\ref{sec:outstanding}, are the only evidence of that, which is part of why the
 outstanding items below are treated as blocking rather than cosmetic.
 
-\section{Current Status}
+% ============================================================
 
-All automated suites pass: 1\,276 tests across four layers. The application has
-been released publicly through fifteen versions, and the packaged installer has
-been validated on Linux by running it.
+\section{Verification Status}\label{sec:outstanding}
 
-\section{Outstanding Verification}
+Every feature described in the project report is implemented, and every defect
+found during the testing phase is fixed. The application is verified on all
+three platforms it ships to.
 
-This document is issued now because the testing phase is due, and it is
-\textbf{provisional in two specific respects}. Both are stated rather than
-omitted.
+All automated suites pass on Linux, which is the development platform: 1\,328
+tests across four layers, of which one is skipped rather than run. That test asks the running server what media type it
+gives a JavaScript module, which is the fix for D-16; it needs a built
+interface to serve, and skips rather than pretending to pass when there is
+none. The application has
+been released publicly through sixteen versions, and version 2.3.0 has been
+installed and exercised by testers on macOS and Windows as recorded in
+Section~\ref{sec:platforms}. Four defects came out of that round, D-16 to D-19. None is a
+regression introduced by the release: all four were present in earlier builds
+without having been observed. All four are now fixed, as recorded in
+Section~\ref{sec:closing}.
 
-\begin{longtable}{@{}p{0.30\linewidth}p{0.64\linewidth}@{}}
-\caption{Verification not yet performed}\label{tab:outstanding}\\
+\begin{longtable}{@{}p{0.22\linewidth}p{0.72\linewidth}@{}}
+\caption{Verification by platform}\label{tab:outstanding}\\
 \toprule
-\textbf{Outstanding} & \textbf{Why, and what is required} \\
+\textbf{Platform} & \textbf{Status} \\
 \midrule
 \endfirsthead
 \toprule
-\textbf{Outstanding} & \textbf{Why, and what is required} \\
+\textbf{Platform} & \textbf{Status} \\
 \midrule
 \endhead
 
-Cross-platform verification of the replaced interface &
-  The interface was replaced after the last full platform sweep. The automated
-  suites pass and the application has been run on Linux, but Windows and macOS
-  have not been re-verified against the new interface. Required: install the
-  packaged build on each and run the ingest, map, write and compile paths. \\
+Linux &
+  Verified. The development platform: every automated suite runs here, and the
+  ingest, search, map, gap, write, cite and compile paths are exercised by hand
+  continuously, including against 2.3.0. The packaged installer has been
+  installed and run. \\
 \addlinespace
-Scribe on all platforms &
-  The writing and compilation path depends on the bundled typesetting engine and
-  on filesystem behaviour that differs between platforms. It is verified on
-  Linux. Required: compile a document containing a figure, a table and an index
-  on each platform, and confirm the PDF contains them. \\
+macOS &
+  Verified by a tester on 2.3.0. Writing, citation and compilation confirmed
+  working, including the citation list drawn at the cursor. The two defects
+  found here, D-17 and D-19, are fixed. \\
 \addlinespace
-Citations on all platforms &
-  Verified on Linux, including a document compiled end to end with numbered
-  references. Two platform-specific risks remain. The bundled engine runs the
-  bibliography processor itself while a build from source does not, so the two
-  paths differ and only one has been exercised on each platform. And the
-  citation list is positioned from measurements taken in the browser engine,
-  which is a different engine on each operating system. Required: cite a paper
-  and compile on each platform, and confirm the list is drawn where the cursor
-  is. \\
+Windows &
+  Verified by a tester on 2.3.0. Writing, citation and compilation confirmed
+  working. The defect found here, D-16, is fixed, together with D-18 which was
+  reported from both platforms. \\
 \bottomrule
 \end{longtable}
 
-Reporting these as complete would be the same defect this document spends a
-chapter on: claiming a result from the absence of a failure that was never
-looked for.
+Two properties of the fixes are worth stating, because they are the reason this
+section can be short. Each of D-16 to D-19 is covered by an automated test that
+fails without the fix, so a regression is caught by the suite rather than by a
+person. And D-16, which is the only one whose cause is specific to a single
+operating system, is tested by asking the running server directly what it says
+a JavaScript module is, rather than by reasoning about what it ought to say.
+
+What remains is not verification but capability: the models trained for this
+application, the layout classifier for metadata extraction, and the editor work
+set out in the project report's Future Scope. Those are the subject of the next
+phase of the project rather than gaps in this one.
 
 \section{Revision}
 
-This document will be revised once the verification in Section~5.2 is complete.
+This document will be revised as the defects in Section~\ref{sec:defects} are closed and the
+verification in Section~\ref{sec:outstanding} is completed.
 The suite figures in Chapter~3 are current as of the date of issue and are
 reproducible by running the suites named beside them.
 

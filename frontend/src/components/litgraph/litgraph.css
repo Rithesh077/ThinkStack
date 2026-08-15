@@ -75,7 +75,14 @@
 .lg-label {
   font-family: var(--serif);
   font-size: 10.5px;
-  pointer-events: none;
+  /* Clickable, deliberately. The title is several times the area of the dot it
+     belongs to, and a reader who has found the paper they want has almost
+     always found it by READING the label rather than by spotting the point --
+     so the thing they are looking at should be the thing they can press.
+     It sits inside the node's own <g>, so it selects the right paper.
+     Was `none`, which made the largest target on the map inert. */
+  pointer-events: auto;
+  cursor: pointer;
 }
 .lg-label.lg-sub { font-size: 8.5px; font-style: italic; }
 /* Marginalia: what the reader wrote in the margin about a missing thing. */
