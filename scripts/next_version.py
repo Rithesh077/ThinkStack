@@ -192,9 +192,14 @@ def replay_landings(
 
     Only MERGE COMMITS count, and only by the name of the branch they merged:
 
-        feat/... or feature/...  -> minor, and the patch resets
-        fix/...  or hotfix/...   -> patch
+        feat/... or feature/...  -> one bump of Z
+        fix/...  or hotfix/...   -> one bump of Z
         anything else            -> ignored (chore/, docs/, release merges)
+
+    One rule for both kinds, deliberately; see the comment on the branch test
+    below for why a feature does not move Y. This docstring said
+    "feat -> minor, and the patch resets" long after that stopped being true,
+    which is a good way to spend an afternoon reading the wrong mechanism.
 
     Direct commits never move the version. A merge is the moment work lands,
     and counting the commits inside it as well would bump the number several
