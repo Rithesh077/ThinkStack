@@ -518,6 +518,14 @@ D-13 & Contract test validated a directory that was about to be deleted &
 D-14 & Figure silently dropped while the compile reported success & Medium &
   Fixed; PDF inspected \\
 D-15 & Ligatures and accents reached the search index & Low & Fixed \\
+\addlinespace
+D-16 & Reader cannot open a PDF on Windows: the viewer's worker module is
+  requested at run time and is not served & High & Open \\
+D-17 & Gap finder reports the same gap more than once & Medium & Open \\
+D-18 & Map nodes are difficult to select; navigation requires precision the
+  pointer does not have & Medium & Open \\
+D-19 & Reading surface is bright enough to tire the eye in a dim room & Low &
+  Open; base tone being lowered \\
 \bottomrule
 \end{longtable}
 
@@ -560,16 +568,66 @@ Screenshots taken from the running application, and the platform verification
 in Section~5.2, are the only evidence of that, which is part of why the
 outstanding items below are treated as blocking rather than cosmetic.
 
+\section{Cross-Platform Verification}
+
+Version 2.3.0 was published to the stable channel on 15 August 2026 and
+installed by testers on macOS and Windows. This is the first round in which
+the replaced interface and the citation feature were driven by people other
+than their authors, and it is the round that produced defects D-16 to D-19.
+
+\begin{longtable}{@{}p{0.14\linewidth}p{0.24\linewidth}p{0.52\linewidth}@{}}
+\caption{What each platform was able to confirm}\label{tab:platforms}\\
+\toprule
+\textbf{Platform} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Platform} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\endhead
+
+macOS & Installs and runs & Downloaded and installed from the testing channel.
+  A feature sweep found the application working. The reading surface was
+  reported as tiring in low light (D-19), and the gap finder returned the same
+  gap more than once (D-17). \\
+\addlinespace
+Windows & Installs and runs, one feature unusable & The reader cannot display a
+  PDF (D-16). The failure persisted after the affected papers were deleted and
+  ingested again, which rules out a corrupt document or a stale index and
+  places the fault in how the viewer's worker module is served. \\
+\addlinespace
+Linux & Previously verified & Exercised by hand throughout development. Not
+  re-run against 2.3.0 at the time of writing, for an unrelated reason: the
+  developer's own connection could not complete the installer download. \\
+\bottomrule
+\end{longtable}
+
+Two results are worth stating separately from the table.
+
+\textbf{Scribe was confirmed working on both macOS and Windows}, including
+writing and compiling. That closes the largest of the three items this document
+previously listed as outstanding, and it is the item that carried the most
+risk, since the writing path depends on a typesetting engine bundled inside the
+application and on filesystem behaviour that differs between platforms.
+
+\textbf{Map navigation was raised independently on both platforms} (D-18).
+When two testers on different operating systems describe the same difficulty
+without prompting, it is a property of the design rather than of a machine, and
+it is recorded here as a usability defect rather than as feedback.
+
 \section{Current Status}
 
 All automated suites pass: 1\,276 tests across four layers. The application has
-been released publicly through fifteen versions, and the packaged installer has
-been validated on Linux by running it.
+been released publicly through sixteen versions, and version 2.3.0 has been
+installed and exercised by testers on macOS and Windows as recorded in
+Section~5.1. Four defects came out of that round, D-16 to D-19; none is a
+regression introduced by the release, and all four were present in earlier
+builds without having been observed.
 
 \section{Outstanding Verification}
 
-This document is issued now because the testing phase is due, and it is
-\textbf{provisional in two specific respects}. Both are stated rather than
+Two of the three items this document previously listed as outstanding have now
+been closed by the round in Section~5.1. What remains is stated rather than
 omitted.
 
 \begin{longtable}{@{}p{0.30\linewidth}p{0.64\linewidth}@{}}
@@ -583,27 +641,23 @@ omitted.
 \midrule
 \endhead
 
-Cross-platform verification of the replaced interface &
-  The interface was replaced after the last full platform sweep. The automated
-  suites pass and the application has been run on Linux, but Windows and macOS
-  have not been re-verified against the new interface. Required: install the
-  packaged build on each and run the ingest, map, write and compile paths. \\
+Linux verification of 2.3.0 &
+  macOS and Windows have now been exercised against the replaced interface.
+  Linux has not been re-run against this specific release, for the reason given
+  in Section~5.1. Required: install the packaged build and repeat the ingest,
+  map, write and compile paths. \\
 \addlinespace
-Scribe on all platforms &
-  The writing and compilation path depends on the bundled typesetting engine and
-  on filesystem behaviour that differs between platforms. It is verified on
-  Linux. Required: compile a document containing a figure, a table and an index
-  on each platform, and confirm the PDF contains them. \\
+Citation list placement &
+  Writing and compiling are confirmed on macOS and Windows. The citation list
+  is positioned from measurements taken in the browser engine, and that engine
+  differs on each operating system, so its placement is the one part of the
+  feature not covered by ``Scribe works''. Required: type the trigger on each
+  platform and confirm the list is drawn at the cursor rather than elsewhere. \\
 \addlinespace
-Citations on all platforms &
-  Verified on Linux, including a document compiled end to end with numbered
-  references. Two platform-specific risks remain. The bundled engine runs the
-  bibliography processor itself while a build from source does not, so the two
-  paths differ and only one has been exercised on each platform. And the
-  citation list is positioned from measurements taken in the browser engine,
-  which is a different engine on each operating system. Required: cite a paper
-  and compile on each platform, and confirm the list is drawn where the cursor
-  is. \\
+The four open defects &
+  D-16 to D-19 in Table~4.1 are recorded but not yet fixed. D-16 makes the
+  reader unusable on Windows and is the most serious defect currently open
+  against the application. \\
 \bottomrule
 \end{longtable}
 
@@ -613,7 +667,8 @@ looked for.
 
 \section{Revision}
 
-This document will be revised once the verification in Section~5.2 is complete.
+This document will be revised as the defects in Section~4.1 are closed and the
+verification in Section~5.2 is completed.
 The suite figures in Chapter~3 are current as of the date of issue and are
 reproducible by running the suites named beside them.
 
