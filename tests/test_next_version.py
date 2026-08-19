@@ -162,33 +162,42 @@ class TestXAndYAreDeclared:
         git(repo, "tag", "-a", "v2.4.7", "-m", "s")
         assert bump(repo, "major") == "3.0.0"
 
-    def test_y_carries_into_x_at_twenty(self, repo):
-        # the whole point of the scheme: Y never reaches 20
-        git(repo, "tag", "-a", "v2.19.3", "-m", "s")
+    def test_y_carries_into_x_at_ten(self, repo):
+        # the whole point of the scheme: Y is a single digit, 0-9. A tenth
+        # declared minor moves X and resets Y, so Y never shows two digits.
+        git(repo, "tag", "-a", "v2.9.3", "-m", "s")
         assert bump(repo, "minor") == "3.0.0"
 
     def test_y_below_the_carry_just_increments(self, repo):
-        # 10 was the old radix, and this is the case that would break if
-        # anyone quietly restored it
-        git(repo, "tag", "-a", "v2.9.3", "-m", "s")
-        assert bump(repo, "minor") == "2.10.0"
+        git(repo, "tag", "-a", "v2.3.7", "-m", "s")
+        assert bump(repo, "minor") == "2.4.0"
+
+    def test_y_never_reaches_two_digits(self, repo):
+        # the invariant, stated directly: no declared minor can produce a
+        # two-digit Y from any single-digit Y.
+        for y in range(10):
+            git(repo, "tag", "-a", f"v4.{y}.2", "-m", "s", "-f")
+            major, minor, _ = (int(n) for n in bump(repo, "minor").split("."))
+            assert minor < 10, f"4.{y}.2 + minor produced a two-digit Y"
+            assert (major, minor) == ((5, 0) if y == 9 else (4, y + 1))
 
     def test_the_carry_holds_at_every_scale(self, repo):
-        git(repo, "tag", "-a", "v9.19.9", "-m", "s")
+        # X itself is unbounded -- only Y is a single digit.
+        git(repo, "tag", "-a", "v9.9.9", "-m", "s")
         assert bump(repo, "minor") == "10.0.0"
 
     def test_the_carry_resets_both_lower_columns(self, repo):
         # X moving means the series below it is a different one, so a Y or a Z
         # carried over from the old series would mean nothing
-        git(repo, "tag", "-a", "v2.19.9", "-m", "s")
+        git(repo, "tag", "-a", "v2.9.9", "-m", "s")
         assert bump(repo, "minor") == "3.0.0"
 
     def test_a_declared_bump_always_increases(self, repo):
         # the property the updater depends on: a build must never advertise a
         # number lower than one already installed.
         for before, kind in [("2.0.9", "minor"), ("2.9.9", "minor"),
-                             ("2.19.9", "minor"), ("2.4.1", "major"),
-                             ("9.19.9", "minor")]:
+                             ("2.5.3", "minor"), ("2.4.1", "major"),
+                             ("9.9.9", "minor")]:
             r = repo
             git(r, "tag", "-a", f"v{before}", "-m", "s", "-f")
             after = bump(r, kind)

@@ -9,7 +9,8 @@ far a build has drifted from the current one:
 
 - **Z** advances on its own for anything that lands, and is unbounded
 - **Y** moves only when a human declares a feature release, and carries into X
-  at **twenty** — so `1.19.4` is followed by `2.0.0`, never `1.20.0`
+  at **ten** — so `1.9.4` is followed by `2.0.0`, never `1.10.0`. Y is a single
+  digit, 0–9
 - **X** moving resets both columns below it
 
 Ordering is preserved either way, which is the property that actually matters:
@@ -27,6 +28,76 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 ---
 
 ## [Unreleased]
+
+### Changed
+- **Y carries into X at ten again, not twenty.** The radix was raised to twenty
+  on 2026-08-09 so that X would not climb after ten features, which can be one
+  quiet quarter. Reverted: a two-digit Y is precisely what the scheme exists to
+  avoid — the number is a decimal odometer, and its value is that the distance
+  between two versions is readable without parsing. If X climbs too often that
+  is a statement about how readily a minor is declared, not about the radix.
+  Y is a single digit, 0–9; X is unbounded; Z is unbounded and resets whenever
+  a column above it moves.
+
+Otherwise a new development cycle. See `docs/FUTURE_WORK.md` for what is
+planned.
+
+---
+
+## [2.3.5] — 2026-08-15
+
+The first round in which testers on machines nobody here owns ran the real
+installers. It produced four defects in an afternoon, after a fortnight in which
+every automated suite had been green. None was a regression; all had been
+present and unobserved. They are repaired on one branch and released as one
+increment, because four branches would have meant four gigabyte builds and four
+version numbers for what was, from a user's position, one afternoon's
+correction.
+
+### Fixed
+- **Windows: no PDF would open.** The message named a file rather than a paper,
+  so the tester reasonably deleted and re-ingested everything, which changed
+  nothing because no paper was involved. Python assembles its table of media
+  types partly from the Windows registry, which has no entry for `.mjs`; the
+  server therefore described the PDF viewer's worker module as plain text, and
+  a browser refuses to execute plain text as a program. The asset arrived intact
+  and was declined on the doorstep. Invisible on Linux and macOS, where the
+  built-in table answers correctly. `register_web_mime_types()` now runs at
+  import, before the static mount — a fix that has to be called by hand is a fix
+  nobody calls.
+- **The gap finder repeated itself.** Valid output, arrived at by more than one
+  route across a corpus large enough to support it, and nothing downstream was
+  obliged to notice. Findings are now deduplicated on the normalised
+  description, with evidence and related documents merged into the survivor and
+  the worse severity kept. Severities are declared worst-first, so the more
+  serious value is the lower index, and the first version of the merge
+  confidently kept the milder one; a test written before the fix caught it.
+- **Selecting a node took more precision than it should.** Raised independently
+  by testers on two operating systems within an hour, which makes it design
+  rather than hardware. The click target was the drawing — about six pixels once
+  the map is scaled to show everything. The drawing is unchanged, since larger
+  discs were removed months ago for turning the map into a bubble chart; an
+  invisible target now carries the selection at a constant size on screen at any
+  zoom. The label, thirteen times the area, is selectable too.
+- **The reading surface was tiring in a dim room.** A physical report, not a
+  preference: the page was at 94% luminance and filling the screen. An
+  intermediate version lowered the page and the desk together and was rejected
+  on sight as dusty — luminance had fallen while colour intensity rose, and dark
+  with strong colour reads as dirt rather than as paper. The shipped version
+  lowers only the page and puts the character of the stock into its warmth.
+
+### Changed
+- **The download page carries its own typefaces.** The previous one fetched
+  three families from a third party, which contradicted the product it was
+  advertising: an application whose premise is that nothing leaves the machine
+  had a front door that could not draw itself without contacting someone else.
+  Inlined, it makes no external request at all and is marginally smaller than
+  the page it replaced. It also cannot be half-deployed, because there is no
+  longer a directory that has to reach the right branch at the right moment.
+
+---
+
+## [2.3.0] — 2026-08-15
 
 ### Added
 
@@ -220,6 +291,8 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   or edit that project's `.bib`.
 - The new interface and the citation feature are verified on Linux only.
   Windows and macOS are outstanding.
+
+---
 
 ---
 

@@ -1,9 +1,51 @@
 # Known issues
 
-Open problems, newest first. Written 2026-08-01 after the
-Library · LitGraph · Scribe consolidation, revised the same day after
-investigating the analysis pipeline, and again on 2026-08-02 after merging
-`dev` and clearing both BLOCKING items.
+Open problems, newest first.
+
+## Resolved 2026-08-15 — the first round on other people's machines
+
+Four defects, found in an afternoon by testers on macOS and Windows after a
+fortnight of green suites. None was a regression. All shipped fixed in 2.3.5,
+each with a test that fails without it. Full write-ups in `CHANGELOG.md`.
+
+- **Windows: no PDF would open.** `mimetypes` seeded from the Windows registry
+  has no `.mjs` entry, so the viewer's worker module was served as `text/plain`
+  and the browser refused to execute it. Fixed at import, before the static
+  mount.
+- **The gap finder repeated findings.** Deduplicated on the normalised
+  description; evidence merged, worse severity kept.
+- **Map nodes were hard to click.** An invisible target now holds a constant
+  size on screen at any zoom; labels are selectable.
+- **The page was too bright.** Only the page was lowered, not the desk.
+
+**What the round actually established:** all four passed 1,328 automated tests.
+Two were invisible to any suite by construction — one lived in another
+operating system's registry, and one was pure geometry. `jsdom` computes no
+layout, so a component can be positioned outside the window with every
+interface test green. That is not a gap to close with more tests; it is the
+boundary of what automation can see.
+
+## Still open
+
+- **Model-generated LaTeX tables can be malformed.** A row with more `&` than
+  the `tabular` declares reaches Tectonic and fails with `! Extra alignment
+  tab`. The engine is right; the document is wrong. `_ensure_packages` injects
+  missing packages but nothing validates structure. Two candidate fixes, and
+  they compose: a GBNF grammar that makes the error unrepresentable, and
+  reject-sampling with the compiler in the loop.
+- **Users on ≤1.10.0 cannot update in place.** `window.confirm()` never returns
+  in a Tauri webview on Windows, so the update button cannot complete. They need
+  a manual reinstall. A broken updater cannot ship its own repair.
+- **Windows and macOS bundles have never been enumerated** the way the Linux
+  AppImage has.
+
+---
+
+# Earlier rounds
+
+Written 2026-08-01 after the Library · LitGraph · Scribe consolidation, revised
+the same day after investigating the analysis pipeline, and again on 2026-08-02
+after merging `dev` and clearing both BLOCKING items.
 
 ---
 

@@ -5,6 +5,10 @@ defects; this is for the gap between "works" and "good".
 
 Ordered by how much they change what the app feels like, not by effort.
 
+**Ownership, from 2026-08-18:** the interface is Aditya's and Jitvan's. This
+file and `local/ux-backlog.md` are the handover — everything in them is theirs
+to schedule, reorder or reject. Nothing here is claimed by anyone else.
+
 ---
 
 ## 1. A node click should explain the node
