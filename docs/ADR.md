@@ -766,6 +766,34 @@ Vulkan work was done to reach. It was invisible here because the development
 laptop reaches its RTX 3050 Ti through NVK, so `nvidia-smi` is absent and the
 sentence had never once appeared.
 
+## 2026-08-18: Y carries into X at ten (supersedes 2026-08-09)
+
+**Context.** The radix was raised from ten to twenty on 2026-08-09, so that X
+would not climb after ten declared minors — ten features can be one quiet
+quarter, and a major number that moves for reasons no user can feel says
+nothing.
+
+**Decision.** Back to ten. Y is a single digit, 0-9; at ten it carries into X
+and resets. X is unbounded. Z is unbounded and resets whenever a column above
+it moves.
+
+**Why the earlier reasoning does not hold.** The scheme is a decimal odometer,
+and the whole value of that is that Y never shows two digits — the distance
+between two versions is then readable at a glance, without parsing. A radix of
+twenty permits `1.19.4`, which is the exact shape the scheme was chosen to
+avoid, and it buys nothing the reader can feel either.
+
+The problem the earlier change was aimed at is real but sits elsewhere: if X
+climbs too often, minors are being declared too readily. That is an editorial
+habit, and X and Y are editorial by design. Moving the radix to fix it was
+treating a judgement problem as an arithmetic one.
+
+**Consequence.** `MINOR_RADIX = 10` in `scripts/next_version.py`, with tests
+asserting the invariant directly rather than by example. `v1.10.0`, already
+published, keeps a two-digit Y that the rule now forbids — re-tagging a
+published release is blocked by the `v*` ruleset, and anyone on it would see a
+version that no longer exists. It corrects itself at the next declared minor.
+
 ## 2026-08-09: Y carries into X at twenty
 
 **Context.** The version scheme carried Y into X at ten, so a tenth feature

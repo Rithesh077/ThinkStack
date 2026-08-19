@@ -1148,7 +1148,26 @@ far the view is zoomed. The label was also unselectable, which mattered more:
 it is thirteen times the area of the point, and a reader who has found the
 paper they want has almost always found it by reading the title.
 
-A third finding was not a defect at all. A tester said the reading surface was
+A third was quieter and easier to dismiss. On macOS the gap finder returned the
+same finding several times in one report, worded slightly differently each time.
+Nothing had failed: the output was valid, the model had simply arrived at one
+observation by more than one route across a corpus large enough to support it,
+and nothing downstream was obliged to notice. The repair is a deduplication
+keyed on the finding's description once whitespace, case and trailing
+punctuation are normalised, with the evidence and the related documents of the
+repeats merged into the survivor so that nothing a reader might act on is
+discarded. Severity is merged by keeping the worst of the two, which sounds
+obvious and was not: the severities are declared worst-first, so the more
+serious value is the lower index, and the first version of the merge confidently
+kept the milder one. A test written before the fix caught it.
+
+What is worth recording is not the bug but its class. It is the only one of the
+four that a suite could plausibly have caught, and the reason none did is that
+every assertion asked whether a gap was well-formed and none asked whether the
+report contained the same gap twice. Correct output and useful output are not
+the same property, and only the first had ever been tested.
+
+A fourth finding was not a defect at all. A tester said the reading surface was
 tiring in a dim room, which is a physical report rather than a preference: the
 page was at 94\% luminance and filling the screen. Lowering it turned out to
 have a trap in it. An intermediate version lowered the page and the surface
@@ -1156,6 +1175,41 @@ beneath it together and was rejected on sight as looking dusty, because
 luminance had fallen while colour intensity rose, and dark with strong colour
 reads as dirt rather than as paper. The final version lowers only the page, and
 puts the character of the stock into its warmth instead of into its darkness.
+
+\subsection{15 August: one branch, four repairs, and a page that carries itself}
+
+The four findings were repaired on a single branch rather than four, and
+released as one increment. The reasoning was not tidiness. Each fix had to be
+verified against the same build the testers would receive, and four branches
+would have produced four builds of roughly a gigabyte each, four validation
+runs, and four version numbers for what was, from a user's position, one
+afternoon's correction. Every fix carries a test that fails without it, which is
+the only defence against a repair that quietly stops working later.
+
+The reading surface was taken to the shade the tester's report implied, and the
+work was checked in a browser against the real interface rather than judged from
+swatches, because the earlier attempt had been rejected on sight for looking
+dusty and no measurement had predicted that. Two properties were held apart
+deliberately: the page was lowered and the desk beneath it was not, since the
+glare had always been the page.
+
+The download page was replaced in the same increment. The version it succeeded
+still fetched three typefaces from a third party, which contradicted the product
+it was advertising: an application whose premise is that nothing leaves the
+machine had a front door that could not draw itself without contacting someone
+else. The replacement carries its typefaces inside the file and makes no
+external request at all, which also removed a class of failure rather than a
+dependency --- there is no longer a directory that has to reach the right branch
+at the right moment for the page to render as designed, so it cannot be
+half-deployed. It is marginally smaller than the page it replaced.
+
+Version 2.3.5 reached the stable channel the same day, carrying all four
+repairs. The interval that matters is not the one between the reports and the
+fixes, which was hours, but the one between the defects entering the product and
+anybody seeing them, which was a fortnight of green suites. Nothing in the
+process detected them and nothing in the process could have. They were found
+because the software was put in front of people who had not built it, on
+machines nobody here owns, and that step has no automated equivalent.
 
 \section{Division of Work}
 \markboth{Division of Work}{}
@@ -1222,17 +1276,17 @@ automated gate, including changes by the member who wrote those rules.
 \toprule
 \textbf{Measure} & \textbf{Value} \\
 \midrule
-Commits & 347 \\
-Pull requests merged & 86 \\
-Application code (Python) & 14\,438 lines, 83 modules \\
-Test code & 8\,375 lines, 48 modules, 1\,085 tests \\
+Commits & 399 \\
+Pull requests merged & 102 \\
+Application code (Python) & 16\,276 lines, 91 modules \\
+Test code & 9\,424 lines, 51 modules, 1\,085 tests \\
 Interface tests & 222 tests, including every screen mounted \\
-Interface code & 13\,930 lines, 23 components \\
+Interface code & 14\,356 lines, 23 components \\
 Desktop shell (Rust) & 777 lines \\
 Build and release tooling & 4\,484 lines, 22 scripts, 7 workflows \\
 REST endpoints & 63 \\
 Architecture decisions recorded & 78 \\
-Releases published & 13, most recently v2.3.0 \\
+Releases published & 7 on the release page, most recently v2.3.5 \\
 Platforms built and validated automatically & 3 \\
 \bottomrule
 \end{tabular}
@@ -1259,6 +1313,19 @@ In-application update & working; testers update in place from the beta channel \
 \bottomrule
 \end{tabularx}
 \end{center}
+
+The versions named above are the ones testers actually installed. The four
+repairs of 15 August shipped afterwards in 2.3.5, which is now the stable
+release; no platform has yet been exercised by hand against it. The distinction
+is kept deliberately, since a table that reported the current version as
+verified would be claiming a test nobody has run.
+
+One consequence of the updater defect is worth stating plainly here, because it
+affects real installations rather than the repository: the fix cannot reach the
+people who most need it. Anyone still on a version at or below 1.10.0 has the
+webview dialogue that never returns, so the update button cannot complete, and
+they have to download and reinstall by hand. A broken updater is the one defect
+that cannot deliver its own repair.
 
 \section{Planned Work}
 
