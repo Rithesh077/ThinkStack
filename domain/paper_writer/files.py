@@ -31,7 +31,7 @@ from pathlib import Path
 # Files ThinkStack writes and owns. They are regenerated on every compile and
 # mean nothing to an author, so listing them turns a four-file project into a
 # nine-file one where the two that matter are hard to find.
-HIDDEN_NAMES = {"meta.json"}
+HIDDEN_NAMES = {"meta.json", "links.json"}
 HIDDEN_SUFFIXES = {
     ".aux", ".log", ".out", ".toc", ".synctex.gz", ".fls", ".fdb_latexmk",
     ".bbl", ".blg",

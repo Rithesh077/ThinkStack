@@ -3756,3 +3756,65 @@ input::-webkit-credentials-auto-fill-button {
 .upload-failures svg { color: var(--danger); flex-shrink: 0; align-self: center; }
 .upload-failure-name { font-family: var(--sans); color: var(--ink); }
 .upload-failure-why { font-size: var(--type-xs); color: var(--ink-3); }
+
+/* ── linked files ──────────────────────────────────────
+   Files a paper uses that live elsewhere on the machine. Rendered under the
+   project's own tree and set apart by a rule rather than an indent, because
+   they are not children of the project -- they are references out of it, and
+   indenting them under the tree would say the opposite.
+
+   The three states are told in WORDS, not only in colour: "missing" and
+   "moved" are labels. A reader who cannot distinguish the tones still learns
+   which file needs attention, and this design language keeps colour for
+   emphasis rather than for meaning. */
+.lf {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+.lf-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 0.55rem 0.25rem;
+}
+.lf-title {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: var(--type-xs); color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.lf-head button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.15rem; border-radius: 2px; display: inline-flex;
+}
+.lf-head button:hover { color: var(--ink); background: var(--sheet-2); }
+
+.lf-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-size: var(--type-sm);
+  border-radius: 2px;
+}
+.lf-row:hover { background: var(--sheet-2); }
+.lf-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2);
+}
+.lf-row.is-missing .lf-name { color: var(--ink-3); text-decoration: line-through; }
+.lf-meta { font-size: var(--type-xs); color: var(--ink-3); white-space: nowrap; }
+.lf-warn  { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--danger); }
+.lf-moved { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--ink-3); }
+
+.lf-actions { display: inline-flex; gap: 0.15rem; opacity: 0; }
+.lf-row:hover .lf-actions,
+.lf-row.is-missing .lf-actions { opacity: 1; }   /* a broken link always offers the way out */
+.lf-actions button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.1rem 0.25rem; border-radius: 2px; font-size: var(--type-xs);
+  display: inline-flex; align-items: center;
+}
+.lf-actions button:hover { color: var(--ink); background: var(--sheet-3); }
+
+.lf-empty { font-size: var(--type-xs); color: var(--ink-4); padding: 0 0.55rem 0.3rem; }
+.lf-typed { padding: 0.15rem 0.55rem 0.3rem; }
