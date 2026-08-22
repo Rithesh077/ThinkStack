@@ -1,4 +1,9 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  FORCE_DEFAULTS, ALPHA_DECAY, ALPHA_MIN, anchorFor,
+  seed as seedForces, link as linkForces, step as stepForces,
+} from './forces';
+import { localGraph } from './panel';
 
 /**
  * The LitGraph canvas engine.
@@ -176,6 +181,80 @@ export const hitRadiusAt = (r, k, min = 28) =>
 export const lassoFar = (a, b, k) => Math.hypot(b.x - a.x, b.y - a.y) >= 4 / k;
 
 /**
+ * How far apart two gap markers have to be to read as two.
+ *
+ * The outer ring is 31, so 84 leaves a clear gap between two of them rather
+ * than letting the rings kiss. Measured on the plate, not derived: at 76 the
+ * five gaps of a nine-paper library still touched.
+ */
+const GAP_SEP = 84;
+
+/**
+ * Where a hand-arranged map is kept.
+ *
+ * Same convention as lg-panel-w and lg-has-picked in LitGraph.jsx: a namespaced
+ * key, written directly. A pinned paper is the user's own statement about where
+ * something belongs and it outranks both the projection and the simulation, so
+ * it has to survive a reload -- otherwise tidying the map is something you do
+ * once per session and lose.
+ */
+const PINS_KEY = 'lg-pins';
+
+/**
+ * Read the pins back, keeping only papers that are still in the library.
+ *
+ * The prune is the point: a pin is a coordinate against a doc_id, and a doc_id
+ * that has been deleted (or a store written by an older build) would otherwise
+ * sit in localStorage forever and, worse, hold a position for a paper that no
+ * longer exists. Any parse failure is treated as "no pins" rather than thrown:
+ * a corrupt preference must not take the map down with it.
+ */
+function savePins(pins) {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(PINS_KEY, JSON.stringify(pins));
+  } catch {
+    // A full or blocked store is not a reason to lose the drag on screen.
+  }
+}
+
+export function loadPins(raw, ids) {
+  let saved;
+  try {
+    saved = JSON.parse(raw || '{}');
+  } catch {
+    return {};
+  }
+  if (!saved || typeof saved !== 'object') return {};
+  const live = new Set(ids);
+  const out = {};
+  Object.entries(saved).forEach(([id, at]) => {
+    if (!live.has(id)) return;
+    if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.y)) return;
+    out[id] = { x: at.x, y: at.y };
+  });
+  return out;
+}
+
+/**
+ * A paper's radius, in one place.
+ *
+ * `length` is what the map has always drawn -- a longer paper is a bigger dot.
+ * `links` is Obsidian's answer and often the better one here, where a paper
+ * everything argues with matters more than a long paper. Shared with the
+ * collision, which has to reserve the space the dot is going to want.
+ */
+function radiusOf(n, model, display) {
+  if (display.size === 'uniform') return 6;
+  if (display.size === 'links') {
+    const deg = model.edges.reduce(
+      (s, e) => s + (e.source === n.doc_id || e.target === n.doc_id ? 1 : 0), 0,
+    );
+    return 4 + Math.min(deg, 8) * 0.62;
+  }
+  return 4.5 + Math.min(n.chunks, 200) / 50;
+}
+
+/**
  * Which gesture a pointerdown starts.
  *
  * Drag pans; the lasso is behind shift. It was briefly the other way round --
@@ -212,8 +291,12 @@ export const boxesHit = (a, b) =>
  * Earlier entries win, so callers pass them in priority order. World units, so
  * the answer holds at every zoom: labels scale with the viewport.
  */
-export function placeLabels(entries) {
-  const placed = [];
+export function placeLabels(entries, obstacles = []) {
+  // Seeded with the things that were already on the plate before any label
+  // was. A title is several times the width of the dot it belongs to, so on a
+  // relaxed layout the labels cleared each other and then landed squarely
+  // across the papers and the edges -- which is most of what "jumbled" meant.
+  const placed = [...obstacles];
   return entries.map(({ text, x, y, anchor = 'middle' }) => {
     const w = text.length * 6.2;
     const box = {
@@ -228,6 +311,25 @@ export function placeLabels(entries) {
   });
 }
 
+/**
+ * Which level of detail a zoom is at.
+ *
+ * A map of two hundred papers cannot draw two hundred titles and stay a map.
+ * Zoomed out it is a map of TERRITORIES -- the hulls and their names, papers as
+ * points; coming in resolves the biggest papers, then all of them. Named bands
+ * rather than a continuous curve so the label placement can be cached per band
+ * and not recomputed on every frame of a pan.
+ *
+ * Exported for its test.
+ */
+export const LOD_FAR = 0.55;
+export const LOD_NEAR = 1.1;
+export function lodBand(k) {
+  if (k < LOD_FAR) return 0;      // territories only
+  if (k < LOD_NEAR) return 1;     // the most-linked papers name themselves
+  return 2;                       // everything
+}
+
 export default function useCanvas({
   svgRef,
   graph,
@@ -237,12 +339,44 @@ export default function useCanvas({
   expanded,
   onSelect,
   onLasso,
+  // How far the focused paper's neighbourhood reaches, from the panel's depth
+  // control. 1 is what the map has always dimmed to -- the papers this one is
+  // directly linked to -- so the default changes nothing.
+  depth = 1,
 }) {
   // eslint-disable-next-line react-hooks/refs -- see the note above `model`
   const state = useRef({
     cam: { x: 0, y: 0, k: 1 },
     pos: {},
     layers: { themes: true, gaps: true },
+    // ---- the layout dial ----
+    // Not two modes: one number. 0 is the projection the backend computed and
+    // the state the map opens in, and no simulation runs at all. Above 0 the
+    // same papers relax, each held by a spring back to its own projected home
+    // -- which is what stops the library collapsing into a knot. Either way it
+    // writes to `state.pos`, so everything downstream -- the lasso, the
+    // minimap, fitTo, the click targets -- is free and never learns about it.
+    blend: 0,
+    forces: { ...FORCE_DEFAULTS },
+    // doc_id -> {x, y} the user put it at. Survives the dial, a reload and an
+    // ingest; loaded and pruned in rebuildModel.
+    pins: {},
+    // Which LOD band the label placement was resolved for, so panning inside
+    // one band costs nothing.
+    band: -1,
+    // Three states the map has always had and never shown. A paper with no
+    // edge above EDGE_THRESHOLD is on the plate saying nothing; a paper that
+    // was ingested but never analysed looks exactly like one that was; an
+    // encrypted paper is a title and nothing else. All three default to
+    // visible, because hiding something by default is how you lose it.
+    filters: { orphans: true, unanalysed: true, encrypted: true },
+    // `size` picks what a dot's radius means; `fade` is the zoom at which
+    // titles come in; `thickness` scales the similarity strokes.
+    display: { size: 'length', fade: 0.5, thickness: 0.5 },
+    sim: null,
+    simLinks: null,
+    simRaf: 0,
+    alpha: 0,
     cancelTween: () => {},
     // What restyle() writes to, collected once while the scene is built. Every
     // entry holds the elements themselves, so restyling is a loop over arrays
@@ -261,6 +395,75 @@ export default function useCanvas({
   // discarding this one silently resets the camera and every node position.
   // eslint-disable-next-line react-hooks/refs -- deliberate; see above
   const model = useRef({ nodes: [], edges: [], themes: [], gaps: [] }).current;
+
+  /**
+   * Gaps have no embedding of their own, so they are placed at the centroid of
+   * the papers they cite. That is also what makes them *look* like a property
+   * of a region rather than a separate kind of object floating free.
+   *
+   * Its own function because the force layout has to redo it on every tick: a
+   * gap that stayed put while the papers under it moved would stop being about
+   * them, which is the one thing a gap marker has to be.
+   */
+  const placeGaps = useCallback(() => {
+    const placed = [];
+    model.gaps.forEach((g) => {
+      const pts = g.doc_ids.map((d) => state.pos[d]).filter(Boolean);
+      if (!pts.length) return;
+      const at = {
+        x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+        y: pts.reduce((s, p) => s + p.y, 0) / pts.length - 70,
+      };
+      state.pos[g.gap_id] = at;
+      placed.push(at);
+    });
+
+    // polish.md #7: a gap was dropped at its centroid with no test of what was
+    // already there. Two gaps drawn from overlapping sets of papers share most
+    // of a centroid, so five of them stack into one bullseye -- and a relaxing
+    // layout, which pulls those papers together, makes it certain rather than
+    // likely. A few passes of the same separation the papers get.
+    //
+    // GAP_SEP is the outer ring (31) plus a little, so two markers read as two.
+    for (let pass = 0; pass < 12; pass++) {
+      for (let i = 0; i < placed.length; i++) {
+        for (let j = i + 1; j < placed.length; j++) {
+          const a = placed[i];
+          const b = placed[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let d = Math.hypot(dx, dy);
+          if (d >= GAP_SEP) continue;
+          if (d < 1e-6) { dx = (i % 2 ? 1 : -1); dy = (j % 2 ? 1 : -1); d = Math.hypot(dx, dy); }
+          const push = ((GAP_SEP - d) / 2) * 0.9;
+          a.x -= (dx / d) * push; a.y -= (dy / d) * push;
+          b.x += (dx / d) * push; b.y += (dy / d) * push;
+        }
+      }
+    }
+  }, [model, state]);
+
+  /**
+   * What a paper takes up on the plate, for the collision.
+   *
+   * Not the dot -- the dot plus the TITLE under it. A 26-character label is
+   * about 150 world units wide and the dot is nine, so separating dots and
+   * hoping is what put titles across the edges. Wide and short, hence an
+   * ellipse. The title is what render() will actually draw, truncated the same
+   * way, so the reservation matches the thing that turns up.
+   */
+  const footprints = useCallback(() => {
+    const out = {};
+    model.nodes.forEach((n) => {
+      const r = radiusOf(n, model, state.display);
+      const shown = n.title.length > 26 ? 26 : n.title.length;
+      out[n.doc_id] = {
+        rx: Math.max(r + 6, (shown * 6.2) / 2),
+        ry: r + 16,
+      };
+    });
+    return out;
+  }, [model, state]);
 
   /**
    * Positions every node and gap from the graph payload. Called at the top of
@@ -283,18 +486,84 @@ export default function useCanvas({
     model.nodes.forEach((n) => {
       state.pos[n.doc_id] = { x: n.x * W, y: n.y * H };
     });
-    // Gaps have no embedding of their own, so they are placed at the centroid
-    // of the papers they cite. That is also what makes them *look* like a
-    // property of a region rather than a separate kind of object floating free.
-    model.gaps.forEach((g) => {
-      const pts = g.doc_ids.map((d) => state.pos[d]).filter(Boolean);
-      if (!pts.length) return;
-      state.pos[g.gap_id] = {
-        x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-        y: pts.reduce((s, p) => s + p.y, 0) / pts.length - 70,
-      };
+
+    // Pins outrank the projection at every point on the dial. Read once per
+    // payload, pruned against it, so a deleted paper cannot hold a coordinate.
+    state.pins = loadPins(
+      typeof localStorage === 'undefined' ? '{}' : localStorage.getItem(PINS_KEY),
+      model.nodes.map((n) => n.doc_id),
+    );
+    Object.entries(state.pins).forEach(([id, at]) => {
+      if (state.pos[id]) { state.pos[id].x = at.x; state.pos[id].y = at.y; }
     });
-  }, [graph, model, state]);
+
+    // The projection is the baseline; above blend 0 the simulation's own
+    // coordinates are then written over it, so a structural re-render mid-relax
+    // redraws where things ARE rather than snapping the scene back to PCA. A
+    // simulation that no longer covers the payload (a paper arrived, one was
+    // deleted) is dropped and reseeded on next start.
+    if (state.blend > 0 && state.sim) {
+      if (state.sim.length === model.nodes.length) {
+        state.sim.forEach((p) => {
+          if (state.pos[p.id]) { state.pos[p.id].x = p.x; state.pos[p.id].y = p.y; }
+        });
+      } else {
+        state.sim = null;
+        state.simLinks = null;
+      }
+    }
+    placeGaps();
+  }, [graph, model, state, placeGaps]);
+
+  /**
+   * Write `state.pos` back onto the scene, without rebuilding it.
+   *
+   * The structural render is expensive by design -- it creates every element,
+   * attaches every listener and resolves the label collisions -- and the force
+   * layout needs new coordinates sixty times a second. So the simulation moves
+   * what is already on screen and nothing else: the same discipline restyle()
+   * uses for hover, applied to geometry instead of colour.
+   *
+   * Labels are deliberately NOT re-placed here. The collision pass is a
+   * whole-scene decision and re-running it per frame would make titles blink in
+   * and out while the graph is moving; the settle calls render() once, which
+   * resolves them properly against where everything ended up.
+   */
+  const reposition = useCallback(() => {
+    const paint = state.paint;
+    paint.nodes.forEach(({ id, g }) => {
+      const p = state.pos[id];
+      if (p && g.parentNode) g.parentNode.setAttribute('transform', `translate(${p.x},${p.y})`);
+    });
+    paint.gapNodes.forEach(({ id, g }) => {
+      const p = state.pos[id];
+      if (p && g.parentNode) g.parentNode.setAttribute('transform', `translate(${p.x},${p.y})`);
+    });
+    paint.edges.forEach(({ line, a, b }) => {
+      const pa = state.pos[a];
+      const pb = state.pos[b];
+      if (!pa || !pb) return;
+      line.setAttribute('x1', pa.x); line.setAttribute('y1', pa.y);
+      line.setAttribute('x2', pb.x); line.setAttribute('y2', pb.y);
+    });
+    paint.gapEdges.forEach((line) => {
+      const pg = state.pos[line.dataset.gap];
+      const pd = state.pos[line.dataset.doc];
+      if (!pg || !pd) return;
+      line.setAttribute('x1', pg.x); line.setAttribute('y1', pg.y);
+      line.setAttribute('x2', pd.x); line.setAttribute('y2', pd.y);
+    });
+    (paint.hulls || []).forEach(({ path, label, doc_ids }) => {
+      const pts = doc_ids.map((d) => state.pos[d]).filter(Boolean);
+      if (!pts.length) return;
+      path.setAttribute('d', hullPath(pts));
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const R = Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy))) + 46;
+      label.setAttribute('x', cx);
+      label.setAttribute('y', cy + R * 0.82 + 18);
+    });
+  }, [state]);
 
   /**
    * One camera paint. Never call this directly from an input handler --
@@ -322,11 +591,57 @@ export default function useCanvas({
           ? 1
           : Math.max(0, 1 - (k - 1.6))
         : 0;
-    // The label list is collected while the scene is built. It used to be a
-    // querySelectorAll over the whole document, run on every pointermove.
-    const o = k < 0.5 ? 0 : Math.min(1, (k - 0.5) * 3);
-    state.paint.labels.forEach((t) => {
-      t.style.opacity = o;
+    // ---- level of detail ----
+    //
+    // Two hundred papers cannot draw two hundred titles and stay a map. Far
+    // out this is a map of TERRITORIES: hulls, their names, papers as points.
+    // Coming in resolves the most-linked papers, then all of them.
+    //
+    // The placement pass is O(n^2) over candidates and must never run on a
+    // pan, so it runs only when the BAND changes. Everything else here is a
+    // per-frame attribute write, which is what paintCam is for.
+    const band = lodBand(k);
+    if (band !== state.band) {
+      state.band = band;
+      const slots = state.paint.slots || [];
+
+      // The dots, so a title can no longer be placed on top of a paper. This
+      // was the omission that let labels land across the plate.
+      const obstacles = slots.filter((sl) => sl.box).map((sl) => sl.box);
+
+      // Which titles are even offered. Hulls always; papers by band, in
+      // descending link count so the ones that carry the structure win.
+      const ranked = slots
+        .filter((sl) => sl.kind === 'node')
+        .sort((a, b) => b.rank - a.rank);
+      const budget = band === 0 ? 0 : band === 1 ? Math.ceil(ranked.length * 0.25) : ranked.length;
+      const offered = new Set(ranked.slice(0, budget));
+
+      const candidates = slots.filter(
+        (sl) => sl.kind !== 'node' || offered.has(sl),
+      );
+      const ok = placeLabels(candidates, obstacles);
+      const verdict = new Map(candidates.map((sl, i) => [sl, ok[i]]));
+      slots.forEach((sl) => {
+        sl.el.style.display = verdict.get(sl) ? '' : 'none';
+      });
+
+      // Papers shrink to points when nothing is named: at that distance the
+      // dot is a position, not an object, and full-size dots read as a bubble
+      // chart of nothing.
+      state.paint.nodes.forEach((n) => {
+        n.circle.setAttribute('r', band === 0 ? 2 : n.baseR);
+      });
+    }
+
+    // Obsidian calls this the text fade threshold. It was the constant 0.5,
+    // which is still where the slider sits by default, so nothing moves until
+    // somebody reaches for it. It rides on top of the band decision: the band
+    // says which titles exist, this says how strongly they come in.
+    const t = state.display.fade;
+    const o = k < t ? 0 : Math.min(1, (k - t) * 3);
+    state.paint.labels.forEach((lb) => {
+      lb.style.opacity = o;
     });
 
     // The HUD readouts join this paint rather than React state: a pan would
@@ -430,9 +745,8 @@ export default function useCanvas({
     const cited = citedBy(model, focus);
     const neighbours = new Set(cited || []);
     if (focus && !cited)
-      model.edges.forEach((e) => {
-        if (e.source === focus) neighbours.add(e.target);
-        if (e.target === focus) neighbours.add(e.source);
+      localGraph(focus, model.edges, depth).forEach((hop, id) => {
+        if (hop > 0) neighbours.add(id);
       });
 
     const alpha = makeAlpha(matches, focus, neighbours);
@@ -486,7 +800,7 @@ export default function useCanvas({
       gp.path.setAttribute('fill', on ? (colors.mark || colors.accent) : 'transparent');
       gp.path.setAttribute('fill-opacity', on ? 0.5 : 0.16);
     });
-  }, [state, model, matches, focus, colors]);
+  }, [state, model, matches, focus, colors, depth]);
 
   // ---- render ----
   const render = useCallback(() => {
@@ -513,6 +827,10 @@ export default function useCanvas({
     paint.gapEdges = [];
     paint.gapNodes = [];
     paint.labels = [];
+    // Only the force layout reads this one: a territory has to be re-drawn
+    // around its papers as they move, or the outline is describing where they
+    // used to be.
+    paint.hulls = [];
     paint.zoomEl = document.getElementById('lg-zoom-readout');
     paint.mmVp = document.getElementById('lg-mm-vp');
 
@@ -520,6 +838,22 @@ export default function useCanvas({
     // also the order it gets to claim its space. Resolved in one pass at the
     // end, because a label cannot know what will be drawn after it.
     const slots = [];
+
+    // ---- what the filters leave out ----
+    // Computed once here rather than tested per draw, because the edge pass,
+    // the hull pass and the gap pass all need the same answer and an edge to a
+    // hidden paper has to go with it.
+    const linked = new Set();
+    model.edges.forEach((e) => { linked.add(e.source); linked.add(e.target); });
+    const hidden = new Set();
+    model.nodes.forEach((n) => {
+      const orphan = !linked.has(n.doc_id);
+      const bare = !n.summary && !n.claims?.length;
+      if (orphan && !state.filters.orphans) hidden.add(n.doc_id);
+      else if (bare && !state.filters.unanalysed) hidden.add(n.doc_id);
+      else if (n.is_encrypted && !state.filters.encrypted) hidden.add(n.doc_id);
+    });
+    state.paint.hidden = hidden;
 
     // ---- territories ----
     // The map is a plate gone over with coloured pencil: hue names a theme and
@@ -539,19 +873,18 @@ export default function useCanvas({
     // theme territories: washed, not filled, and outlined with a solid hairline
     if (state.layers.themes) {
       model.themes.forEach((t, i) => {
-        const pts = t.doc_ids.map((d) => state.pos[d]).filter(Boolean);
+        const pts = t.doc_ids.filter((d) => !hidden.has(d)).map((d) => state.pos[d]).filter(Boolean);
         if (!pts.length) return;
         const pigment = TERRITORY.length ? TERRITORY[i % TERRITORY.length] : colors['ink-2'];
-        L.hulls.appendChild(
-          el('path', {
-            d: hullPath(pts),
-            fill: pigment,
-            'fill-opacity': 0.05,
-            stroke: pigment,
-            'stroke-opacity': 0.34,
-            'stroke-width': 1,
-          }),
-        );
+        const hull = el('path', {
+          d: hullPath(pts),
+          fill: pigment,
+          'fill-opacity': 0.05,
+          stroke: pigment,
+          'stroke-opacity': 0.34,
+          'stroke-width': 1,
+        });
+        L.hulls.appendChild(hull);
         const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
         const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
         const R = Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy))) + 46;
@@ -565,8 +898,11 @@ export default function useCanvas({
         lb.textContent = t.label;
         // first in the list: a theme is the macro read, and losing its label
         // costs more than losing one paper title.
-        slots.push({ el: lb, text: t.label, x: cx, y: cy + R * 0.82 + 18 });
+        slots.push({ el: lb, text: t.label, x: cx, y: cy + R * 0.82 + 18, kind: 'hull' });
         L.hulls.appendChild(lb);
+        paint.hulls.push({
+          path: hull, label: lb, doc_ids: t.doc_ids.filter((d) => !hidden.has(d)),
+        });
       });
     }
 
@@ -577,12 +913,17 @@ export default function useCanvas({
       const a = state.pos[e.source];
       const b = state.pos[e.target];
       if (!a || !b) return;
+      if (hidden.has(e.source) || hidden.has(e.target)) return;
       const ta = territory[e.source];
       const same = ta && ta === territory[e.target];
       const line = el('line', {
         x1: a.x, y1: a.y, x2: b.x, y2: b.y,
         stroke: same ? ta : (colors['ink-3'] || colors['text-3']),
-        'stroke-width': same ? (0.9 + e.weight * 1.4).toFixed(2) : '0.8',
+        // Scaled by the Link thickness control, which centres on 1 so the
+        // shipped weights are what the slider's middle draws.
+        'stroke-width': (
+          (same ? 0.9 + e.weight * 1.4 : 0.8) * (0.3 + state.display.thickness * 1.4)
+        ).toFixed(2),
         'stroke-opacity': same ? (0.3 + e.weight * 0.34).toFixed(2) : '0.3',
       });
       line.dataset.a = e.source;
@@ -598,12 +939,17 @@ export default function useCanvas({
         if (!gp) return;
         g.doc_ids.forEach((d) => {
           const p = state.pos[d];
-          if (!p) return;
+          if (!p || hidden.has(d)) return;
           const line = el('line', {
             x1: gp.x, y1: gp.y, x2: p.x, y2: p.y,
             stroke: colors.mark || colors.accent,
             'stroke-dasharray': '3 3',
           });
+          // Tagged rather than stored as a pair: restyle() walks this array
+          // expecting bare <line>s, and the force layout only needs to know
+          // which two positions each one joins.
+          line.dataset.gap = g.gap_id;
+          line.dataset.doc = d;
           paint.gapEdges.push(line);
           L.edges.appendChild(line);
         });
@@ -617,7 +963,8 @@ export default function useCanvas({
     model.nodes.forEach((n) => {
       const p = state.pos[n.doc_id];
       if (!p) return;
-      const r = 4.5 + Math.min(n.chunks, 200) / 50;
+      if (hidden.has(n.doc_id)) return;
+      const r = radiusOf(n, model, state.display);
       // outer <g> positions, inner <g> is what any animation may touch --
       // writing `transform` on the positioned group erases the translate.
       const outer = el('g', { transform: `translate(${p.x},${p.y})` });
@@ -661,12 +1008,26 @@ export default function useCanvas({
           }),
         );
 
+      // Pinned: put here by hand. A hairline ring in plain ink -- NOT the red
+      // pen, which means gap or live selection and would make a tidied map look
+      // like a map full of findings.
+      if (state.pins[n.doc_id])
+        g.appendChild(
+          el('circle', {
+            r: r + 5, fill: 'none', stroke: colors['ink-3'] || colors['text-3'],
+            'stroke-width': 1, 'stroke-opacity': 0.65,
+          }),
+        );
+
       const t = el('text', { class: 'lg-label', y: r + 13, 'text-anchor': 'middle' });
       t.textContent = n.title.length > 26 ? n.title.slice(0, 25) + '…' : n.title;
       g.appendChild(t);
       paint.labels.push(t);
-      slots.push({ el: t, text: t.textContent, x: p.x, y: p.y + r + 13 });
-      paint.nodes.push({ id: n.doc_id, g, circle, arc, label: t });
+      slots.push({
+        el: t, text: t.textContent, x: p.x, y: p.y + r + 13,
+        kind: 'node', rank: n.deg ?? 0, box: { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2 },
+      });
+      paint.nodes.push({ id: n.doc_id, g, circle, arc, label: t, baseR: r });
       outer.appendChild(g);
       L.nodes.appendChild(outer);
     });
@@ -706,7 +1067,10 @@ export default function useCanvas({
         t.style.fill = red;
         g.appendChild(t);
         paint.labels.push(t);
-        slots.push({ el: t, text: 'gap', x: p.x, y: p.y + 31 * s + 15 });
+        slots.push({
+          el: t, text: 'gap', x: p.x, y: p.y + 31 * s + 15, kind: 'gap',
+          box: { x: p.x - 31 * s, y: p.y - 31 * s, w: 62 * s, h: 62 * s },
+        });
         paint.gapNodes.push({ id: gp.gap_id, g, path: tri, doc_ids: gp.doc_ids });
         outer.appendChild(g);
         L.nodes.appendChild(outer);
@@ -763,7 +1127,7 @@ export default function useCanvas({
           t.style.fill = colors['text-3'];
           g.appendChild(t);
           paint.labels.push(t);
-          slots.push({ el: t, text: t.textContent, x, y: y + 18 });
+          slots.push({ el: t, text: t.textContent, x, y: y + 18, kind: 'claim' });
           outer.appendChild(g);
           L.nodes.appendChild(outer);
         });
@@ -809,9 +1173,8 @@ export default function useCanvas({
 
     // Hide any label that would land on one already placed. The server spaces
     // the nodes (graph_builder.MIN_SEP); it cannot know how wide a title is.
-    placeLabels(slots).forEach((ok, i) => {
-      slots[i].el.style.display = ok ? '' : 'none';
-    });
+    state.paint.slots = slots;
+    state.band = -1;               // force a placement pass for the current zoom
 
     // The scene is built unstyled; this is what colours and dims it.
     state.restyle();
@@ -828,6 +1191,87 @@ export default function useCanvas({
 
   useEffect(() => { restyle(); }, [restyle]);
 
+  // ---- the force layout ----
+  //
+  // Everything here is off unless `state.blend > 0`. At the Meaning end the
+  // dial costs one branch and never starts a frame loop.
+
+  const stopSim = useCallback(() => {
+    if (state.simRaf) cancelAnimationFrame(state.simRaf);
+    state.simRaf = 0;
+  }, [state]);
+
+  /**
+   * Run until the heat is gone, then stop and re-render once.
+   *
+   * The final render is not cosmetic: reposition() deliberately leaves the
+   * label collision pass alone while things are moving, so the scene that has
+   * just settled is still wearing the label decisions from where the papers
+   * used to be. One structural rebuild resolves them against the new layout.
+   */
+  const startSim = useCallback(() => {
+    if (state.simRaf || state.blend <= 0) return;
+    if (!state.sim) {
+      // Seeded from the projection and carrying it as `home`, so the anchor
+      // has somewhere to pull back to. Footprints go in with it: the collision
+      // reserves the title's width, not the dot's.
+      state.sim = seedForces(model.nodes.map((n) => n.doc_id), state.pos, footprints());
+      state.simLinks = linkForces(state.sim, model.edges);
+      // A pin placed before the simulation existed still holds.
+      state.sim.forEach((p) => {
+        const at = state.pins[p.id];
+        if (at) { p.x = at.x; p.y = at.y; p.fx = at.x; p.fy = at.y; }
+      });
+    }
+    if (!state.sim.length) return;
+
+    const frame = () => {
+      state.alpha *= ALPHA_DECAY;
+      stepForces(
+        state.sim,
+        state.simLinks,
+        { ...state.forces, anchor: anchorFor(state.blend) },
+        state.alpha,
+      );
+      state.sim.forEach((p) => {
+        const at = state.pos[p.id];
+        if (at) { at.x = p.x; at.y = p.y; }
+      });
+      placeGaps();
+      reposition();
+      if (state.alpha > ALPHA_MIN && state.blend > 0) {
+        state.simRaf = requestAnimationFrame(frame);
+      } else {
+        state.simRaf = 0;
+        render();
+        // The relaxed layout is a different SIZE, not just a different shape:
+        // the springs pull to `distance` and a small library settles into a
+        // knot a fraction of the plate. Without this the switch reads as
+        // "everything ran away into the corner". Once only, on the first
+        // settle after the switch -- refitting after every drag would yank the
+        // camera out from under the hand doing the dragging.
+        if (state.fitOnSettle) {
+          state.fitOnSettle = false;
+          fit();
+        }
+      }
+    };
+    state.simRaf = requestAnimationFrame(frame);
+  }, [state, model, placeGaps, reposition, render, fit, footprints]);
+
+  /** Put heat back in. Any change to the forces, and every node grab. */
+  const reheat = useCallback(
+    (to = 1) => {
+      state.alpha = Math.max(state.alpha, to);
+      startSim();
+    },
+    [state, startSim],
+  );
+
+  // Nothing may outlive the component. A rAF holding a closure over `model`
+  // after unmount is the classic way a canvas keeps a whole graph payload alive.
+  useEffect(() => stopSim, [stopSim]);
+
   // ---- pan / zoom / lasso ----
   //
   // `graph` is in the dep list for a reason that is not obvious: LitGraph
@@ -840,6 +1284,8 @@ export default function useCanvas({
     if (!svg) return;
     let drag = null;
     let loop = null;
+    let pin = null;
+    let pinId = null;
     const lassoEl = svg.querySelector('#lg-lasso');
 
     const toWorld = (e) => {
@@ -853,7 +1299,31 @@ export default function useCanvas({
     const down = (e) => {
       state.cancelTween();
       const g = gestureFor(e);
-      if (g === 'node' || g === 'none') return;
+      // A press on a paper, in force mode, takes hold of it. Meaning mode
+      // falls through to the node's own click listener exactly as before --
+      // there is nothing to drag when the coordinates are the projection.
+      //
+      // Gaps and claim sub-nodes are excluded: both are placed FROM the papers
+      // they belong to, so dragging one would be dragging a derived value.
+      if (g === 'node') {
+        // Dragging is available at every point on the dial, 0 included: putting
+        // a paper somewhere is a statement about where it belongs, and it would
+        // be a strange rule that you may only make it while the map is relaxed.
+        const hit = e.target.closest('.lg-node');
+        if (!hit || hit.dataset.gap || hit.dataset.claim) return;
+        // At blend 0 there is no simulation to hold the particle, so the drag
+        // moves `state.pos` directly and the pin is the whole of the record.
+        pinId = hit.dataset.id;
+        pin = state.sim?.find((p) => p.id === pinId) || null;
+        if (!pin && !state.pos[pinId]) { pinId = null; return; }
+        const w = toWorld(e);
+        if (pin) { pin.fx = w.x; pin.fy = w.y; }
+        state.pins[pinId] = { x: w.x, y: w.y };
+        if (state.blend > 0) reheat(0.35);
+        svg.setPointerCapture(e.pointerId);
+        return;
+      }
+      if (g === 'none') return;
       if (g === 'pan') {
         drag = { x: e.clientX, y: e.clientY, cx: state.cam.x, cy: state.cam.y };
         svg.style.cursor = 'grabbing';
@@ -864,6 +1334,20 @@ export default function useCanvas({
       svg.setPointerCapture(e.pointerId);
     };
     const move = (e) => {
+      if (pinId) {
+        const w = toWorld(e);
+        if (pin) { pin.fx = w.x; pin.fy = w.y; }
+        state.pins[pinId] = { x: w.x, y: w.y };
+        if (state.blend > 0) reheat(0.3);
+        else {
+          // Nothing is running to move the scene, so move it here.
+          const at = state.pos[pinId];
+          if (at) { at.x = w.x; at.y = w.y; }
+          placeGaps();
+          reposition();
+        }
+        return;
+      }
       if (loop) {
         const p = toWorld(e);
         // A slow drag fires hundreds of moves a second. Without this the path
@@ -883,6 +1367,19 @@ export default function useCanvas({
       applyCam();
     };
     const up = () => {
+      if (pinId) {
+        // Dropped, and it STAYS. Obsidian releases on drop; here a paper you
+        // have moved is your arrangement of the map, and an arrangement that
+        // springs back the moment you let go is not one. It is marked pinned on
+        // the plate and written to localStorage, so it survives the dial, a
+        // reload and the next ingest. Double-click, or Unpin all, undoes it.
+        savePins(state.pins);
+        pin = null;
+        pinId = null;
+        renderRef.current();
+        if (state.blend > 0) reheat(0.25);
+        return;
+      }
       if (loop) {
         const poly = loop;
         loop = null;
@@ -933,12 +1430,29 @@ export default function useCanvas({
     });
     ro.observe(svg);
     
+    // Double-click releases a pinned paper. The pin is the only thing on this
+    // map you can put somewhere by hand, so it needs an undo that is not a trip
+    // to the settings panel.
+    const dbl = (e) => {
+      const hit = e.target.closest?.('.lg-node');
+      const id = hit?.dataset.id;
+      if (!id || !state.pins[id]) return;
+      delete state.pins[id];
+      const p = state.sim?.find((q) => q.id === id);
+      if (p) { p.fx = null; p.fy = null; }
+      savePins(state.pins);
+      if (state.blend > 0) reheat(0.4);
+      else { rebuildModel(); renderRef.current(); }
+    };
+
+    svg.addEventListener('dblclick', dbl);
     svg.addEventListener('pointerdown', down);
     svg.addEventListener('pointermove', move);
     svg.addEventListener('pointerup', up);
     svg.addEventListener('wheel', wheel, { passive: false });
     return () => {
       ro.disconnect();
+      svg.removeEventListener('dblclick', dbl);
       svg.removeEventListener('pointerdown', down);
       svg.removeEventListener('pointermove', move);
       svg.removeEventListener('pointerup', up);
@@ -948,7 +1462,7 @@ export default function useCanvas({
     };
     // state and model are the in-place containers documented at the top.
     // eslint-disable-next-line react-hooks/refs
-  }, [svgRef, state, model, applyCam, onLasso, graph]);
+  }, [svgRef, state, model, applyCam, onLasso, graph, reheat, placeGaps, reposition, rebuildModel]);
 
   // `render` is rebuilt when the graph, the expanded node or the theme colours
   // change. Closing over it directly would make setLayer — and therefore the
@@ -964,6 +1478,94 @@ export default function useCanvas({
   );
 
   /**
+   * Move the dial.
+   *
+   * At 0 the simulation is not merely idle, it is not the source of the
+   * positions at all: rebuildModel writes the projection back and the map is
+   * exactly what the backend computed, which is the state it has to be
+   * possible to return to exactly. Above 0 the anchor is recomputed from the
+   * dial on every tick, so dragging the slider re-relaxes live.
+   *
+   * The camera refits once when leaving 0 and once on arriving back, because
+   * the relaxed layout is a different SIZE and not just a different shape --
+   * without it the switch reads as "everything ran away".
+   */
+  const setBlend = useCallback(
+    (value) => {
+      const next = Math.min(Math.max(value, 0), 1);
+      const wasOff = state.blend <= 0;
+      state.blend = next;
+
+      if (next <= 0) {
+        stopSim();
+        state.alpha = 0;
+        state.sim = null;
+        state.simLinks = null;
+        renderRef.current();
+        fit();
+        return;
+      }
+      if (wasOff) state.fitOnSettle = true;
+      // Re-heat rather than restart: sliding the dial should nudge the layout
+      // it already has, not throw it in the air and settle it again.
+      state.alpha = Math.max(state.alpha, wasOff ? 1 : 0.5);
+      startSim();
+    },
+    [state, stopSim, startSim, fit],
+  );
+
+  /** Let a paper go, and forget where it was put. */
+  const unpin = useCallback(
+    (id) => {
+      delete state.pins[id];
+      const p = state.sim?.find((q) => q.id === id);
+      if (p) { p.fx = null; p.fy = null; }
+      savePins(state.pins);
+      if (state.blend > 0) reheat(0.4);
+      else renderRef.current();
+    },
+    [state, reheat],
+  );
+
+  /** Put the whole hand-arranged map back in the simulation's hands. */
+  const unpinAll = useCallback(() => {
+    state.pins = {};
+    state.sim?.forEach((p) => { p.fx = null; p.fy = null; });
+    savePins(state.pins);
+    if (state.blend > 0) reheat(0.7);
+    else { renderRef.current(); fit(); }
+  }, [state, reheat, fit]);
+
+  /** One force slider moved. Anything that changes the field puts heat back in. */
+  const setForce = useCallback(
+    (name, value) => {
+      state.forces[name] = value;
+      if (state.blend > 0) reheat(0.6);
+    },
+    [state, reheat],
+  );
+
+  /** A filter changed which papers are on the plate. Structural: rebuild. */
+  const setFilter = useCallback(
+    (name, on) => { state.filters[name] = on; renderRef.current(); },
+    [state],
+  );
+
+  /**
+   * A display control changed. Label fade is the one that is NOT structural --
+   * it is a property of the camera paint, so moving that slider must not tear
+   * down and rebuild a scene of several hundred elements per pointer event.
+   */
+  const setDisplay = useCallback(
+    (name, value) => {
+      state.display[name] = value;
+      if (name === 'fade') paintCam();
+      else renderRef.current();
+    },
+    [state, paintCam],
+  );
+
+  /**
    * Stable handle. This MUST be memoised: callers put it in effect dependency
    * lists, and a fresh object each render made the search effect re-run every
    * time — which called setMatches(new Map()) and silently wiped any lasso
@@ -973,8 +1575,17 @@ export default function useCanvas({
   /* eslint-disable react-hooks/refs -- state is the in-place container
      documented at the top of the hook; its identity never changes */
   return useMemo(
-    () => ({ fit, flyTo, fitTo, zoomBy, pos: state.pos, setLayer, W, H }),
-    [fit, flyTo, fitTo, zoomBy, setLayer, state],
+    () => ({
+      fit, flyTo, fitTo, zoomBy, pos: state.pos, setLayer,
+      setBlend, setForce, setFilter, setDisplay, unpin, unpinAll,
+      forces: state.forces, filters: state.filters, display: state.display,
+      pins: state.pins,
+      W, H,
+    }),
+    [
+      fit, flyTo, fitTo, zoomBy, setLayer, setBlend, setForce, setFilter, setDisplay,
+      unpin, unpinAll, state,
+    ],
   );
   /* eslint-enable react-hooks/refs */
 }

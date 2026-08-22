@@ -54,6 +54,11 @@
 
 .lg-stage {
   position: relative;
+  /* The top chrome has to give way to the space it ACTUALLY has, and that is
+     the stage -- not the window. A media query cannot see the sidebar or the
+     side panel, so on a 1440px screen with both open the counts were running
+     past the right edge while the query sat there waiting for 1180. */
+  container-type: inline-size;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -138,7 +143,7 @@
 .lg-x { display: flex; background: none; border: none; color: var(--text-3); cursor: pointer; }
 .lg-x:hover { color: var(--text); }
 
-.lg-layers { display: flex; gap: 6px; }
+.lg-layers { display: flex; flex-shrink: 0; gap: 6px; }
 .lg-chip {
   display: flex;
   align-items: center;
@@ -229,7 +234,11 @@
 .lg-stat-sep { opacity: 0.35; }
 /* the search box and the layer chips are what you act with; the counts are
    what you read. The counts go first when the window gets tight. */
-@media (max-width: 1180px) { .lg-stats { display: none; } }
+/* The search box and the chips are what you act with; the counts are what you
+   read, and they go first when the stage gets tight. Measured against the
+   stage, so opening the panel or the sidebar counts as tight -- which is the
+   whole reason this is a container query and not a media query. */
+@container (max-width: 1280px) { .lg-stats { display: none; } }
 
 /* result count, in the box where the query is */
 .lg-qcount {
@@ -1034,3 +1043,400 @@
 /* A paper whose evidence could not be found gets no marker colour: the border
    would promise a highlight that is not there when you open it. */
 .lg-gap-evidence.lg-muted { border-left-color: var(--border); }
+
+/* ---------- layout dial ---------- */
+.lg-cog {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.lg-cog:hover { color: var(--ink); border-color: var(--rule-2); }
+.lg-cog.on { color: var(--ink); background: var(--sheet-2); border-color: var(--ink); }
+
+/* The one line that stops a relaxed layout being read as the projection. */
+.lg-mode-note {
+  position: absolute;
+  left: 14px;
+  bottom: 52px;
+  z-index: 3;
+  max-width: 340px;
+  margin: 0;
+  padding: 8px 11px;
+  font-family: var(--serif);
+  font-size: var(--type-sm);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.lg-mode-note b { font-style: normal; font-weight: 600; color: var(--ink); }
+/* the action bar owns the bottom of the stage once anything is selected */
+@container (max-width: 900px) { .lg-mode-note { display: none; } }
+
+/* ---------- the cog panel ---------- */
+/* Floats over the plate and traps the pointer, so it is the one shadow that
+   says "held above the page" rather than "lying on it". */
+.lg-settings {
+  position: absolute;
+  top: 62px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: 268px;
+  max-height: calc(100% - 88px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--lift-high);
+}
+.lg-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: var(--type-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+.lg-settings-grp { border-bottom: 1px solid var(--border); }
+.lg-settings-grp:last-child { border-bottom: none; }
+.lg-settings-grp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-base);
+  font-size: var(--type-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.lg-settings-grp-head:hover { color: var(--ink); }
+.lg-settings-body { padding: 0 12px 12px; }
+.lg-settings-note {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-size: var(--type-sm);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.lg-settings-lbl {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--type-xs);
+  color: var(--text-2);
+}
+.lg-settings-wide { width: 100%; margin-top: 10px; }
+.lg-fil { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- slider ---------- */
+/* A ruled line with a square of ink sitting on it. The native input keeps the
+   keyboard behaviour, the value semantics and the screen-reader announcement;
+   only the paint changes. */
+.lg-slider { padding: 7px 0; }
+.lg-slider-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: var(--type-xs);
+  color: var(--text-2);
+}
+.lg-slider-top var {
+  font-family: var(--mono);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.lg-slider input {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.lg-slider input::-webkit-slider-runnable-track { height: 1px; background: var(--rule-2); }
+.lg-slider input::-moz-range-track { height: 1px; background: var(--rule-2); }
+.lg-slider input::-webkit-slider-thumb {
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--ink);
+  border: none;
+  border-radius: 0;
+}
+.lg-slider input::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  background: var(--ink);
+  border: none;
+  border-radius: 0;
+}
+.lg-slider input:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
+.lg-slider.is-off { opacity: 0.38; }
+.lg-slider.is-off input { cursor: not-allowed; }
+
+/* ---------- segmented ---------- */
+.lg-seg {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.lg-seg button {
+  flex: 1;
+  padding: 6px 4px;
+  font-family: var(--font-base);
+  font-size: var(--type-xs);
+  color: var(--text-3);
+  background: var(--surface);
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.lg-seg button + button { border-left: 1px solid var(--border); }
+.lg-seg button:hover { color: var(--text-2); }
+.lg-seg button.on { color: var(--sheet); background: var(--ink); }
+
+/* ---------- local graph, in the panel ---------- */
+/* Obsidian ships a depth slider. Three useful stops is not a slider, it is
+   three buttons, and three buttons say what they will do before you drag. */
+.lg-depth {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  margin: 10px 0 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.lg-depth > span {
+  padding: 0 10px;
+  font-size: var(--type-xs);
+  line-height: 28px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-right: 1px solid var(--border);
+}
+.lg-depth button {
+  width: 30px;
+  height: 28px;
+  font-family: var(--mono);
+  font-size: var(--type-xs);
+  color: var(--text-3);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.lg-depth button:last-child { border-right: none; }
+.lg-depth button:hover { color: var(--text-2); }
+.lg-depth button.on { color: var(--sheet); background: var(--ink); }
+
+.lg-thumb {
+  margin: 10px 0 2px;
+  background: var(--sheet-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.lg-thumb svg { display: block; width: 100%; height: 148px; }
+.lg-thumb-cap {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 8px;
+  font-size: var(--type-xs);
+  color: var(--text-3);
+  border-top: 1px solid var(--border);
+}
+.lg-thumb-cap b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.lg-thumb-node { fill: var(--surface); stroke: var(--ink); stroke-width: 1.2; }
+.lg-thumb-node.is-root { fill: var(--ink); }
+.lg-thumb-edge { stroke: var(--ink-4); }
+
+/* ---------- panel: the placement statement ---------- */
+/* One sentence, at the top, where the six-scroll answer to "why is this paper
+   here" used to be six sections down. Serif, because it is read. */
+.lg-placement {
+  margin: 14px 0 4px;
+  padding: 10px 0 12px;
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.lg-placement b { font-weight: 600; color: var(--ink); }
+.lg-placement .lg-ord {
+  font-family: var(--mono);
+  font-size: var(--type-xs);
+  font-weight: 500;
+}
+
+/* ---------- panel: collapsible sections ---------- */
+/* Same hairline vocabulary as the flat stack this replaces. What changes is
+   that a section can be shut, and that a shut one still states its count. */
+.lg-sec { border-bottom: 1px solid var(--border); }
+.lg-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 0;
+  font-family: var(--font-base);
+  font-size: var(--type-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.lg-sec-head:hover { color: var(--ink); }
+.lg-sec-head .lg-sec-n {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--type-xs);
+  letter-spacing: 0;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.lg-sec-head .lg-car {
+  width: 9px;
+  font-family: var(--mono);
+  color: var(--ink-4);
+}
+.lg-sec-body { padding-bottom: 10px; }
+.lg-sec-body .lg-claim:last-child { border-bottom: none; }
+.lg-claim .lg-w {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.lg-claim.lg-is-gap .lg-tag { color: var(--mark); }
+
+/* The panel's own title is what the map already calls this paper. It was set
+   in the operating sans while the label under the dot was in the reading
+   serif, for the same string. A title is read. */
+.lg-panel h3.lg-paper-title {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.22;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-cog,
+  .lg-seg button,
+  .lg-depth button,
+  .lg-sec-head,
+  .lg-settings-grp-head { transition: none; }
+}
+
+/* ---------- the layout dial ---------- */
+/* Not a switch: a printed scale with two ends named. Meaning is the projection
+   the backend computed; sliding towards Force loosens the spring that holds
+   each paper there. The end you are at inks in, so the dial states its own
+   position without a numeric readout in the top bar. */
+.lg-blend {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.lg-blend > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: var(--type-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  transition: color var(--transition-fast);
+}
+.lg-blend > span.is-live { color: var(--ink); }
+.lg-blend input {
+  width: 104px;
+  height: 12px;
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: ew-resize;
+}
+.lg-blend input::-webkit-slider-runnable-track { height: 1px; background: var(--rule-2); }
+.lg-blend input::-moz-range-track { height: 1px; background: var(--rule-2); }
+.lg-blend input::-webkit-slider-thumb {
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--ink);
+  border: none;
+  border-radius: 0;
+}
+.lg-blend input::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  background: var(--ink);
+  border: none;
+  border-radius: 0;
+}
+.lg-blend input:focus-visible { outline: 1px solid var(--ink); outline-offset: 3px; }
+
+/* The two words ARE the dial's label: a bare ruled line between the chips and
+   the cog is unreadable as a control, whatever the window is doing. So a tight
+   window shortens the scale and drops the glyphs, and the words stay to the
+   very end -- at which point the whole thing goes, rather than becoming a
+   mystery slider. */
+@container (max-width: 1060px) {
+  .lg-blend { gap: 7px; padding: 0 9px; }
+  .lg-blend input { width: 76px; }
+  .lg-blend > span svg { display: none; }
+}
+@container (max-width: 820px) { .lg-blend { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-blend > span { transition: none; }
+}
