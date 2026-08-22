@@ -106,6 +106,16 @@ what is in this collection, and what is missing from it.
   sub-nodes.
 - **The map is the selector** — shift-drag a lasso, or run a search, and the
   resulting set is what Summarize / Claims / Themes / Find-gaps operate on.
+- **The plate can be relaxed, by degree** — one dial from the projection exactly
+  as PCA computed it, through overlap loosened with clusters intact, to a free
+  layout where position is shape rather than meaning. It is a relaxation *of*
+  the projection, not a second layout beside it: every paper keeps a spring back
+  to its own projected home, so the map never stops being a reading of the
+  embedding space.
+- **Take hold of a paper** — drag one to pin it and see what it is tied to.
+  A press that does not move is a selection, not a zero-distance drag.
+- **Read a neighbourhood** — the panel says where a paper sits before it lists
+  anything, and its neighbours can be followed out to a chosen depth.
 
 The graph is derived on every request from data that already persists
 (embeddings, the analysis cache, past runs), so there is no graph state to

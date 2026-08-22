@@ -29,6 +29,24 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 
 ## [Unreleased]
 
+### Added
+- **The map can be relaxed without ceasing to mean anything.** LitGraph draws
+  where PCA put each paper, which is the product's central claim — position
+  encodes meaning — but a static plate cannot be taken hold of. A single dial
+  now runs from the projection exactly as computed, through overlap loosened
+  with clusters intact, to a free layout where position is shape rather than
+  meaning. Every paper keeps a spring back to **its own** projected home rather
+  than to a shared centre, which is what makes it a dial rather than a switch:
+  a small library pulled towards one point, with nothing anchoring any paper,
+  settles into a knot in the middle of an empty plate.
+- **Papers can be dragged and pinned.** A press that does not move is a
+  selection rather than a zero-distance drag — committing on `pointerdown` had
+  pinned every clicked paper where it already sat, and the pin's own re-render
+  then replaced the element before the click landed, so papers stopped being
+  selectable at all.
+- **The panel says where a paper sits** before it lists anything, and a
+  neighbourhood can be followed out to a chosen depth.
+
 ### Changed
 - **Y carries into X at ten again, not twenty.** The radix was raised to twenty
   on 2026-08-09 so that X would not climb after ten features, which can be one
