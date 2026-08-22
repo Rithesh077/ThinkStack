@@ -120,7 +120,21 @@ class Settings(BaseSettings):
     similarity_threshold: float = 0.3
 
     # server
-    host: str = "0.0.0.0"
+    #
+    # Loopback, not 0.0.0.0. This used to default to every interface, which
+    # every launcher then overrode with --host 127.0.0.1 -- the desktop shell,
+    # dev.sh and the bundle validator all pass it. So the safe behaviour held
+    # only because three separate callers remembered, and anything that starts
+    # the binary without the flag (a user double-clicking it, a future script,
+    # a debugging session) published an unauthenticated API to the whole
+    # network. On shared wifi that is the entire library readable by anyone who
+    # scans port 8000.
+    #
+    # An application whose premise is that documents never leave the machine
+    # should not be one forgotten argument away from serving them to a
+    # subnet. Binding wider is still possible, deliberately, through
+    # THINKSTACK_HOST.
+    host: str = "127.0.0.1"
     port: int = 8000
     debug: bool = True
 
