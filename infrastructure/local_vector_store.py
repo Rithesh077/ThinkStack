@@ -84,26 +84,94 @@ class VectorStore:
         self._con.commit()
 
     def _migrate_json_if_present(self):
-        """One-time import of the old vectors.json, then set it aside.
+        """One-time import of the old vectors.json.
 
-        Kept rather than deleted: an installation that downgrades should still
-        find its data, and a migration that destroys its only source has no
-        second attempt if it goes wrong.
+        This runs on a stranger's machine, once, with their entire library at
+        stake, and it gets no second chance if it is wrong. Hence:
+
+        * the source is never removed until the rows are committed AND counted
+          back out of the database;
+        * one malformed entry costs that entry, not the library. An upgrade
+          that discards a corpus because a single row lost a key would be worse
+          than the problem it is fixing;
+        * a source that cannot be read at all is left exactly where it is and
+          said out loud, rather than quietly starting empty -- a user whose
+          papers vanish silently has no way to know anything went wrong;
+        * the whole import is one transaction, so an interruption leaves an
+          empty table and the untouched JSON, which is a state this function
+          knows how to resume from.
         """
         if not self._data_file.exists():
             return
         if self._con.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
             return                      # already migrated; leave both alone
+
         try:
             entries = json.loads(self._data_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning("could not read legacy vectors.json: %s", e)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+            logger.error(
+                "vectors.json exists but could not be read, so it has NOT been "
+                "migrated and has NOT been touched: %s. the library will appear "
+                "empty until this is resolved; the file is still at %s",
+                e, self._data_file,
+            )
             return
-        if not entries:
+
+        if not isinstance(entries, list) or not entries:
             return
-        self._write_rows(entries)
-        self._data_file.rename(self._data_file.with_suffix(".json.migrated"))
-        logger.info("migrated %d vectors from vectors.json into sqlite", len(entries))
+
+        good, skipped = [], 0
+        for e in entries:
+            try:
+                if (
+                    isinstance(e, dict)
+                    and isinstance(e.get("id"), str)
+                    and e.get("embedding")
+                    and e.get("document") is not None
+                ):
+                    good.append(e)
+                else:
+                    skipped += 1
+            except Exception:            # noqa: BLE001 - a row must never abort the run
+                skipped += 1
+
+        if not good:
+            logger.error(
+                "vectors.json held %d entries and none were usable; leaving it "
+                "in place rather than migrating an empty store", len(entries)
+            )
+            return
+
+        try:
+            with self._con:                      # one transaction; rolls back on error
+                for i in range(0, len(good), 500):
+                    self._write_rows(good[i:i + 500], commit=False)
+        except (sqlite3.DatabaseError, ValueError, TypeError) as e:
+            logger.error("migration failed and was rolled back, vectors.json kept: %s", e)
+            return
+
+        stored = self._con.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        if stored < len(good):
+            logger.error(
+                "migration stored %d of %d entries; vectors.json kept", stored, len(good)
+            )
+            return
+
+        # Only now is the source expendable, and it is renamed rather than
+        # deleted: a downgrade should still find its data.
+        try:
+            self._data_file.rename(self._data_file.with_suffix(".json.migrated"))
+        except OSError as e:
+            # Windows will refuse this if anything else holds the file open. The
+            # guard above is "does the table have rows", not "is the file gone",
+            # so a failed rename costs disk space and nothing else.
+            logger.warning("migrated %d vectors but could not rename the source: %s",
+                           stored, e)
+
+        if skipped:
+            logger.warning("migration skipped %d malformed entr%s",
+                           skipped, "y" if skipped == 1 else "ies")
+        logger.info("migrated %d vectors from vectors.json into sqlite", stored)
 
     @staticmethod
     def _pack(embedding) -> bytes:
@@ -113,7 +181,7 @@ class VectorStore:
     def _unpack(blob: bytes) -> list:
         return np.frombuffer(blob, dtype=np.float32).tolist()
 
-    def _write_rows(self, entries: list[dict]):
+    def _write_rows(self, entries: list[dict], commit: bool = True):
         """Insert or replace exactly these entries. Nothing else is touched."""
         self._con.executemany(
             "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?)",
@@ -128,7 +196,8 @@ class VectorStore:
                 for e in entries
             ],
         )
-        self._con.commit()
+        if commit:
+            self._con.commit()
 
     def _load(self):
         """Read every row into memory, once, at startup.
@@ -160,6 +229,23 @@ class VectorStore:
                 }
             )
             mat.append(vec)
+
+        # Ragged widths cannot happen through this class, but a store written
+        # by an older build or edited by hand can still contain them, and
+        # vstack raises rather than returning something usable. Startup must
+        # survive a bad row: the alternative is an application that will not
+        # open at all, which is strictly worse than one missing a vector.
+        widths = {v.shape[0] for v in mat}
+        if len(widths) > 1:
+            keep = max(widths, key=lambda w: sum(1 for v in mat if v.shape[0] == w))
+            logger.error(
+                "vector store holds mixed embedding widths %s; keeping the %d "
+                "that are %d-dimensional and ignoring the rest",
+                sorted(widths), sum(1 for v in mat if v.shape[0] == keep), keep,
+            )
+            paired = [(e, v) for e, v in zip(self._entries, mat) if v.shape[0] == keep]
+            self._entries = [e for e, _ in paired]
+            mat = [v for _, v in paired]
 
         self._embeddings = np.vstack(mat) if mat else None
         logger.info("loaded %d vectors from sqlite", len(self._entries))

@@ -222,3 +222,84 @@ class TestSqliteMigration:
         s.delete(["a"])
         # gone from memory and from the database, not merely filtered out
         assert VectorStore(persist_dir=d).count() == 1
+
+
+class TestMigrationOnSomeoneElsesMachine:
+    """The migration runs once, unattended, on a stranger's library.
+
+    Every case here is something a real data directory can contain. The rule
+    throughout: never lose the source until the rows are committed and counted,
+    and never let one bad row cost the whole corpus.
+    """
+
+    @staticmethod
+    def _legacy(dirpath, payload):
+        dirpath.mkdir(parents=True, exist_ok=True)
+        p = dirpath / "vectors.json"
+        p.write_text(payload if isinstance(payload, str) else __import__("json").dumps(payload),
+                     encoding="utf-8")
+        return p
+
+    def test_unreadable_json_is_kept_and_not_silently_dropped(self, tmp_path):
+        d = tmp_path / "vs"
+        src = self._legacy(d, "{ this is not json")
+        s = VectorStore(persist_dir=str(d))
+        assert s.count() == 0
+        # the user's file must still be there to recover from
+        assert src.exists()
+        assert not (d / "vectors.json.migrated").exists()
+
+    def test_one_malformed_entry_does_not_cost_the_library(self, tmp_path):
+        d = tmp_path / "vs"
+        self._legacy(d, [
+            {"id": "a", "document": "alpha", "embedding": [1.0, 0.0], "metadata": {}},
+            {"id": "b", "document": "beta"},                       # no embedding
+            {"embedding": [0.0, 1.0], "document": "no id"},        # no id
+            {"id": "c", "document": "gamma", "embedding": [0.0, 1.0], "metadata": {}},
+        ])
+        s = VectorStore(persist_dir=str(d))
+        assert s.count() == 2
+        assert sorted(s.get()["ids"]) == ["a", "c"]
+        assert (d / "vectors.json.migrated").exists()
+
+    def test_a_file_with_nothing_usable_is_kept(self, tmp_path):
+        d = tmp_path / "vs"
+        src = self._legacy(d, [{"nonsense": True}, {"also": "nonsense"}])
+        s = VectorStore(persist_dir=str(d))
+        assert s.count() == 0
+        assert src.exists()          # not renamed away; there is nothing to show for it
+
+    def test_an_empty_library_migrates_quietly(self, tmp_path):
+        d = tmp_path / "vs"
+        self._legacy(d, [])
+        assert VectorStore(persist_dir=str(d)).count() == 0
+
+    def test_a_large_library_migrates_in_batches(self, tmp_path):
+        d = tmp_path / "vs"
+        self._legacy(d, [
+            {"id": f"e{i}", "document": f"doc {i}", "embedding": [float(i), 1.0],
+             "metadata": {"doc_id": f"d{i % 7}"}}
+            for i in range(1200)                      # crosses the 500-row batch
+        ])
+        s = VectorStore(persist_dir=str(d))
+        assert s.count() == 1200
+        assert len(s.get(where={"doc_id": "d3"})["ids"]) == 1200 // 7 + (1 if 1200 % 7 > 3 else 0)
+
+    def test_startup_survives_mixed_embedding_widths(self, tmp_path):
+        """A store edited by hand, or written by an older build."""
+        import sqlite3
+        import numpy as _np
+        d = tmp_path / "vs"; d.mkdir()
+        con = sqlite3.connect(str(d / "vectors.db"))
+        con.execute("""CREATE TABLE chunks (id TEXT PRIMARY KEY, doc_id TEXT,
+                       document TEXT NOT NULL, embedding BLOB NOT NULL,
+                       metadata TEXT NOT NULL)""")
+        rows = [("a", None, "two-d", _np.asarray([1.0, 0.0], dtype=_np.float32).tobytes(), "{}"),
+                ("b", None, "two-d", _np.asarray([0.0, 1.0], dtype=_np.float32).tobytes(), "{}"),
+                ("c", None, "three-d", _np.asarray([1.0, 0.0, 0.0], dtype=_np.float32).tobytes(), "{}")]
+        con.executemany("INSERT INTO chunks VALUES(?,?,?,?,?)", rows)
+        con.commit(); con.close()
+
+        s = VectorStore(persist_dir=str(d))          # must not raise
+        assert s.count() == 2                         # the majority width survives
+        assert s.query([1.0, 0.0], n_results=1)["ids"] == ["a"]
