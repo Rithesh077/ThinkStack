@@ -158,6 +158,16 @@ docs/litchart.html
 docs/litgraph-demo.html
 litgraph-app.png
 
+# ── Design canvas working files ──────────────────────────
+# The .dc.html artboards and the seeded canvas the LitGraph redesign was drawn
+# on. Same rule as docs/litgraph-demo.html, the prototype the canvas engine was
+# ported from: the design is the argument for the code, and the code is what
+# ships. The seeded page is also 2.3 MB of editor payload regenerated on every
+# change, which is not a thing to keep 300 revisions of.
+#
+# Not in src-tauri/tauri.conf.json bundle.resources -- checked.
+.design/
+
 # Screenshots taken while checking the interface, and the browser automation's
 # own output. Both land at the repo root by default. They are evidence for a
 # conversation, not part of the product.
