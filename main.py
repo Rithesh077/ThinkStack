@@ -36,6 +36,9 @@ acceleration.apply_override(settings.data_dir)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from domain.paper_writer.compiler import ProjectIdError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -124,10 +127,53 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Cross-origin access, and why it is now a short list rather than "*".
+#
+# "Offline" describes what this application SENDS, not who may call it. The
+# backend is an HTTP server on 127.0.0.1, and the machine running it still has
+# a browser with a network. Any page the user opens can issue a request to
+# localhost -- nothing stops the request being made -- and the header below is
+# the browser asking whether that page may READ the reply.
+#
+# It used to answer "*", which means anyone. With it, a page the user happened
+# to visit could enumerate their library, read a paper, read a Scribe project
+# and delete a document, and the reply landed in that page's JavaScript. For an
+# application whose entire premise is that the documents never leave the
+# machine, that is the promise failing in the exact way it claims to prevent.
+#
+# Production does not need CORS at all: the window navigates to 127.0.0.1:8000
+# and the backend serves the interface from there, so the UI is SAME-ORIGIN.
+# The only cross-origin caller that has ever been wanted is the Vite dev server
+# on 3001 during `./scripts/dev.sh`, so that is the whole list.
+#
+# Credentials stay off. Nothing here uses cookies, and `allow_credentials` with
+# a wildcard is a combination browsers refuse anyway.
+DEV_ORIGINS = [
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+
+# A refused project id is a 404 everywhere, from one place.
+#
+# ProjectIdError is raised at the single point that joins an id to a path, and
+# twenty-seven call sites reach the filesystem through it. Handled here rather
+# than in each route because the routes catch inconsistently -- some map
+# ValueError to 400, some let it become a 500 -- and a 500 carrying the message
+# echoed the attempted path back to the caller, which tells a probe that its
+# input reached something.
+#
+# 404, not 400: a caller has no business distinguishing "no such project" from
+# "that was not a project id", and answering differently confirms the id shape
+# matters.
+@app.exception_handler(ProjectIdError)
+async def _bad_project_id(request, exc):        # noqa: ARG001 - signature is fastapi's
+    return JSONResponse(status_code=404, content={"detail": "project not found"})
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=DEV_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
