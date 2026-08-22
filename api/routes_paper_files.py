@@ -152,6 +152,31 @@ async def api_make_folder(project_id: str, req: PathRequest):
     return {"file": entry.__dict__, "files": _tree(d)}
 
 
+class MoveAcrossRequest(BaseModel):
+    src: str
+    to_project: str
+    dst: str = ""
+
+
+@router.post("/projects/{project_id}/files/move-to")
+async def api_move_across(project_id: str, req: MoveAcrossRequest):
+    """Move a file into a different paper.
+
+    Both project ids go through the same boundary as any other, so a crafted
+    destination is a 404 rather than a way to write outside the workspace, and
+    each end of the path is resolved against its OWN project root.
+    """
+    src_dir = _project(project_id)
+    dst_dir = _project(req.to_project)
+    dst = req.dst or Path(req.src).name
+    entry = _guard(lambda: F.move_between(src_dir, req.src, dst_dir, dst))
+    return {
+        "file": entry.__dict__,
+        "files": _tree(src_dir),
+        "to_files": _tree(dst_dir),
+    }
+
+
 @router.post("/projects/{project_id}/files/move")
 async def api_move(project_id: str, req: MoveRequest):
     """rename, or move into a folder -- drag-and-drop inside the tree."""

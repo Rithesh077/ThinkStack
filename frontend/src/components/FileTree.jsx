@@ -85,6 +85,11 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
   const [renaming, setRenaming] = useState(null);  // `${projectId}:${path}` or `project:${id}`
   const [creating, setCreating] = useState(false);
   const [dropOn, setDropOn] = useState(null);      // projectId a drop would land in
+  // An entry being dragged WITHIN the tree, as distinct from a file dragged in
+  // from the desktop. The two land in the same handler and mean different
+  // things: one moves something we own, the other uploads something we do not.
+  const [dragging, setDragging] = useState(null);  // { pid, entry }
+  const [dropTarget, setDropTarget] = useState(null); // `${pid}:${folderPath}`
   const [error, setError] = useState('');
   const [clipboard, setClipboard] = useState(null);
   const menuRef = useRef(null);
@@ -199,10 +204,45 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
     }
   };
 
+  /** Move a dragged entry, within a paper or into another one. */
+  const dropMove = async (pid, folderPath) => {
+    const d = dragging;
+    setDragging(null);
+    setDropTarget(null);
+    if (!d) return false;
+
+    const name = d.entry.path.split('/').pop();
+    const dst = folderPath ? `${folderPath}/${name}` : name;
+    // Dropping a thing where it already is is not an error, it is a no-op.
+    if (d.pid === pid && d.entry.path === dst) return true;
+
+    try {
+      if (d.pid === pid) {
+        const r = await projectFilesApi.move(pid, d.entry.path, dst);
+        setFilesBy((prev) => ({ ...prev, [pid]: r.files || [] }));
+      } else {
+        // Both trees change, so both are replaced from the one reply rather
+        // than refetched: a second request could interleave with a third drag.
+        const r = await projectFilesApi.moveTo(d.pid, d.entry.path, pid, dst);
+        setFilesBy((prev) => ({
+          ...prev,
+          [d.pid]: r.files || [],
+          [pid]: r.to_files || [],
+        }));
+        if (!openProjects.has(pid)) toggleProject(pid);
+      }
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
+    }
+  };
+
   const onDropInto = (e, pid) => {
     e.preventDefault();
     e.stopPropagation();
     setDropOn(null);
+    if (dragging) { dropMove(pid, ''); return; }   // ours, so move it
     const dropped = Array.from(e.dataTransfer?.files || []);
     if (!dropped.length) return;
     if (!openProjects.has(pid)) toggleProject(pid);
@@ -351,8 +391,40 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
     return (
       <div key={key}>
         <div
-          className={`ft-row ${isCurrent ? 'is-open' : ''}`}
+          className={[
+            'ft-row',
+            isCurrent ? 'is-open' : '',
+            dragging && dragging.pid === pid && dragging.entry.path === entry.path
+              ? 'is-dragging' : '',
+            dropTarget === key ? 'is-drop-into' : '',
+          ].filter(Boolean).join(' ')}
           style={{ paddingLeft: `${10 + depth * 12}px` }}
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            setDragging({ pid, entry });
+            // Firefox cancels a drag that carries no payload at all.
+            e.dataTransfer.setData('text/plain', entry.path);
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragEnd={() => { setDragging(null); setDropTarget(null); }}
+          onDragOver={(e) => {
+            // Only a FOLDER is a place to drop into. Dropping onto a file would
+            // have to mean "beside it", which is a reorder this tree does not
+            // have -- it is sorted, not arranged.
+            if (!dragging || !entry.is_dir) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            setDropTarget(key);
+          }}
+          onDragLeave={(e) => { e.stopPropagation(); setDropTarget(null); }}
+          onDrop={(e) => {
+            if (!dragging || !entry.is_dir) return;
+            e.preventDefault();
+            e.stopPropagation();
+            dropMove(pid, entry.path);
+          }}
           onClick={() => (entry.is_dir ? toggleDir(key) : onOpen?.(pid, entry))}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -414,7 +486,14 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
       <div
         key={pid}
         className={`ft-project ${dropOn === pid ? 'is-dropping' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropOn(pid); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // A file dragged from ANOTHER paper lands at this paper's root; one
+          // dragged from this paper would be a move to where it already is.
+          if (dragging && dragging.pid === pid && !dragging.entry.path.includes('/')) return;
+          setDropOn(pid);
+        }}
         onDragLeave={(e) => { e.stopPropagation(); setDropOn(null); }}
         onDrop={(e) => onDropInto(e, pid)}
       >

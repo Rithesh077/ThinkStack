@@ -250,6 +250,44 @@ def delete_path(project_dir: Path, relpath: str) -> None:
         target.unlink()
 
 
+def move_between(src_dir: Path, src: str, dst_dir: Path, dst: str) -> FileEntry:
+    """Move a file from one project into another.
+
+    Separate from `move_path` because the safety argument is different, not
+    because the code is. `move_path` resolves both ends against ONE project and
+    refuses anything outside it; here there are two roots and each end has to be
+    checked against its own. Folding them into one function would mean a single
+    call site deciding which root applies to which path, which is exactly the
+    kind of decision that gets made wrongly later.
+
+    Directories are refused. Dragging a folder across projects is a copy of an
+    unbounded subtree with a size cap to honour at the far end, and nobody has
+    asked for it -- refusing is smaller and honest.
+    """
+    source = safe_path(src_dir, src)
+    target = safe_path(dst_dir, dst)
+    if not source.exists():
+        raise FileError(f"{src} does not exist.")
+    if source.is_dir():
+        raise FileError("Only files can be moved between papers.")
+    if target.exists():
+        raise FileError(f"{dst} already exists in that paper.")
+    _check_suffix(target.name)
+
+    # the destination's cap, checked with the destination's own helper
+    _check_room(dst_dir, source.stat().st_size)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # shutil.move rather than Path.replace: the two projects can sit on
+    # different filesystems once a workspace is a symlink or a mount, and
+    # replace() raises across devices where move falls back to copy-then-delete.
+    shutil.move(str(source), str(target))
+    return FileEntry(
+        path=_rel(dst_dir, target), name=target.name,
+        is_dir=False, size=target.stat().st_size,
+    )
+
+
 def move_path(project_dir: Path, src: str, dst: str) -> FileEntry:
     """rename, or move into a folder. Both ends are checked."""
     source = safe_path(project_dir, src)
