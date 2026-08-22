@@ -4037,3 +4037,56 @@ input::-webkit-credentials-auto-fill-button {
 }
 /* The whole paper, as a drop target for a file from another one. */
 .ft-project.is-dropping > .ft-row.is-project { background: var(--sheet-3); }
+
+/* ── the command palette ───────────────────────────────
+   Ctrl+K. The application had one shortcut before this, so the core loop --
+   find a paper, open it, start writing -- was entirely mouse.
+
+   Sits high rather than centred: the list grows downward, and a box that
+   grows from the middle of the screen moves its own first row as you type. */
+.cp-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(46, 42, 34, 0.26);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding-top: 14vh;
+}
+.cp {
+  width: min(36rem, 92vw);
+  max-height: 60vh; display: flex; flex-direction: column;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2); border-radius: var(--radius-md);
+  box-shadow: 0 16px 48px rgba(46, 42, 34, 0.24);
+  overflow: hidden;
+}
+.cp-input {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.cp-input input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font-size: var(--type-base); color: var(--ink);
+}
+.cp-list { overflow-y: auto; padding: 0.25rem; }
+.cp-row {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.4rem 0.65rem; border: 0; background: none; cursor: pointer;
+  border-radius: 2px; text-align: left;
+  font-size: var(--type-sm); color: var(--ink-2);
+}
+.cp-row.is-cursor { background: var(--sheet-2); color: var(--ink); }
+.cp-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The group is context, not content: it says which kind of thing this is
+   without competing with the thing's own name. */
+.cp-group { font-size: var(--type-xs); color: var(--ink-4); }
+.cp-hint {
+  font-family: var(--font-mono); font-size: var(--type-xs);
+  color: var(--ink-4); background: var(--sheet-2);
+  padding: 0.05rem 0.3rem; border-radius: 2px;
+}
+.cp-empty { padding: 0.7rem; font-size: var(--type-sm); color: var(--ink-4); }
+.cp-foot {
+  display: flex; align-items: center; gap: 0.3rem;
+  padding: 0.45rem 0.9rem; border-top: 1px solid var(--rule);
+  font-size: var(--type-xs); color: var(--ink-4);
+}
