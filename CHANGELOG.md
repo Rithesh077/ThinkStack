@@ -67,6 +67,33 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   their hands. It reads directories through the backend, so it behaves the same
   in the desktop app as in a browser; files a paper cannot use are shown greyed
   rather than hidden, so a folder never looks emptier than it is.
+- **Scribe works with an empty library.** It carries its own TeX engine and
+  compiles offline, so writing never depended on having read anything — but the
+  first screen of a new install said only "drop a PDF here", which reads as a
+  locked door to anyone who came to write. The empty Library now offers Scribe
+  beside ingestion, and nothing in Scribe requires an ingested paper.
+- **A new document can be something other than a research paper.** Six starters
+  — research paper, article, letter, CV, report and Beamer slides — opened as a
+  menu from the **+** in the tree, each described rather than merely named. A
+  letter is no longer a paper you have to delete first. The set comes from the
+  backend, so the menu cannot offer a shape that no longer exists, and an
+  unrecognised one gives you the paper rather than an error.
+- **The project tree is navigable at 23 papers.** Sort by name or last edit,
+  filter once there are enough to be worth narrowing, and see when each was last
+  touched.
+- **A bibliography panel.** What the document cites, what `references.bib`
+  defines, and which entries nothing cites — read from the source rather than
+  the compiled PDF, so a citation typed a moment ago is already there.
+- **Files can be dragged where they belong**, including into another paper.
+  Folders are the drop targets; a file is not, because "beside it" would be a
+  reorder this tree does not have.
+- **The compiled PDF saves where you choose, named after the paper** — reduced
+  to what every filesystem accepts, not to the project id. The button says
+  **Save PDF**, because labelled only "PDF" it read as a link to the file and
+  the save behaviour went unfound. In a browser it stays an ordinary download,
+  because a page cannot choose a folder, but it arrives correctly named either
+  way.
+- **`Ctrl+K` reaches any screen or any paper** from the keyboard.
 
 ### Changed
 - **A `feat/` branch moves the minor again.** Landing a feature advances Y and

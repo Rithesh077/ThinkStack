@@ -194,6 +194,19 @@ has an explanation.
 Write ideas in plain language, get compilable LaTeX, and compile it locally with
 no account, no queue and no time limit.
 
+**Scribe needs no library.** It carries its own TeX engine and compiles offline,
+so writing does not depend on having read anything: a new install can open it
+and finish a document without ingesting a single PDF. The Library says so when
+it is empty rather than leaving "drop a PDF here" as the only instruction.
+
+- **Start as something other than a paper** — six starter documents: research
+  paper, article, letter, CV, report and Beamer slides. The **+** in the tree
+  opens them as a menu, and each says what it gives you rather than only naming
+  itself, so "CV" is a choice you can make without first making it once to find
+  out. Choosing is the same click that creates, so nothing is selected now and
+  quietly applied to a paper later. The set is served by the backend, so the
+  menu cannot list a template that no longer exists; an unrecognised one gives
+  you the paper rather than an error.
 - **A paper is a folder** — a project is a directory on disk, and the file tree
   is the way into it. Add figures, split a long paper into section files, keep a
   `.bib` beside the document. Right-click for new file/folder, rename (F2),
@@ -251,6 +264,22 @@ no account, no queue and no time limit.
   `|(`…`|)` page ranges) and runs a second pass. Nothing extra to install. A
   document that cites papers but never declared a bibliography is given one, so
   a citation cannot silently resolve to `[?]`.
+- **See what the document cites without opening the .bib** — a bibliography
+  panel lists every entry, marks the ones nothing cites, and reads the source
+  rather than the compiled PDF, so an entry appears the moment it is written.
+- **Save the PDF where you want it, named after the paper** — the **Save PDF**
+  button asks the desktop window for a location, and the file is written as the
+  paper's title reduced to what every filesystem accepts, not as the project id.
+  In a browser it stays an ordinary download, because a page cannot choose a
+  folder — but it arrives correctly named either way.
+- **Reach anything from the keyboard** — `Ctrl+K` opens a palette listing every
+  screen and every paper; type to filter, Enter to go. The tree itself sorts by
+  name or last edit, filters once there are enough projects to be worth
+  narrowing, and shows when each was last touched.
+- **Drag a file where it belongs** — including into another paper. Folders are
+  the drop targets; a file is not, because "beside it" would be a reorder this
+  tree does not have. Folders themselves do not move across papers: that is an
+  unbounded subtree with no size known in advance.
 - **Error surfacing** — when a compile fails, the parsed engine diagnostics (and
   missing-TeX-package install hints) show directly in the UI.
 
