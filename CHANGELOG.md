@@ -60,6 +60,13 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   too — a shared `figures/` directory used by several papers — though its
   contents are never read or served: it is a remembered location, and copying
   it in is the only thing that touches what is inside.
+- **A file chooser that works everywhere.** Clicking to link something opens a
+  window you navigate — home, up, type to narrow, Enter to open or take — rather
+  than asking for a path you have to remember. `Ctrl+O` chooses a file and
+  `Ctrl+K Ctrl+O` a folder, following the editor most people already have in
+  their hands. It reads directories through the backend, so it behaves the same
+  in the desktop app as in a browser; files a paper cannot use are shown greyed
+  rather than hidden, so a folder never looks emptier than it is.
 
 ### Changed
 - **A `feat/` branch moves the minor again.** Landing a feature advances Y and
