@@ -29,7 +29,10 @@ vi.mock('../src/utils/api', () => {
     graphApi: { get: vi.fn(async () => ({ nodes: [], edges: [], themes: [], gaps: [] })) },
     analysisApi: { history: vi.fn(async () => ({ runs: [] })) },
     gapsApi: { history: vi.fn(async () => ({ runs: [] })) },
-    papersApi: { list: vi.fn(async () => ({ projects: [] })) },
+    papersApi: {
+      list: vi.fn(async () => ({ projects: [] })),
+      templates: vi.fn(async () => ({ templates: [] })),
+    },
     searchApi: {}, encryptionApi: {},
     useJobs: () => ({ active: false, label: '', done: 0, total: 0, queued: 0, error: '' }),
     useLlmBusy: () => ({ busy: false, label: '' }),

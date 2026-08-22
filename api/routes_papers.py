@@ -202,6 +202,7 @@ def _clean_latex(text: str) -> str:
 
 class CreateProjectRequest(BaseModel):
     name: str = "untitled"
+    template: str | None = None
 
 
 class SaveSourceRequest(BaseModel):
@@ -226,11 +227,30 @@ class CompileRequest(BaseModel):
     project_id: str
 
 
+@router.get("/templates")
+async def api_templates():
+    """What a new document can start as.
+
+    Served rather than hardcoded in the interface so the two cannot drift: a
+    template added here appears in the picker without a second edit, and one
+    removed cannot be offered for a shape that no longer exists.
+    """
+    from domain.paper_writer import templates as T
+
+    return {
+        "templates": [
+            {"id": t.id, "label": t.label, "description": t.description}
+            for t in T.ALL
+        ],
+        "default": T.DEFAULT,
+    }
+
+
 @router.post("/projects")
 async def api_create_project(req: CreateProjectRequest):
     """create a new paper project with a starter template."""
     try:
-        return create_project(req.name)
+        return create_project(req.name, req.template)
     except Exception as e:
         logger.error("failed to create project: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

@@ -77,6 +77,15 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
   // differently on a re-render it did not ask for -- so it is a snapshot,
   // refreshed when the list is.
   const [now, setNow] = useState(() => Date.now() / 1000);
+  // The template list, and whether the menu is open. There is no "currently
+  // selected" template any more: the choice IS the click that creates, so
+  // nothing can be chosen and then silently applied to a later paper.
+  const [templates, setTemplates] = useState([]);
+  // Where the template menu should appear, or null when it is closed. It holds
+  // coordinates rather than a boolean because the menu is position: fixed, the
+  // same as this component's context menu -- absolute positioning inside the
+  // header put it under the file list.
+  const [picking, setPicking] = useState(null);
   const [filesBy, setFilesBy] = useState({});      // projectId -> files[]
   const [openProjects, setOpenProjects] = useState(() => new Set());
   const [openDirs, setOpenDirs] = useState(() => new Set());
@@ -250,13 +259,33 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
   };
 
   // ── papers ──
-  const createProject = async (name) => {
+  useEffect(() => {
+    papersApi.templates()
+      .then((d) => {
+        // Order comes from the server, and the default is first in it, so
+        // the top entry is the one most people want without this end
+        // deciding which that is.
+        setTemplates(d.templates || []);
+      })
+      .catch(() => setTemplates([]));
+  }, []);
+
+  // Escape closes the menu. A popover that only a click can dismiss is one
+  // the keyboard can open and then get stuck in.
+  useEffect(() => {
+    if (!picking) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setPicking(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picking]);
+
+  const createProject = async (name, tpl) => {
     setPending(null);
     const clean = (name || '').trim();
     if (!clean) return;
     setCreating(true);
     try {
-      const d = await papersApi.create(clean);
+      const d = await papersApi.create(clean, tpl);
       await loadProjects();
       setOpenProjects((prev) => new Set(prev).add(d.project_id));
       loadFiles(d.project_id);
@@ -304,7 +333,7 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
    * the way `window.prompt` did. Expanding is therefore part of starting, not
    * part of finishing.
    */
-  const startCreate = (kind, pid, dest = '') => {
+  const startCreate = (kind, pid, dest = '', tpl = null) => {
     setMenu(null);
     if (pid && !openProjects.has(pid)) toggleProject(pid);
     if (pid && dest) {
@@ -319,7 +348,7 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
         return next;
       });
     }
-    setPending({ kind, pid, dest });
+    setPending({ kind, pid, dest, tpl });
   };
 
   /** commit an inline "new file"/"new folder" row. */
@@ -328,7 +357,7 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
     setPending(null);
     const clean = (name || '').trim();
     if (!req || !clean) return;
-    if (req.kind === 'project') return createProject(clean);
+    if (req.kind === 'project') return createProject(clean, req.tpl);
     const path = req.dest ? `${req.dest}/${clean}` : clean;
     return run(req.pid, () => (req.kind === 'folder'
       ? projectFilesApi.mkdir(req.pid, path)
@@ -598,15 +627,56 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
           >
             {sortBy === 'recent' ? <Clock size={13} /> : <ArrowDownAZ size={13} />}
           </button>
+          {/* The + opens the list rather than sitting beside a dropdown.
+              A <select> here was 120px of a 200px sidebar and pushed the +
+              off the edge entirely -- the control for choosing a template
+              took away the control for making anything. A menu costs no
+              width, and it can afford to say what each template IS, which
+              a dropdown showing "CV" cannot. */}
           <button
             type="button"
-            title="New paper"
-            onClick={() => startCreate('project')}
+            title={templates.length > 1 ? 'New paper — choose a template' : 'New paper'}
+            onClick={(e) => {
+              if (templates.length <= 1) { startCreate('project'); return; }
+              if (picking) { setPicking(null); return; }
+              const r = e.currentTarget.getBoundingClientRect();
+              setPicking({ x: r.right, y: r.bottom + 4 });
+            }}
             disabled={creating}
+            aria-haspopup={templates.length > 1 ? 'menu' : undefined}
+            aria-expanded={templates.length > 1 ? picking != null : undefined}
           >
             {creating ? <Loader2 size={14} className="ft-spin" /> : <FilePlus2 size={14} />}
           </button>
         </div>
+
+        {picking && (
+          <>
+            {/* Clicking anywhere else closes it. Rendered before the menu so
+                the menu paints over it and its own clicks are not swallowed. */}
+            <div className="ft-tpl-scrim" onClick={() => setPicking(null)} />
+            <div
+              className="ft-tpl-menu"
+              role="menu"
+              /* right-aligned under the +, so a 15rem menu opens into the
+                 window rather than off the side of a 200px sidebar */
+              style={{ left: picking.x, top: picking.y, transform: 'translateX(-100%)' }}
+            >
+              {templates.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="menuitem"
+                  className="ft-tpl-item"
+                  onClick={() => { setPicking(null); startCreate('project', null, '', t.id); }}
+                >
+                  <span className="ft-tpl-label">{t.label}</span>
+                  <span className="ft-tpl-desc">{t.description}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Shown once there are enough rows to be worth narrowing. Below that it

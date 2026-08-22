@@ -4090,3 +4090,58 @@ input::-webkit-credentials-auto-fill-button {
   padding: 0.45rem 0.9rem; border-top: 1px solid var(--rule);
   font-size: var(--type-xs); color: var(--ink-4);
 }
+/* The second door out of an empty Library. Quieter than the first, because
+   most people here did come to read papers -- but present, because some did
+   not, and an empty shelf should not read as a locked one. */
+.empty-alt { margin-top: 0.6rem; font-size: var(--type-sm); color: var(--ink-4); }
+.empty-alt a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+.empty-alt a:hover { color: var(--ink); }
+
+/* The template menu, opened by the + in the Scribe tree.
+
+   Deliberately the same treatment as .ft-menu, the context menu already in
+   this component: fixed position, --z-over, --surface, --lift-high. The first
+   attempt invented its own and got two things wrong that only show on screen
+   -- it painted with var(--surface-1), which is not a token in this
+   stylesheet, so the background silently resolved to nothing and the menu
+   rendered transparent over the file list.
+
+   A dropdown lived in the header before this and took 120px of a 200px
+   sidebar, pushing the + itself off the edge. The menu costs no width, and
+   it can afford to describe each template rather than just name it. */
+.ft-tpl-scrim { position: fixed; inset: 0; z-index: var(--z-over); }
+.ft-tpl-menu {
+  position: fixed;
+  z-index: var(--z-over);
+  min-width: 15rem;
+  max-width: min(19rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--lift-high);
+}
+.ft-tpl-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.ft-tpl-item:hover, .ft-tpl-item:focus-visible { background: var(--surface-2); }
+.ft-tpl-label { color: var(--ink); font-size: var(--type-sm); font-weight: 500; }
+.ft-tpl-desc {
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.35;
+  /* the description is the point of the menu, so it wraps rather than clips */
+  white-space: normal;
+}

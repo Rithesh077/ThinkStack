@@ -338,22 +338,33 @@ def _get_project_dir(project_id: str) -> Path:
     return root / text
 
 
-def create_project(name: str = "untitled") -> dict:
-    """create a new paper project with a starter latex template.
+def create_project(name: str = "untitled", template: str | None = None) -> dict:
+    """Create a project from a starter document.
+
+    `template` names one of `domain.paper_writer.templates`; omitting it gives
+    the research paper, which is what most people here are writing. It is an
+    argument rather than a fixed shape because Scribe is a LaTeX editor that
+    happens to live inside a research application -- a letter or a CV is a
+    perfectly good reason to open it, and the paper template's abstract and
+    methodology sections are noise for both.
 
     args:
         name: human-readable project name.
+        template: which starter to use; unknown ids fall back to the paper.
 
     returns:
-        dict with project_id, name, and initial latex source.
+        dict with project_id, name, template and initial latex source.
     """
+    from domain.paper_writer import templates as _templates
+
     project_id = uuid.uuid4().hex[:12]
     project_dir = _get_project_dir(project_id)
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    template = _default_template(name)
+    chosen = _templates.get(template)
+    template_text = _templates.render(chosen.id, name)
     tex_file = project_dir / "main.tex"
-    tex_file.write_text(template, encoding="utf-8")
+    tex_file.write_text(template_text, encoding="utf-8")
 
     # persist project metadata
     meta_file = project_dir / "meta.json"
@@ -361,12 +372,14 @@ def create_project(name: str = "untitled") -> dict:
     meta_file.write_text(json.dumps({
         "project_id": project_id,
         "name": name,
+        "template": chosen.id,
     }), encoding="utf-8")
 
     return {
         "project_id": project_id,
         "name": name,
-        "source": template,
+        "template": chosen.id,
+        "source": template_text,
     }
 
 
