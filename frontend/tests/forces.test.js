@@ -59,21 +59,20 @@ function settle(sim, links, o, cap = 4000) {
   return ticks;
 }
 
-/** Two footprints overlap when the distance in scaled space is under one. */
-const overlaps = (a, b) =>
-  Math.hypot((b.x - a.x) / (a.rx + b.rx), (b.y - a.y) / (a.ry + b.ry)) < 1;
+/**
+ * How far apart two footprints are, in scaled space: the ellipse test is the
+ * circle test with each axis divided by the summed half-extents, so under 1
+ * means the pair overlaps and 1 means they exactly touch.
+ */
+const clearance = (a, b) =>
+  Math.hypot((b.x - a.x) / (a.rx + b.rx), (b.y - a.y) / (a.ry + b.ry));
 
+/** The tightest pair on the plate. Under 1 means something is still stacked. */
 const worstOverlap = (sim) => {
   let worst = Infinity;
   for (let i = 0; i < sim.length; i++)
     for (let j = i + 1; j < sim.length; j++)
-      worst = Math.min(
-        worst,
-        Math.hypot(
-          (sim[j].x - sim[i].x) / (sim[i].rx + sim[j].rx),
-          (sim[j].y - sim[i].y) / (sim[i].ry + sim[j].ry),
-        ),
-      );
+      worst = Math.min(worst, clearance(sim[i], sim[j]));
   return worst;
 };
 
