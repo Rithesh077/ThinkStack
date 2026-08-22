@@ -56,7 +56,10 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   The path is checked before the identity, so an editor that saves by writing a
   temporary file and renaming it still reads as the same document. A file moved
   somewhere the project has never referred to is reported as missing, with a
-  button to find it, rather than guessed at.
+  button to find it, rather than guessed at. A whole **folder** can be linked
+  too — a shared `figures/` directory used by several papers — though its
+  contents are never read or served: it is a remembered location, and copying
+  it in is the only thing that touches what is inside.
 
 ### Changed
 - **A `feat/` branch moves the minor again.** Landing a feature advances Y and

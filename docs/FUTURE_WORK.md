@@ -471,6 +471,14 @@ Content hashing survives all three but costs a read of every file and cannot
 distinguish two copies of the same thing, which for a `.bib` shared between
 projects is exactly the wrong answer.
 
+A **folder** can be linked as well as a file -- a shared `figures/` directory
+used by several papers is the case it exists for. A folder cannot be filtered by
+suffix, so it earns its safety differently: nothing reads or serves the contents
+of a linked folder. It is a remembered location, for `\graphicspath` to point at
+and for an explicit copy to duplicate; the raw endpoint refuses it rather than
+listing it, because a browsable remote directory is a much larger thing to offer
+than a remembered one.
+
 **What was built, and its honest limits.** Path is tried before identity, so a
 file saved over in place -- an editor writing a temporary file and renaming it,
 which changes the inode -- still reads as the same document rather than a
