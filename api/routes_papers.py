@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from domain.paper_writer.compiler import (
+    ProjectIdError,
     create_project,
     rename_project,
     save_source,
@@ -271,6 +272,8 @@ async def api_save_source(req: SaveSourceRequest):
         return save_source(req.project_id, req.source)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="project not found")
+    except ProjectIdError:
+        raise                      # answered as 404 by the handler in main
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -386,6 +389,8 @@ async def api_compile_pdf(req: CompileRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except ProjectIdError:
+        raise                      # answered as 404 by the handler in main
     except Exception as e:
         logger.error("compilation failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -400,8 +405,11 @@ async def api_download_pdf(project_id: str, download: bool = False):
     leaving the iframe blank. pass ``?download=1`` for the save-to-disk button.
     """
     try:
-        from domain.paper_writer.compiler import _get_project_dir
-        pdf_file = _get_project_dir(project_id) / "main.pdf"
+        from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
+        try:
+            pdf_file = _get_project_dir(project_id) / "main.pdf"
+        except ProjectIdError:
+            raise HTTPException(status_code=404, detail="project not found") from None
         if not pdf_file.exists():
             raise HTTPException(status_code=404, detail="pdf not found. compile first.")
         return FileResponse(
@@ -412,6 +420,8 @@ async def api_download_pdf(project_id: str, download: bool = False):
         )
     except HTTPException:
         raise
+    except ProjectIdError:
+        raise                      # answered as 404 by the handler in main
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

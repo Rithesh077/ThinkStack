@@ -200,9 +200,47 @@ def _ensure_workspace() -> Path:
     return PAPERS_DIR
 
 
+# A project id is one path segment, never a path. Ids are uuid4 hex, but two
+# early projects were named by hand ("texbundle", "tex015"), so this admits any
+# ordinary name rather than only hex -- and admits nothing that can leave the
+# directory it is joined to.
+_PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+class ProjectIdError(ValueError):
+    """The project id was not a name this module will join to a path."""
+
+
 def _get_project_dir(project_id: str) -> Path:
-    """return the directory for a specific paper project."""
-    return _ensure_workspace() / project_id
+    """Return the directory for a project, or refuse the id.
+
+    THE boundary for project ids, and the only place that joins one to a path.
+    Twenty-seven call sites reach the filesystem through here, so validating at
+    the join is what makes all of them safe at once; validating at each caller
+    would be twenty-seven chances to forget.
+
+    It was missing, and the consequence was not theoretical: `_project()` in the
+    routes only checked `is_dir()`, so an id of "../../../../etc" resolved to a
+    real directory, passed that check, and let `list_files` enumerate it and
+    `read_file` return /etc/passwd. The webview can reach this API, so a project
+    id is untrusted input in exactly the sense a filename is.
+
+    Two checks, deliberately. The pattern refuses separators and traversal
+    before any filesystem call. The containment check then resolves and confirms
+    the result is still inside the workspace, which is what catches a symlink --
+    a string test cannot see that `mine` is a link to `/`.
+    """
+    if project_id is None:
+        raise ProjectIdError("No project was named.")
+    text = str(project_id).strip()
+    if not _PROJECT_ID_RE.match(text) or text in (".", ".."):
+        raise ProjectIdError(f"{project_id!r} is not a valid project id.")
+
+    root = _ensure_workspace().resolve()
+    target = (root / text).resolve()
+    if target != root and root not in target.parents:
+        raise ProjectIdError(f"{project_id!r} is not a valid project id.")
+    return root / text
 
 
 def create_project(name: str = "untitled") -> dict:

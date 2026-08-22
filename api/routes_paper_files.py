@@ -23,15 +23,24 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from domain.paper_writer import files as F
-from domain.paper_writer.compiler import _get_project_dir
+from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def _project(project_id: str) -> Path:
-    """the project directory, or 404."""
-    d = _get_project_dir(project_id)
+    """the project directory, or 404.
+
+    A malformed id is answered with the same 404 as a missing one, deliberately:
+    the caller has no business distinguishing "no such project" from "that was
+    not a project id", and saying which would confirm to a probe that the id
+    shape matters.
+    """
+    try:
+        d = _get_project_dir(project_id)
+    except ProjectIdError:
+        raise HTTPException(status_code=404, detail="project not found") from None
     if not d.is_dir():
         raise HTTPException(status_code=404, detail="project not found")
     return d

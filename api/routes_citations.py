@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from domain.knowledge_base.author_codec import decode_authors
 from domain.knowledge_base.repository import get_document_metadata
 from domain.paper_writer import bibliography as B
-from domain.paper_writer.compiler import _get_project_dir
+from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
 from infrastructure.file_manager import list_stored_pdfs
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,10 @@ router = APIRouter()
 
 
 def _project(project_id: str) -> Path:
-    d = _get_project_dir(project_id)
+    try:
+        d = _get_project_dir(project_id)
+    except ProjectIdError:
+        raise HTTPException(status_code=404, detail="project not found") from None
     if not d.is_dir():
         raise HTTPException(status_code=404, detail="project not found")
     return d
