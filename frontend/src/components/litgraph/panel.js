@@ -44,6 +44,47 @@ export function neighbours(id, edges) {
 }
 
 /**
+ * The neighbourhood of a paper, out to `depth` hops.
+ *
+ * Obsidian's local graph, on this map's edge list: depth 1 is the papers this
+ * one is linked to, depth 2 adds what THEY are linked to, and so on. Returns a
+ * Map of doc_id to the hop it was first reached at, so a caller can draw the
+ * rings differently -- which is the whole value of the walk, since "linked"
+ * and "linked to something linked" are not the same claim.
+ *
+ * Breadth-first, so first-reached is genuinely the shortest path and a paper
+ * reachable at both 1 and 3 is recorded as 1. The root is in the map at 0.
+ *
+ * Depth is capped by the caller (the panel offers 1-3): the edge set is at most
+ * 4 per node, so depth 4 on a dense library is most of the library, which is
+ * the whole map with extra steps.
+ */
+export function localGraph(rootId, edges, depth) {
+  const adj = new Map();
+  (edges || []).forEach((e) => {
+    if (!adj.has(e.source)) adj.set(e.source, []);
+    if (!adj.has(e.target)) adj.set(e.target, []);
+    adj.get(e.source).push(e.target);
+    adj.get(e.target).push(e.source);
+  });
+
+  const hop = new Map([[rootId, 0]]);
+  let frontier = [rootId];
+  for (let d = 1; d <= depth && frontier.length; d++) {
+    const next = [];
+    frontier.forEach((id) => {
+      (adj.get(id) || []).forEach((to) => {
+        if (hop.has(to)) return;
+        hop.set(to, d);
+        next.push(to);
+      });
+    });
+    frontier = next;
+  }
+  return hop;
+}
+
+/**
  * The closest and most distant paper in the projection.
  *
  * Node positions are a PCA over the embedding centroids, computed server-side
