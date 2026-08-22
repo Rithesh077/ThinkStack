@@ -19,7 +19,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, Copy, Link2, Link2Off, Loader2, MoveRight, Plus,
+  AlertTriangle, Copy, FolderClosed, FolderPlus, Link2, Link2Off,
+  Loader2, MoveRight, Plus,
 } from 'lucide-react';
 import { projectFilesApi } from '../utils/api';
 import { inTauri, pickProjectFile } from '../utils/filePicker';
@@ -66,17 +67,24 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
   };
 
   /** ask natively where possible, fall back to typing a path */
-  const choose = async (then) => {
-    const { path, reason } = await pickProjectFile();
+  const choose = async (then, opts) => {
+    const { path, reason } = await pickProjectFile(opts);
     if (path) return then(path);
     if (reason === 'cancelled') return undefined;
-    return setTyping({ then });          // no dialog available: ask in-place
+    // No native dialog: this is a browser, where a file input hands back bytes
+    // and deliberately withholds the path. Typing it is the way through, and
+    // is also the escape hatch for a file somewhere a dialog makes awkward.
+    return setTyping({ then });
   };
 
-  const add = () => choose((path) => run(() => projectFilesApi.addLink(projectId, path)));
+  const add = (directory = false) =>
+    choose((path) => run(() => projectFilesApi.addLink(projectId, path)), { directory });
 
   const locate = (link) =>
-    choose((path) => run(() => projectFilesApi.relink(projectId, link.id, path)));
+    choose(
+      (path) => run(() => projectFilesApi.relink(projectId, link.id, path)),
+      { directory: link.kind === 'dir' },
+    );
 
   return (
     <div className="lf">
@@ -84,14 +92,32 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
         <span className="lf-title">
           <Link2 size={11} /> Linked
         </span>
-        <button type="button" onClick={add} disabled={busy} title="Link a file from elsewhere">
-          {busy ? <Loader2 size={12} className="ft-spin" /> : <Plus size={12} />}
-        </button>
+        <span className="lf-head-actions">
+          <button
+            type="button"
+            onClick={() => add(false)}
+            disabled={busy}
+            title="Link a file kept elsewhere"
+          >
+            {busy ? <Loader2 size={12} className="ft-spin" /> : <Plus size={12} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => add(true)}
+            disabled={busy}
+            title="Link a folder kept elsewhere"
+          >
+            <FolderPlus size={12} />
+          </button>
+        </span>
       </div>
 
       {links.map((l) => (
         <div key={l.id} className={`lf-row is-${l.status}`}>
-          <span className="lf-name" title={l.resolved || l.path}>{l.name}</span>
+          <span className="lf-name" title={l.resolved || l.path}>
+            {l.kind === 'dir' && <FolderClosed size={10} className="lf-kind" />}
+            {l.name}
+          </span>
           <span className="lf-meta">
             {l.status === 'missing' && (
               <span className="lf-warn"><AlertTriangle size={10} /> missing</span>
@@ -101,7 +127,7 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
                 <MoveRight size={10} /> moved
               </span>
             )}
-            {l.status === 'ok' && human(l.size)}
+            {l.status === 'ok' && (l.kind === 'dir' ? 'folder' : human(l.size))}
           </span>
           <span className="lf-actions">
             {l.status === 'missing' ? (
@@ -149,7 +175,10 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
       )}
 
       {!links.length && !typing && (
-        <p className="lf-empty">Nothing linked. Use + for a file kept elsewhere.</p>
+        <p className="lf-empty">
+          Nothing linked. Use + for a file, or the folder button for a whole
+          directory, kept elsewhere on this machine.
+        </p>
       )}
       {error && <p className="ft-error">{error}</p>}
     </div>

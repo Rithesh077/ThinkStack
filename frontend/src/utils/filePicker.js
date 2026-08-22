@@ -65,21 +65,27 @@ export async function pickModelFile() {
  * user is not offered a choice that is then refused -- but the backend checks
  * anyway, because a dialog filter is a convenience and not a boundary.
  */
-export async function pickProjectFile() {
+export async function pickProjectFile({ directory = false } = {}) {
   if (!inTauri()) return { path: null, reason: 'unsupported' };
 
   try {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
       multiple: false,
-      directory: false,
-      title: 'Link a file into this paper',
-      filters: [
-        { name: 'Anything a paper can use',
-          extensions: ['tex', 'bib', 'cls', 'sty', 'bst',
-                       'png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg',
-                       'csv', 'dat', 'txt'] },
-      ],
+      directory,
+      title: directory
+        ? 'Link a folder into this paper'
+        : 'Link a file into this paper',
+      // A folder chooser must not be filtered by file extension, or the
+      // dialog shows nothing selectable.
+      ...(directory ? {} : {
+        filters: [
+          { name: 'Anything a paper can use',
+            extensions: ['tex', 'bib', 'cls', 'sty', 'bst',
+                         'png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg',
+                         'csv', 'dat', 'txt'] },
+        ],
+      }),
     });
     if (!selected) return { path: null, reason: 'cancelled' };
     const path = typeof selected === 'string' ? selected : selected.path;

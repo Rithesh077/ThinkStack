@@ -82,6 +82,7 @@ class LinkedFile:
     size: int
     mtime: float
     added_at: float
+    kind: str = "file"        # "file" | "dir"
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -146,13 +147,23 @@ def _identity(p: Path) -> tuple[int, int]:
 
 
 def add_link(project_dir: Path, target: str | Path) -> LinkedFile:
-    """Record a file that lives outside the project.
+    r"""Record a file or a folder that lives outside the project.
 
-    The suffix allowlist is doing real work here and is not merely tidiness.
-    This is the one place the application is asked to remember an absolute path
-    chosen by the caller, so restricting it to the extensions a LaTeX project
-    can actually use also means the things worth stealing are not linkable:
-    `~/.ssh/id_rsa` has no suffix, and neither does `/etc/passwd`.
+    ── Why a file is filtered by suffix and a folder is not ──
+
+    For a FILE the suffix allowlist is load-bearing rather than tidy. This is
+    the one place the application takes an absolute path from its caller, and
+    restricting it to what a LaTeX project can use is what keeps the things
+    worth stealing unreachable: `~/.ssh/id_rsa` has no suffix, and neither does
+    `/etc/passwd`.
+
+    A FOLDER cannot be filtered that way -- a directory has no extension -- so
+    it earns its safety differently: nothing here ever reads or serves the
+    contents of a linked folder. It is a remembered location, for the author to
+    point `\graphicspath` at and for `copy_into_project` to duplicate on an
+    explicit instruction. That is why the raw endpoint refuses a folder rather
+    than listing it: a browsable remote directory is a much larger thing to
+    offer than a remembered one, and it is not what a paper needs.
     """
     p = Path(target).expanduser()
     if not p.is_absolute():
@@ -161,25 +172,31 @@ def add_link(project_dir: Path, target: str | Path) -> LinkedFile:
         p = p.resolve(strict=True)
     except (OSError, RuntimeError):
         raise FileError(f"{p} does not exist.") from None
-    if not p.is_file():
-        raise FileError(f"{p.name} is not a file.")
-    if p.suffix.lower() not in ALLOWED_SUFFIXES:
-        raise FileError(
-            f"{p.suffix or 'That kind of file'} cannot be linked. "
-            f"Allowed: {', '.join(sorted(ALLOWED_SUFFIXES))}"
-        )
-    size = p.stat().st_size
-    if size > MAX_FILE_BYTES:
-        raise FileError(f"{p.name} is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB.")
+
+    if p.is_dir():
+        kind, size = "dir", 0
+    elif p.is_file():
+        kind = "file"
+        if p.suffix.lower() not in ALLOWED_SUFFIXES:
+            raise FileError(
+                f"{p.suffix or 'That kind of file'} cannot be linked. "
+                f"Allowed: {', '.join(sorted(ALLOWED_SUFFIXES))}"
+            )
+        size = p.stat().st_size
+        if size > MAX_FILE_BYTES:
+            raise FileError(
+                f"{p.name} is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB."
+            )
+    else:
+        raise FileError(f"{p.name} is neither a file nor a folder.")
 
     links = _read(project_dir)
     dev, ino = _identity(p)
     for existing in links:
         if (existing.dev, existing.ino) == (dev, ino):
-            # already linked, possibly under an old path: refresh rather than
-            # add a second row for the same file
             existing.path, existing.name = str(p), p.name
             existing.size, existing.mtime = size, p.stat().st_mtime
+            existing.kind = kind
             _write(project_dir, links)
             return existing
 
@@ -192,6 +209,7 @@ def add_link(project_dir: Path, target: str | Path) -> LinkedFile:
         size=size,
         mtime=p.stat().st_mtime,
         added_at=time.time(),
+        kind=kind,
     )
     links.append(link)
     _write(project_dir, links)
@@ -241,6 +259,8 @@ def _search_known_dirs(project_dir: Path, links: list[LinkedFile],
             try:
                 if entry.is_dir():
                     subdirs.append(entry)
+                    if _identity(entry) == (dev, ino):
+                        return entry          # a linked FOLDER that was renamed
                 elif entry.is_file() and _identity(entry) == (dev, ino):
                     return entry
             except OSError:
@@ -270,7 +290,7 @@ def resolve(project_dir: Path, link: LinkedFile) -> ResolvedLink:
     document. Trusting identity first would call it missing.
     """
     p = Path(link.path)
-    if p.is_file():
+    if (p.is_dir() if link.kind == "dir" else p.is_file()):
         return ResolvedLink(link=link, status="ok", resolved=p)
 
     found = _search_known_dirs(project_dir, _read(project_dir), link.dev, link.ino)
@@ -350,5 +370,20 @@ def copy_into_project(project_dir: Path, link_id: str, dest: str = "") -> str:
         raise FileError(f"{link.name} cannot be found, so it cannot be copied in.")
     rel = f"{dest.strip('/')}/{link.name}" if dest.strip("/") else link.name
     free = unique_name(project_dir, rel)
+
+    if link.kind == "dir":
+        # Copied through the same boundary as everything else: each member is
+        # placed with write_bytes, so safe_path checks it and the per-project
+        # size cap still applies. shutil.copytree would bypass both.
+        root = r.resolved
+        for item in sorted(root.rglob("*")):
+            if not item.is_file():
+                continue
+            if item.suffix.lower() not in ALLOWED_SUFFIXES:
+                continue                       # same rule as linking a file
+            inner = item.relative_to(root).as_posix()
+            write_bytes(project_dir, f"{free}/{inner}", item.read_bytes())
+        return free
+
     write_bytes(project_dir, free, r.resolved.read_bytes())
     return free
