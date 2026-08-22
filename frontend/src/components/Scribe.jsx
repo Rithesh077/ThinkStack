@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import BibliographyPanel from './BibliographyPanel';
 import { papersApi, documentsApi, projectFilesApi, useLlmBusy } from '../utils/api';
+import { inTauri, pickSavePath } from '../utils/filePicker';
 import PageHeader from './PageHeader';
 import FileTree from './FileTree';
 import { isImage, isPdf } from '../utils/filekind';
@@ -70,6 +71,7 @@ function insertLatexAt(src, gen, caret) {
 export default function Scribe() {
   const [projects, setProjects] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [projectName, setProjectName] = useState('');
   const nav = useNavigate();
   const [source, setSource] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -213,6 +215,7 @@ export default function Scribe() {
     try {
       const d = await papersApi.get(id);
       setActiveId(id);
+      setProjectName(d.name || '');
       setOpenFile('main.tex');
       setImagePath(null);
       setSource(d.source || '');
@@ -591,9 +594,39 @@ export default function Scribe() {
                     : <Play size={14} />}
                   <span>Compile</span>
                 </button>
+                {/* In the desktop window this asks WHERE, the way saving
+                    anything else does. In a browser it stays an ordinary
+                    download -- a page cannot choose a location -- but the file
+                    arrives under the paper's own name rather than a
+                    twelve-character id either way.
+
+                    It says "Save PDF" rather than "PDF" because the label was
+                    the whole feature: a button reading "PDF" beside an icon
+                    reads as "the PDF is over here", and the one person who
+                    most needed to find the save behaviour went looking for a
+                    separate button that did not exist. */}
                 {pdfUrl && (
-                  <a className="btn btn-secondary btn-sm" href={papersApi.downloadUrl(activeId)} download>
-                    <Download size={14} /> <span>PDF</span>
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={papersApi.downloadUrl(activeId)}
+                    title={inTauri()
+                      ? 'Save the compiled PDF where you choose'
+                      : 'Download the compiled PDF'}
+                    download
+                    onClick={async (e) => {
+                      if (!inTauri()) return;        // let the browser do it
+                      e.preventDefault();
+                      const { path } = await pickSavePath(`${projectName || 'paper'}.pdf`);
+                      if (!path) return;
+                      try {
+                        const r = await papersApi.exportPdf(activeId, path);
+                        flash(`Saved to ${r.saved}`);
+                      } catch (err) {
+                        flash(err.message);
+                      }
+                    }}
+                  >
+                    <Download size={14} /> <span>Save PDF</span>
                   </a>
                 )}
               </div>
