@@ -303,3 +303,70 @@ class TestMigrationOnSomeoneElsesMachine:
         s = VectorStore(persist_dir=str(d))          # must not raise
         assert s.count() == 2                         # the majority width survives
         assert s.query([1.0, 0.0], n_results=1)["ids"] == ["a"]
+
+
+class TestNothingChangedForTheUser:
+    """The switch to SQLite must be invisible in results, not merely close.
+
+    Embeddings used to be written as decimal text and are now float32 bytes.
+    That round trip is lossless, but "should be" is not a guarantee anyone can
+    act on, so it is asserted -- as are the rankings built on top of it, since
+    a silent change in search order is the one regression a user would notice
+    and never be able to report precisely.
+    """
+
+    def test_embeddings_survive_the_round_trip_exactly(self, tmp_path):
+        import numpy as np
+        rng = np.random.default_rng(11)
+        vecs = [rng.normal(size=64).astype(np.float32).tolist() for _ in range(50)]
+        d = str(tmp_path / "vs")
+
+        s1 = VectorStore(persist_dir=d)
+        s1.upsert([f"e{i}" for i in range(50)], [f"doc {i}" for i in range(50)],
+                  vecs, [{"doc_id": f"d{i % 5}"} for i in range(50)])
+
+        s2 = VectorStore(persist_dir=d)          # reload from disk
+        everything = s2.get_embeddings()
+        assert everything["embeddings"].dtype == np.float32
+        got = dict(zip(everything["ids"], everything["embeddings"]))
+        for i, original in enumerate(vecs):
+            assert np.array_equal(
+                got[f"e{i}"], np.asarray(original, dtype=np.float32)
+            ), f"e{i} changed on the way through sqlite"
+
+    def test_ranking_is_identical_after_a_reload(self, tmp_path):
+        import numpy as np
+        rng = np.random.default_rng(12)
+        vecs = [rng.normal(size=32).astype(np.float32).tolist() for _ in range(40)]
+        d = str(tmp_path / "vs")
+        s1 = VectorStore(persist_dir=d)
+        s1.upsert([f"e{i}" for i in range(40)], [f"doc {i}" for i in range(40)],
+                  vecs, [{} for _ in range(40)])
+
+        probes = [vecs[3], vecs[17], rng.normal(size=32).tolist()]
+        before = [s1.query(p, n_results=10) for p in probes]
+        after = [VectorStore(persist_dir=d).query(p, n_results=10) for p in probes]
+
+        for b, a in zip(before, after):
+            assert b["ids"] == a["ids"]
+            assert np.allclose(b["distances"], a["distances"], atol=1e-7)
+
+    def test_the_store_recovers_from_a_force_quit(self, tmp_path):
+        """WAL files left behind by a kill -9 must not cost the library.
+
+        Write-ahead logging means a crash can leave -wal and -shm beside the
+        database with committed data still only in the log. Opening it again has
+        to replay that, or a user who force-quit the application loses whatever
+        they ingested last.
+        """
+        d = tmp_path / "vs"
+        s = VectorStore(persist_dir=str(d))
+        s.upsert(["a", "b"], ["alpha", "beta"], [[1.0, 0.0], [0.0, 1.0]],
+                 [{"doc_id": "d1"}, {"doc_id": "d1"}])
+
+        # the connection is never closed, exactly as in a killed process
+        assert (d / "vectors.db-wal").exists() or (d / "vectors.db").exists()
+
+        recovered = VectorStore(persist_dir=str(d))
+        assert recovered.count() == 2
+        assert recovered.query([1.0, 0.0], n_results=1)["ids"] == ["a"]
