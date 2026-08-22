@@ -2396,9 +2396,24 @@ input::-webkit-credentials-auto-fill-button {
   color: var(--text);
 }
 
+/* One column at any width was wrong on every screen but a laptop: on a 1920px
+   window the list ran down the left in a narrow ribbon with the rest of the
+   page empty, and on a phone-width window the cards still had to be scrolled
+   one at a time.
+
+   An auto-fill grid tracks the WINDOW rather than a set of breakpoints. Cards
+   are at least 22rem, and as many fit as will; below that the track collapses
+   to a single column on its own. No media query, and nothing to keep in sync
+   with the sidebar's own widths when they change.
+
+   `minmax(min(22rem, 100%), 1fr)` rather than `minmax(22rem, 1fr)`: a bare
+   22rem minimum cannot shrink below itself, so on a viewport narrower than
+   22rem the track overflows and the page scrolls sideways. The min() lets the
+   track give way when there is genuinely less room than that. */
 .model-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  align-items: start;
   gap: 0.75rem;
   margin-top: 1rem;
 }
