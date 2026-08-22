@@ -766,6 +766,39 @@ Vulkan work was done to reach. It was invisible here because the development
 laptop reaches its RTX 3050 Ti through NVK, so `nvidia-smi` is absent and the
 sentence had never once appeared.
 
+## 2026-08-22: the branch name says which column moves
+
+**Context.** Since 2026-08-05 every landing moved Z, and only a human running
+the release workflow could move Y. The reasoning was that "is this a feature
+release" is an editorial judgement and a script reading branch prefixes cannot
+make one -- it can only guess consistently, which is what an earlier rule did
+and what produced version numbers nobody had chosen.
+
+**Decision.** `feat/` and `feature/` move Y and reset Z. `fix/` and `hotfix/`
+move Z. X is untouched by any branch name and stays with the release workflow.
+
+**Why the earlier reasoning does not hold.** It was right that the judgement is
+editorial and wrong about who makes it. Naming a branch `feat/` *is* the
+judgement, made by the person who built the thing, at the moment they know it is
+true -- not reconstructed later from a list of merges by someone reading titles.
+What the old rule produced in practice was Y almost never moving, so the number
+stopped saying anything about the SHAPE of what had landed: a build that had
+gained a whole subsystem read the same as one that had fixed a typo, and the
+only signal was a warning nobody had to act on.
+
+X stays a decision, because "this is a new generation of the product" is not a
+claim a branch name can make.
+
+**Consequence.** `replay_landings` in `scripts/next_version.py` routes features
+through `bump_minor`. The `--pending-minor` warning is removed along with its
+step-summary block in `release.yml`: it existed only because the old rule had no
+enforcement, and now the condition it watched for cannot arise, so it could only
+ever be wrong. Order of landings matters again and is asserted -- a feature
+resets Z, so fix-feat-fix and feat-fix-fix differ.
+
+Note that the entry below, from 2026-08-18, says "X and Y are editorial by
+design". That was true when written and is now true only of X.
+
 ## 2026-08-18: Y carries into X at ten (supersedes 2026-08-09)
 
 **Context.** The radix was raised from ten to twenty on 2026-08-09, so that X

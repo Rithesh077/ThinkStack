@@ -7,11 +7,12 @@ does not pretend to be. Under semver, MAJOR means "we broke your code", which is
 meaningless for a desktop application nobody imports. The number here says how
 far a build has drifted from the current one:
 
-- **Z** advances on its own for anything that lands, and is unbounded
-- **Y** moves only when a human declares a feature release, and carries into X
-  at **ten** — so `1.9.4` is followed by `2.0.0`, never `1.10.0`. Y is a single
+- **Z** advances when a `fix/` branch lands, and is unbounded
+- **Y** advances when a `feat/` branch lands, resetting Z, and carries into X at
+  **ten** — so `1.9.4` is followed by `2.0.0`, never `1.10.0`. Y is a single
   digit, 0–9
-- **X** moving resets both columns below it
+- **X** is declared by a human running the release workflow, and moving it
+  resets both columns below it
 
 Ordering is preserved either way, which is the property that actually matters:
 the updater compares versions and must never be offered a number lower than the
@@ -48,6 +49,13 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   neighbourhood can be followed out to a chosen depth.
 
 ### Changed
+- **A `feat/` branch moves the minor again.** Landing a feature advances Y and
+  resets Z; a `fix/` advances Z. Between 2026-08-05 and now every landing moved
+  Z and only a human could move Y, on the reasoning that calling something a
+  feature release is editorial. It is — but naming a branch `feat/` *is* that
+  judgement, made by the person who built it. What the previous rule produced
+  was a Y that almost never moved, so a build that had gained a whole subsystem
+  read the same as one that had fixed a typo.
 - **Y carries into X at ten again, not twenty.** The radix was raised to twenty
   on 2026-08-09 so that X would not climb after ten features, which can be one
   quiet quarter. Reverted: a two-digit Y is precisely what the scheme exists to

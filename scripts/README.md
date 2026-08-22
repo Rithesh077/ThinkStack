@@ -173,7 +173,7 @@ warning fires past 90%.
 | `ship.sh` | **beta → main → published, in one command, then verifies it** |
 | `rollback.sh` | get users off a bad stable release |
 | `release.sh` | cut a release: bump version, tag the channel, push |
-| `next_version.py` | work out the next version (Y is 0-9; carries into X at ten) |
+| `next_version.py` | work out the next version (`feat/` moves Y, `fix/` moves Z; Y is 0-9 and carries into X at ten) |
 | `set-repo.sh` | retarget the project at a different GitHub owner/repo |
 
 ## preflight.sh
