@@ -223,6 +223,13 @@ no account, no queue and no time limit.
   - isolates a single broken figure/table behind a placeholder so the rest of the
     paper still produces a PDF, and as a last resort neutralises all figures
     rather than failing outright.
+- **Use a file without moving it** — link a `.tex`, `.bib`, figure or PDF that
+  lives anywhere on the machine and the project refers to it where it sits,
+  rather than taking a copy. If it is renamed or moved, it is found again by its
+  filesystem identity and the reference repairs itself; if it genuinely goes,
+  the panel says **missing** and offers to locate it rather than quietly
+  dropping the entry. Copying it in is available when a project needs to travel
+  as a unit.
 - **Cite from your library, inline** — type `cite` and the library drops down
   under the caret; keep typing to filter on title, author, year or key; press
   Enter and the word becomes `\cite{vaswani2017attention}` with the entry
