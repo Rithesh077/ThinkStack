@@ -23,7 +23,7 @@ import {
   Loader2, MoveRight, Plus,
 } from 'lucide-react';
 import { projectFilesApi } from '../utils/api';
-import { inTauri, pickProjectFile } from '../utils/filePicker';
+import PathPicker from './PathPicker';
 
 function human(bytes) {
   if (!bytes && bytes !== 0) return '';
@@ -36,10 +36,10 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
   const [links, setLinks] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  // the typed-path fallback, for running in a browser where there is no
-  // native dialog to open. Not dead weight: it is also the way in for a file
-  // that lives somewhere a dialog makes awkward to reach.
-  const [typing, setTyping] = useState(null);
+  // What the chooser is currently for: linking something new, or repairing a
+  // link whose file moved. Held together because both end in a path and the
+  // window is the same window.
+  const [picking, setPicking] = useState(null);   // { mode, then }
 
   const load = useCallback(async () => {
     try {
@@ -66,25 +66,54 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
     }
   };
 
-  /** ask natively where possible, fall back to typing a path */
-  const choose = async (then, opts) => {
-    const { path, reason } = await pickProjectFile(opts);
-    if (path) return then(path);
-    if (reason === 'cancelled') return undefined;
-    // No native dialog: this is a browser, where a file input hands back bytes
-    // and deliberately withholds the path. Typing it is the way through, and
-    // is also the escape hatch for a file somewhere a dialog makes awkward.
-    return setTyping({ then });
-  };
-
+  /* One chooser, everywhere. The native dialog was only ever available inside
+     the desktop shell, and its absence in a browser left typing a path as the
+     way through -- which is remembering, not choosing. PathPicker reads
+     directories through the backend, so the same window opens in the app and in
+     a tab. */
   const add = (directory = false) =>
-    choose((path) => run(() => projectFilesApi.addLink(projectId, path)), { directory });
+    setPicking({
+      mode: directory ? 'folder' : 'file',
+      then: (path) => run(() => projectFilesApi.addLink(projectId, path)),
+    });
 
   const locate = (link) =>
-    choose(
-      (path) => run(() => projectFilesApi.relink(projectId, link.id, path)),
-      { directory: link.kind === 'dir' },
-    );
+    setPicking({
+      mode: link.kind === 'dir' ? 'folder' : 'file',
+      then: (path) => run(() => projectFilesApi.relink(projectId, link.id, path)),
+    });
+
+  /* The keys this borrows from, because they are the ones in people's hands:
+     Ctrl+O for a file, Ctrl+K Ctrl+O for a folder. The chord waits a moment for
+     its second key and then forgets, so a stray Ctrl+K does not arm a trap. */
+  useEffect(() => {
+    let chord = false;
+    let timer = null;
+    const onKey = (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (chord && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        chord = false;
+        clearTimeout(timer);
+        return add(true);
+      }
+      if (e.key.toLowerCase() === 'k') {
+        chord = true;
+        clearTimeout(timer);
+        timer = setTimeout(() => { chord = false; }, 1500);
+        return undefined;
+      }
+      if (e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        return add(false);
+      }
+      return undefined;
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   return (
     <div className="lf">
@@ -154,27 +183,15 @@ export default function LinkedFiles({ projectId, onFilesChanged }) {
         </div>
       ))}
 
-      {typing && (
-        <div className="lf-typed">
-          <input
-            className="ft-rename"
-            autoFocus
-            placeholder={inTauri() ? 'full path' : '/home/you/paper/refs.bib'}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === 'Enter') {
-                const v = e.target.value.trim();
-                setTyping(null);
-                if (v) typing.then(v);
-              }
-              if (e.key === 'Escape') setTyping(null);
-            }}
-            onBlur={() => setTyping(null)}
-          />
-        </div>
+      {picking && (
+        <PathPicker
+          mode={picking.mode}
+          onCancel={() => setPicking(null)}
+          onPick={(path) => { const { then } = picking; setPicking(null); then(path); }}
+        />
       )}
 
-      {!links.length && !typing && (
+      {!links.length && (
         <p className="lf-empty">
           Nothing linked. Use + for a file, or the folder button for a whole
           directory, kept elsewhere on this machine.

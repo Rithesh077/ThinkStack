@@ -46,12 +46,22 @@ class TestLinking:
         assert [p.name for p in project.iterdir()] == ["links.json"]
         assert src.exists()
 
-    def test_only_suffixes_a_latex_project_can_use(self, project, outside):
-        for name in ("id_rsa", "passwd", "notes.docx", "script.sh"):
+    def test_any_file_type_can_be_linked(self, project, outside):
+        """Type is not the test any more.
+
+        A suffix allowlist refused these until 2026-08-23. It was refusing
+        datasets, notes and image formats people legitimately keep beside a
+        paper, and the reason it was really there -- keeping an absolute-path
+        endpoint away from things worth stealing -- is now carried by the
+        same-origin check and the loopback bind, which is where an access
+        question belongs. What a document can USE is still narrower than what
+        it can link, and the picker says which is which.
+        """
+        for name in ("id_rsa", "passwd", "notes.docx", "script.sh", "data.parquet"):
             p = outside / name
             p.write_text("x")
-            with pytest.raises(FileError):
-                L.add_link(project, p)
+            link = L.add_link(project, p)
+            assert link.name == name
 
     def test_a_relative_path_is_refused(self, project):
         with pytest.raises(FileError):
@@ -237,7 +247,7 @@ class TestLinkingAFolder:
         assert r.status == "moved"
         assert r.resolved.name == "images"
 
-    def test_copying_a_folder_in_is_recursive_and_filtered(self, project, outside):
+    def test_copying_a_folder_in_is_recursive_and_takes_everything(self, project, outside):
         figures = outside / "figures"
         (figures / "nested").mkdir(parents=True)
         _tex(figures, "one.tex", "a")
@@ -249,8 +259,10 @@ class TestLinkingAFolder:
 
         assert (project / rel / "one.tex").read_text() == "a"
         assert (project / rel / "nested" / "two.tex").read_text() == "b"
-        # the same rule as linking a file: only what a paper can use
-        assert not (project / rel / "notes.docx").exists()
+        # Everything comes across. Thinning a copied folder to the files LaTeX
+        # understands loses the author's own data silently -- they asked for
+        # the folder, not for our opinion of which half of it counts.
+        assert (project / rel / "notes.docx").read_text() == "not for us"
 
     def test_a_folder_is_not_served_as_a_file(self, tmp_path, monkeypatch):
         """The raw endpoint refuses a folder rather than trying to stream it.
@@ -288,3 +300,80 @@ class TestLinkingAFolder:
         shutil.rmtree(figures)
 
         assert L.list_links(project)[0].status == "missing"
+
+
+class TestBrowsing:
+    """Listing a directory so the interface can draw a chooser.
+
+    This exists because the native dialog is only available inside the desktop
+    shell, and its absence left typing a path as the way through -- which is
+    remembering, not choosing. It lists and nothing else: no content is read,
+    nothing is opened, nothing is written.
+    """
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+
+        import main
+
+        return TestClient(main.app, raise_server_exceptions=False)
+
+    def test_it_lists_folders_and_files(self, tmp_path):
+        (tmp_path / "papers").mkdir()
+        (tmp_path / "refs.bib").write_text("@book{x}")
+        r = self._client().get("/api/papers/browse", params={"path": str(tmp_path)})
+        assert r.status_code == 200
+        names = [e["name"] for e in r.json()["entries"]]
+        assert names == ["papers", "refs.bib"]          # folders first, then files
+
+    def test_every_file_can_be_taken(self, tmp_path):
+        (tmp_path / "refs.bib").write_text("x")
+        (tmp_path / "notes.docx").write_text("x")
+        entries = {e["name"]: e for e in
+                   self._client().get("/api/papers/browse",
+                                      params={"path": str(tmp_path)}).json()["entries"]}
+        # Nothing is greyed out any more, because nothing would be refused.
+        assert entries["refs.bib"]["linkable"] is True
+        assert entries["notes.docx"]["linkable"] is True
+
+    def test_it_still_says_which_files_latex_understands(self, tmp_path):
+        (tmp_path / "refs.bib").write_text("x")
+        (tmp_path / "notes.docx").write_text("x")
+        entries = {e["name"]: e for e in
+                   self._client().get("/api/papers/browse",
+                                      params={"path": str(tmp_path)}).json()["entries"]}
+        # A hint the chooser can show, not a gate. Someone linking notes.docx
+        # beside a paper is doing something reasonable; someone expecting to
+        # \input it is not, and this is what lets the interface say so.
+        assert entries["refs.bib"]["latex"] is True
+        assert entries["notes.docx"]["latex"] is False
+
+    def test_dotfiles_are_left_out(self, tmp_path):
+        """A chooser is not a file manager; dotfiles are noise in one."""
+        (tmp_path / ".hidden.tex").write_text("x")
+        (tmp_path / "shown.tex").write_text("x")
+        body = self._client().get(
+            "/api/papers/browse", params={"path": str(tmp_path)}
+        ).json()
+        assert [e["name"] for e in body["entries"]] == ["shown.tex"]
+
+    def test_it_offers_the_way_back_up(self, tmp_path):
+        sub = tmp_path / "deep"
+        sub.mkdir()
+        body = self._client().get("/api/papers/browse", params={"path": str(sub)}).json()
+        assert body["parent"] == str(tmp_path)
+        assert body["path"] == str(sub)
+
+    def test_a_missing_folder_is_a_404_not_an_empty_list(self, tmp_path):
+        r = self._client().get("/api/papers/browse", params={"path": str(tmp_path / "nope")})
+        assert r.status_code == 404
+
+    def test_a_file_is_not_a_folder(self, tmp_path):
+        f = tmp_path / "a.tex"
+        f.write_text("x")
+        assert self._client().get("/api/papers/browse", params={"path": str(f)}).status_code == 400
+
+    def test_it_never_returns_file_contents(self, tmp_path):
+        (tmp_path / "secret.tex").write_text("SENSITIVE-CONTENT-MARKER")
+        r = self._client().get("/api/papers/browse", params={"path": str(tmp_path)})
+        assert "SENSITIVE-CONTENT-MARKER" not in r.text

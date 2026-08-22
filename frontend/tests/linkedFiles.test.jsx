@@ -25,16 +25,20 @@ const calls = { relink: [], unlink: [], copy: [], add: [] };
 vi.mock('../src/utils/api', () => ({
   projectFilesApi: {
     links: vi.fn(async () => ({ links: links.current })),
+    // the chooser reads directories through the backend, so repairing a link
+    // now goes: click Locate -> a window opens -> click the file
+    browse: vi.fn(async () => ({
+      path: '/home/u', parent: '/home', home: '/home/u',
+      entries: [
+        { name: 'gone.png', path: '/home/u/found/gone.png', is_dir: false,
+          size: 50, linkable: true },
+      ],
+    })),
     addLink: vi.fn(async (p, path) => { calls.add.push(path); return { links: links.current }; }),
     relink: vi.fn(async (p, id, path) => { calls.relink.push([id, path]); return { links: links.current }; }),
     unlink: vi.fn(async (p, id) => { calls.unlink.push(id); return { links: [] }; }),
     copyLinkIn: vi.fn(async (p, id) => { calls.copy.push(id); return { links: links.current, files: [] }; }),
   },
-}));
-
-vi.mock('../src/utils/filePicker', () => ({
-  inTauri: () => true,
-  pickProjectFile: vi.fn(async () => ({ path: '/home/u/found/gone.png', reason: 'ok' })),
 }));
 
 const { default: LinkedFiles } = await import('../src/components/LinkedFiles');
@@ -75,9 +79,19 @@ describe('linked files', () => {
     expect(buttons().some((b) => b.textContent.includes('Locate'))).toBe(true);
   });
 
+  it('Locate opens a chooser rather than asking for a typed path', async () => {
+    const locate = buttons().find((b) => b.textContent.includes('Locate'));
+    await act(async () => { locate.click(); });
+    // a window, with the folder listed in it -- not an input to remember a path
+    expect(host.querySelector('.pp')).toBeTruthy();
+    expect(host.textContent).toContain('gone.png');
+  });
+
   it('repairing a link keeps the same link rather than adding one', async () => {
     const locate = buttons().find((b) => b.textContent.includes('Locate'));
     await act(async () => { locate.click(); });
+    const row = [...host.querySelectorAll('.pp-row')].find((r) => r.textContent.includes('gone.png'));
+    await act(async () => { row.click(); });
     expect(calls.relink).toEqual([['l3', '/home/u/found/gone.png']]);
     expect(calls.add).toHaveLength(0);          // not a second row
   });

@@ -3820,3 +3820,101 @@ input::-webkit-credentials-auto-fill-button {
 .lf-typed { padding: 0.15rem 0.55rem 0.3rem; }
 .lf-head-actions { display: inline-flex; gap: 0.1rem; }
 .lf-kind { margin-right: 0.3rem; vertical-align: -1px; color: var(--ink-3); }
+
+/* ── the path chooser ──────────────────────────────────
+   Navigating to a file rather than remembering where it is. Deliberately the
+   same window in the desktop app and in a browser: the native dialog exists
+   only in the shell, and the alternative there was typing a path, which is not
+   choosing.
+
+   Sized to a list rather than to the screen. A chooser that fills a 1920px
+   window makes the reader's eye travel the width of the desk to match a name
+   to its size. */
+.pp-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(46, 42, 34, 0.28);
+  display: grid; place-items: center;
+}
+.pp {
+  width: min(38rem, 92vw);
+  max-height: min(34rem, 82vh);
+  display: flex; flex-direction: column;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 44px rgba(46, 42, 34, 0.22);
+  overflow: hidden;
+}
+.pp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--rule);
+}
+.pp-title { font-weight: 600; font-size: var(--type-base); }
+.pp-head button, .pp-bar button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.2rem; border-radius: 2px; display: inline-flex;
+}
+.pp-head button:hover, .pp-bar button:hover:not(:disabled) {
+  color: var(--ink); background: var(--sheet-2);
+}
+.pp-bar button:disabled { opacity: 0.35; cursor: default; }
+
+.pp-bar {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.45rem 0.85rem; border-bottom: 1px solid var(--rule);
+}
+/* A long path is truncated from the LEFT, because the end is the part that
+   says where you are. `direction: rtl` is what moves the ellipsis to the front
+   -- but on its own it also relocates the leading slash to the end, rendering
+   /home/u/papers as home/u/papers/. `unicode-bidi: plaintext` fixes that: the
+   run is laid out left-to-right by its own content while the overflow still
+   happens at the start. */
+.pp-cwd {
+  font-family: var(--font-mono); font-size: var(--type-xs); color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; unicode-bidi: plaintext; text-align: left; flex: 1;
+}
+.pp-filter {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.85rem; border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.pp-filter input {
+  flex: 1; border: 0; background: none; outline: none;
+  font-size: var(--type-sm); color: var(--ink);
+}
+
+.pp-list { overflow-y: auto; padding: 0.3rem 0.35rem; flex: 1; }
+.pp-row {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.32rem 0.5rem; border: 0; border-radius: 2px;
+  background: none; cursor: pointer; text-align: left;
+  font-size: var(--type-sm); color: var(--ink-2);
+}
+.pp-row.is-cursor { background: var(--sheet-2); color: var(--ink); }
+/* a file a paper cannot use is shown but not offered -- hiding it would make
+   the folder look emptier than it is */
+.pp-row.is-off { color: var(--ink-4); cursor: default; }
+.pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-size { font-size: var(--type-xs); color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+.pp-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.55rem 0.85rem; border-top: 1px solid var(--rule);
+}
+.pp-hint {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: var(--type-xs); color: var(--ink-4);
+}
+.pp-take {
+  font-size: var(--type-sm); padding: 0.3rem 0.75rem;
+  border: 1px solid var(--rule-2); border-radius: 2px;
+  background: var(--ink); color: var(--paper); cursor: pointer;
+}
+.pp-take:disabled { opacity: 0.4; cursor: default; }
+.pp-note, .pp-error {
+  font-size: var(--type-sm); color: var(--ink-3); padding: 0.6rem 0.5rem;
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.pp-error { color: var(--danger); }
