@@ -30,6 +30,7 @@ import {
 import { papersApi, projectFilesApi } from '../utils/api';
 import { isImage } from '../utils/filekind';
 import ConfirmDialog from './ConfirmDialog';
+import LinkedFiles from './LinkedFiles';
 
 function iconFor(entry, expanded) {
   if (entry.is_dir) return expanded ? FolderOpen : FolderClosed;
@@ -453,6 +454,10 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
             )}
             {!files.length && !loading.has(pid) && !pending
               && <p className="ft-empty ft-indent">Empty</p>}
+            {/* Files kept elsewhere on the machine. Below the project's own
+                files, because they are a smaller and rarer thing and should
+                not push the main tree down. */}
+            <LinkedFiles projectId={pid} onFilesChanged={() => loadFiles(pid)} />
           </>
         )}
       </div>

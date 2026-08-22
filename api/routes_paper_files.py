@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from domain.paper_writer import files as F
+from domain.paper_writer import links as L
 from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
 
 logger = logging.getLogger(__name__)
@@ -171,3 +172,89 @@ async def api_delete(project_id: str, path: str):
     d = _project(project_id)
     _guard(lambda: F.delete_path(d, path))
     return {"files": _tree(d)}
+
+
+# ── files that live outside the project ──────────────────────────────────
+#
+# These take an ABSOLUTE path, which is the one thing `safe_path` exists to
+# refuse everywhere else. Three things make that acceptable here and they are
+# worth naming, because "it takes a path from the caller" is otherwise exactly
+# the shape of the traversal this codebase already had once.
+#
+#   1. The caller is the application. The API answers only same-origin requests
+#      and the Vite dev server; a page the user happens to visit cannot reach
+#      it. That was not true until recently and is the reason this feature
+#      waited for it.
+#   2. The path comes from a native file dialog the user drove, not from
+#      anything the interface invented.
+#   3. Only suffixes a LaTeX project can use are linkable, so the files worth
+#      stealing are not reachable through it: ~/.ssh/id_rsa has no suffix, and
+#      neither does /etc/passwd.
+#
+# The file itself is never modified. A link is a note about where something is.
+
+
+class LinkRequest(BaseModel):
+    path: str
+
+
+class RelinkRequest(BaseModel):
+    path: str
+
+
+class CopyInRequest(BaseModel):
+    dest: str = ""
+
+
+@router.get("/projects/{project_id}/links")
+async def api_list_links(project_id: str):
+    """Every linked file, with where it actually is now.
+
+    Resolution happens on read rather than on a schedule: a file that moved
+    while the application was closed is discovered the next time anyone looks,
+    which is the moment it matters.
+    """
+    d = _project(project_id)
+    return {"links": [r.as_dict() for r in L.list_links(d)]}
+
+
+@router.post("/projects/{project_id}/links")
+async def api_add_link(project_id: str, req: LinkRequest):
+    d = _project(project_id)
+    link = _guard(lambda: L.add_link(d, req.path))
+    return {"link": link.as_dict(), "links": [r.as_dict() for r in L.list_links(d)]}
+
+
+@router.put("/projects/{project_id}/links/{link_id}")
+async def api_relink(project_id: str, link_id: str, req: RelinkRequest):
+    """The user has found a file we lost. Remember where, keep the same link."""
+    d = _project(project_id)
+    link = _guard(lambda: L.relink(d, link_id, req.path))
+    return {"link": link.as_dict(), "links": [r.as_dict() for r in L.list_links(d)]}
+
+
+@router.delete("/projects/{project_id}/links/{link_id}")
+async def api_remove_link(project_id: str, link_id: str):
+    """Forget the link. The file is not ours and is not touched."""
+    d = _project(project_id)
+    _guard(lambda: L.remove(d, link_id))
+    return {"links": [r.as_dict() for r in L.list_links(d)]}
+
+
+@router.post("/projects/{project_id}/links/{link_id}/copy")
+async def api_copy_link_in(project_id: str, link_id: str, req: CopyInRequest):
+    """Take a copy into the project, on purpose."""
+    d = _project(project_id)
+    rel = _guard(lambda: L.copy_into_project(d, link_id, req.dest))
+    return {"path": rel, "files": _tree(d), "links": [r.as_dict() for r in L.list_links(d)]}
+
+
+@router.get("/projects/{project_id}/links/{link_id}/raw")
+async def api_link_raw(project_id: str, link_id: str):
+    """Serve a linked file, so a figure can be previewed where it lies."""
+    d = _project(project_id)
+    link = _guard(lambda: L.get(d, link_id))
+    r = L.resolve(d, link)
+    if r.resolved is None:
+        raise HTTPException(status_code=404, detail=f"{link.name} cannot be found.")
+    return FileResponse(r.resolved, filename=r.resolved.name)
