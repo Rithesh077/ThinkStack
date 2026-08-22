@@ -417,16 +417,26 @@ That is a positioning decision with real consequences:
 - **the first-run path cannot begin with "add papers"**, which is what it
   implies now.
 
-**File management, as its own panel.** A paper is already a folder on disk, so
-the structure exists; what is missing is any way to work with it. The model is
-the file explorer in a code editor:
+**File management, as its own panel.** A paper is already a folder on disk, and
+more of this exists than this section previously implied.
 
-- a tree the user **rearranges** — drag a file into a subfolder, create and
-  delete folders, rename in place, move things between projects;
-- **importing what already exists** — bring in a `.tex` file, a `.bib`, a
-  figure, or a PDF from anywhere on the machine, either copied into the project
-  or opened where it lies. Someone with a half-written paper should be able to
-  open it here rather than start again;
+`domain/paper_writer/files.py` already provides listing, reading, writing,
+folder creation, move, copy, delete and upload, each behind `safe_path()` --
+which resolves a path first and only then refuses anything that did not land
+inside the project, because `a/../../b` reveals itself only once resolved and a
+symlink only to `resolve()`. There are size caps per file and per project, a
+suffix allowlist, nine routes in `api/routes_paper_files.py` exposing them, and
+a `FileTree.jsx` that renders the tree with uploads and a two-step delete.
+
+The remaining work is therefore narrower than "build a file explorer":
+
+- **the rearranging gesture.** `move` exists and is safe; dragging is what is
+  missing, along with moving a file between two projects rather than within one;
+- **reaching files that are not in the project.** Everything above is
+  project-relative by design -- correct for what it does, and exactly why a
+  linked file is a new concept rather than an extension of it. Someone with a
+  half-written paper elsewhere on the machine should be able to open it here
+  rather than start again;
 - **saving the compiled PDF where the author chose, under a name they gave it**,
   rather than a file appearing somewhere the application picked;
 - a command entry for the editor's own operations, the way a code editor has one.
@@ -470,6 +480,29 @@ So: relative within, identity plus path without, a watcher while running, and
 when all of that fails, **say the file is missing and offer to locate it** —
 once, remembering the answer. A tree that quietly drops an entry is worse than
 one that admits it lost track.
+
+**Both decisions are settled, and they are recorded here because they shape
+what is stored rather than what is drawn.**
+
+*A linked file is referenced where it lies, and copied only when the user asks.*
+This follows the rule already adopted for imported models -- referenced, never
+copied -- for the same reason: a user with a 40MB PDF should not acquire a
+second copy because the application preferred a tidy folder, and a `.bib` shared
+between three projects should be one file. Copying stays available as an
+explicit action for anyone who wants a project that travels as a unit.
+
+The cost is accepted rather than overlooked: referencing makes the missing-file
+path ordinary instead of rare, so the identity work below is not a refinement to
+add later. It is a precondition.
+
+*Identity is the path plus the operating system's file id.* The inode and device
+on Unix, the NTFS file id on Windows, both of which survive a rename and a move
+within a filesystem. Resolution order on open: try the stored path; if it is
+gone, look for the identity among the directories already known; only then tell
+the user, and remember what they answer. Content hashing was rejected -- it
+survives more cases but costs a read of every file and cannot distinguish two
+copies of the same document, which for a shared bibliography is precisely the
+wrong answer.
 
 The scope of that panel is **file management and the editor's own commands, and
 nothing else**. It is not a second interface to the library, it does not
