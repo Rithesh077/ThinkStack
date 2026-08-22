@@ -1286,6 +1286,7 @@ export default function useCanvas({
     let loop = null;
     let pin = null;
     let pinId = null;
+    let armed = null;
     const lassoEl = svg.querySelector('#lg-lasso');
 
     const toWorld = (e) => {
@@ -1299,28 +1300,22 @@ export default function useCanvas({
     const down = (e) => {
       state.cancelTween();
       const g = gestureFor(e);
-      // A press on a paper, in force mode, takes hold of it. Meaning mode
-      // falls through to the node's own click listener exactly as before --
-      // there is nothing to drag when the coordinates are the projection.
+      // A press on a paper is a CANDIDATE drag, and nothing more until the
+      // pointer has actually moved. A click and a drag begin with identical
+      // events, so committing on pointerdown made every click a zero-distance
+      // drag: it pinned the paper where it already was, and the pin's own
+      // re-render then replaced the element between pointerup and click, so
+      // the selection click had nothing left to land on and papers stopped
+      // being selectable. `armed` is the candidate; `pin` is the commitment.
       //
       // Gaps and claim sub-nodes are excluded: both are placed FROM the papers
       // they belong to, so dragging one would be dragging a derived value.
       if (g === 'node') {
-        // Dragging is available at every point on the dial, 0 included: putting
-        // a paper somewhere is a statement about where it belongs, and it would
-        // be a strange rule that you may only make it while the map is relaxed.
         const hit = e.target.closest('.lg-node');
         if (!hit || hit.dataset.gap || hit.dataset.claim) return;
-        // At blend 0 there is no simulation to hold the particle, so the drag
-        // moves `state.pos` directly and the pin is the whole of the record.
-        pinId = hit.dataset.id;
-        pin = state.sim?.find((p) => p.id === pinId) || null;
-        if (!pin && !state.pos[pinId]) { pinId = null; return; }
-        const w = toWorld(e);
-        if (pin) { pin.fx = w.x; pin.fy = w.y; }
-        state.pins[pinId] = { x: w.x, y: w.y };
-        if (state.blend > 0) reheat(0.35);
-        svg.setPointerCapture(e.pointerId);
+        const id = hit.dataset.id;
+        if (!id || !state.pos[id]) return;
+        armed = { id, at: toWorld(e), pointerId: e.pointerId };
         return;
       }
       if (g === 'none') return;
@@ -1334,6 +1329,16 @@ export default function useCanvas({
       svg.setPointerCapture(e.pointerId);
     };
     const move = (e) => {
+      // Far enough to mean it? Same threshold the lasso uses to decide a point
+      // is worth keeping: four screen pixels, at any zoom.
+      if (armed && !pinId) {
+        const w = toWorld(e);
+        if (!lassoFar(armed.at, w, state.cam.k)) return;
+        pinId = armed.id;
+        pin = state.sim?.find((p) => p.id === pinId) || null;
+        svg.setPointerCapture(armed.pointerId);
+        armed = null;
+      }
       if (pinId) {
         const w = toWorld(e);
         if (pin) { pin.fx = w.x; pin.fy = w.y; }
@@ -1367,6 +1372,10 @@ export default function useCanvas({
       applyCam();
     };
     const up = () => {
+      // A press that never moved: not a drag, so nothing was pinned and nothing
+      // is saved. The node's own click listener does the selecting, exactly as
+      // it always did.
+      armed = null;
       if (pinId) {
         // Dropped, and it STAYS. Obsidian releases on drop; here a paper you
         // have moved is your arrangement of the map, and an arrangement that
