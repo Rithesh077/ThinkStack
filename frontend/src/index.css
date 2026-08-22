@@ -3239,14 +3239,24 @@ input::-webkit-credentials-auto-fill-button {
 .ft-row.is-project.is-active { color: var(--text); }
 .ft-row.is-project.is-active .ft-icon { color: var(--accent); opacity: 1; }
 
+/* The "has a compiled PDF" mark.
+
+   No margin-left: auto here. .ft-when already has one, and flexbox splits the
+   free space EQUALLY between every auto margin in a row -- so with two of
+   them the date landed at a different x in every row depending on how long
+   the name was, and a row with no dot pushed it hard right instead. The dates
+   read as scattered rather than as a column.
+
+   The slot is always rendered, dot or no dot, so a paper that has never been
+   compiled does not shift the date of the row above it. */
 .ft-dot {
   width: 5px;
   height: 5px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
 }
+.ft-dot.is-empty { background: transparent; }
 
 .ft-spin { margin-left: auto; animation: spin 1s linear infinite; flex-shrink: 0; }
 .ft-indent { padding-left: 34px; }
@@ -3918,3 +3928,99 @@ input::-webkit-credentials-auto-fill-button {
   display: flex; align-items: center; gap: 0.4rem;
 }
 .pp-error { color: var(--danger); }
+
+/* ── the project filter and the "when" column ──────────
+   The tree holds two dozen papers, seven of them called bundle-validation and
+   four called untitled. Sorting by last edit answers "the one I was working
+   on"; the relative time answers "which of these seven"; the filter answers
+   the rest. */
+.ft-filter {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.55rem 0.35rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.ft-filter input {
+  flex: 1; min-width: 0;            /* or the input's default size floors the row */
+  border: 0; background: none; outline: none;
+  font-size: var(--type-sm); color: var(--ink);
+}
+.ft-filter input::placeholder { color: var(--ink-4); }
+.ft-filter-count {
+  font-size: var(--type-xs); color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Right-aligned, quiet, and out of the way of the name it qualifies. It is
+   the answer to "which one", not a thing to read on its own. */
+/* The one auto margin in the row: everything before it packs left, the date
+   and the dot sit together at the right. Right-aligned over a reserved width
+   so "now" and "Aug 15" end at the same place -- tabular-nums then keeps the
+   digits from shifting as the numbers change. */
+.ft-when {
+  margin-left: auto;
+  min-width: 3.2rem;
+  text-align: right;
+  font-size: var(--type-xs);
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ft-row.is-active .ft-when { color: var(--ink-3); }
+
+/* ── the bibliography panel ────────────────────────────
+   What the document cites, under the editor it belongs to. Collapsed by
+   default: a thing you consult, not a thing you read while writing, so the
+   editor keeps its height until asked.
+
+   The two unhappy states are told in WORDS as well as colour -- "missing" and
+   "unused" are labels. A key cited but absent from references.bib is the one
+   that renders as [?] in the PDF, which is how that bug reached us. */
+.bib { border-top: 1px solid var(--rule); flex: 0 0 auto; }
+.bib-head {
+  display: flex; align-items: center; gap: 0.4rem; width: 100%;
+  padding: 0.4rem 0.7rem; border: 0; background: none; cursor: pointer;
+  color: var(--ink-3); font-size: var(--type-sm); text-align: left;
+}
+.bib-head:hover { background: var(--sheet-2); color: var(--ink); }
+.bib-title { font-weight: 500; }
+.bib-counts {
+  margin-left: auto; display: inline-flex; gap: 0.6rem; align-items: center;
+  font-size: var(--type-xs); color: var(--ink-4);
+}
+.bib-warn {
+  display: inline-flex; align-items: center; gap: 0.2rem; color: var(--danger);
+}
+.bib-quiet { color: var(--ink-4); }
+
+.bib-body { padding: 0.15rem 0.7rem 0.6rem; max-height: 15rem; overflow-y: auto; }
+.bib-row {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.22rem 0; font-size: var(--type-sm);
+  border-bottom: 1px solid var(--rule);
+}
+.bib-row:last-child { border-bottom: 0; }
+.bib-key {
+  font-family: var(--font-mono); font-size: var(--type-xs);
+  color: var(--ink-2); white-space: nowrap;
+}
+.bib-row.is-missing .bib-key { color: var(--danger); }
+.bib-what {
+  flex: 1; min-width: 0; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bib-times { font-size: var(--type-xs); color: var(--ink-4); }
+.bib-row button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-4);
+  padding: 0 0.15rem; display: inline-flex;
+}
+.bib-row button:hover { color: var(--ink); }
+
+.bib-unused { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--rule); }
+.bib-unused-label {
+  display: block; font-size: var(--type-xs); color: var(--ink-4);
+  margin-bottom: 0.25rem;
+}
+.bib-unused .bib-key { margin-right: 0.5rem; }
+.bib-empty, .bib-error { font-size: var(--type-sm); color: var(--ink-4); padding: 0.3rem 0; }
+.bib-error { color: var(--danger); }

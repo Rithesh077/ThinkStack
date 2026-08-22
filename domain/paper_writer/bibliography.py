@@ -263,3 +263,43 @@ def cite(project_dir: Path, doc: Citable) -> tuple[str, bool]:
     separator = "" if not bib_text else ("\n" if bib_text.endswith("\n") else "\n\n")
     path.write_text(f"{bib_text}{separator}{entry}\n", encoding="utf-8")
     return key, True
+
+
+# ── what the document actually cites ─────────────────────────────────────
+#
+# `references.bib` says what COULD be cited. The source says what IS. They
+# drift apart in both directions and neither drift is visible today: a key
+# cited but absent from the bib renders as [?] in the PDF, and an entry in the
+# bib that nothing cites is carried around forever. Reading both and comparing
+# them is the whole of the bibliography panel.
+
+# Matches \cite, \citep, \citet, \nocite and friends, with their optional
+# arguments, then captures the brace group. Multiple keys per call are normal:
+# \cite{a,b,c} is three citations, not one.
+_CITE_CALL = re.compile(r"\\(?:no)?cite[a-zA-Z]*\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}")
+# A % that is not escaped starts a comment, and a citation inside one is not a
+# citation. Checked per line rather than with a single expression because
+# "50\% of \cite{x}" is a real sentence.
+_COMMENT = re.compile(r"(?<!\\)%.*")
+
+
+def cited_keys(source: str) -> dict[str, int]:
+    """Every key the source cites, and how many times.
+
+    Comments are stripped first: a commented-out paragraph is not a citation,
+    and a panel that lists one sends the author looking for something that is
+    not in their document.
+    """
+    live = "\n".join(_COMMENT.sub("", line) for line in source.splitlines())
+    counts: dict[str, int] = {}
+    for group in _CITE_CALL.findall(live):
+        for raw in group.split(","):
+            key = raw.strip()
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def bib_keys(bib_text: str) -> list[str]:
+    """Every entry key defined in a .bib, in the order they appear."""
+    return [m.group(2).strip() for m in _ENTRY_RE.finditer(bib_text)]

@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from domain.paper_writer import files as F
 from domain.paper_writer import links as L
+from domain.paper_writer import synctex as SX
 from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
 
 logger = logging.getLogger(__name__)
@@ -347,3 +348,51 @@ async def api_browse(path: str = ""):
         "home": str(Path.home()),
         "entries": dirs + files,
     }
+
+
+# ── source and page, pointing at each other ──────────────────────────────
+#
+# Every compile already wrote a `.synctex.gz`; until now nothing read it. Both
+# directions are answered from the same file, parsed per request rather than
+# cached: it is rewritten on every compile, a stale cache would point at the
+# previous draft, and parsing 184 boxes costs less than deciding whether the
+# cache is still good.
+
+
+@router.get("/projects/{project_id}/sync/forward")
+async def api_sync_forward(project_id: str, line: int, file: str = "main.tex"):
+    """Where on the page did this source line end up?"""
+    d = _project(project_id)
+    sx = d / "main.synctex.gz"
+    if not sx.is_file():
+        raise HTTPException(status_code=404,
+                            detail="Compile the document first; there is no position map yet.")
+    m = SX.parse(sx)
+    box = m.forward(line, m.tag_for(file))
+    if box is None:
+        # A line that produced no box -- a comment, a blank, a macro that
+        # expanded to nothing -- has no position, and saying so is better than
+        # moving the reader somewhere arbitrary.
+        raise HTTPException(status_code=404, detail="That line does not appear in the PDF.")
+    return {
+        "page": box.page,
+        "line": box.line,
+        "x": box.x, "y": box.y,
+        "width": box.width, "height": box.height, "depth": box.depth,
+        "sp_per_inch": SX.SP_PER_INCH,
+    }
+
+
+@router.get("/projects/{project_id}/sync/reverse")
+async def api_sync_reverse(project_id: str, page: int, x: int, y: int):
+    """Which source line produced what is at this point on the page?"""
+    d = _project(project_id)
+    sx = d / "main.synctex.gz"
+    if not sx.is_file():
+        raise HTTPException(status_code=404,
+                            detail="Compile the document first; there is no position map yet.")
+    m = SX.parse(sx)
+    box = m.reverse(page, x, y)
+    if box is None:
+        raise HTTPException(status_code=404, detail="Nothing on that page came from the source.")
+    return {"line": box.line, "file": m.inputs.get(box.tag) or "main.tex", "page": box.page}

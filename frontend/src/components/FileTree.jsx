@@ -24,8 +24,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronRight, File, FileImage, FileText, FilePlus2,
-  FolderClosed, FolderOpen, FolderPlus, Loader2, Trash2, Upload,
+  ArrowDownAZ, ChevronDown, ChevronRight, Clock, File, FileImage, FileText,
+  FilePlus2, FolderClosed, FolderOpen, FolderPlus, Loader2, Search, Trash2,
+  Upload,
 } from 'lucide-react';
 import { papersApi, projectFilesApi } from '../utils/api';
 import { isImage } from '../utils/filekind';
@@ -67,6 +68,15 @@ function nest(files) {
 
 export default function FileTree({ projectId, openPath, onOpen, onProjectGone }) {
   const [projects, setProjects] = useState([]);
+  // Finding a project was a visual scan: the tree holds seven called
+  // `bundle-validation` and four called `untitled`, in arrival order.
+  const [filter, setFilter] = useState('');
+  const [sortBy, setSortBy] = useState('recent');   // 'recent' | 'name'
+  // "now", captured rather than read during render. Date.now() in the render
+  // body is impure -- the same component would label the same project
+  // differently on a re-render it did not ask for -- so it is a snapshot,
+  // refreshed when the list is.
+  const [now, setNow] = useState(() => Date.now() / 1000);
   const [filesBy, setFilesBy] = useState({});      // projectId -> files[]
   const [openProjects, setOpenProjects] = useState(() => new Set());
   const [openDirs, setOpenDirs] = useState(() => new Set());
@@ -91,6 +101,7 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
     try {
       const d = await papersApi.list();
       setProjects(d.projects || []);
+      setNow(Date.now() / 1000);
     } catch (e) {
       setError(e.message);
     }
@@ -442,7 +453,19 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
             <span className="ft-name">{p.name}</span>
           )}
           {loading.has(pid) && <Loader2 size={11} className="ft-spin" />}
-          {p.has_pdf && !loading.has(pid) && !renaming && <span className="ft-dot" title="compiled" />}
+          {!loading.has(pid) && renaming !== `project:${pid}` && (
+            <span className="ft-when" title={p.modified
+              ? new Date(p.modified * 1000).toLocaleString()
+              : ''}>{since(p.modified)}</span>
+          )}
+          {/* Always rendered, so a paper with no PDF does not shift the date
+              of every row that has one. */}
+          {!loading.has(pid) && renaming !== `project:${pid}` && (
+            <span
+              className={p.has_pdf ? 'ft-dot' : 'ft-dot is-empty'}
+              title={p.has_pdf ? 'compiled' : undefined}
+            />
+          )}
         </div>
 
         {isOpen && (
@@ -464,11 +487,38 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
     );
   };
 
+  /* "when" in the fewest characters that still answer it. An exact timestamp
+     is noise in a list you are scanning; what matters is whether this is the
+     one you had open an hour ago. */
+  const since = (t) => {
+    if (!t) return '';
+    const secs = now - t;
+    if (secs < 90) return 'now';
+    if (secs < 3600) return `${Math.round(secs / 60)}m`;
+    if (secs < 86400) return `${Math.round(secs / 3600)}h`;
+    if (secs < 86400 * 7) return `${Math.round(secs / 86400)}d`;
+    return new Date(t * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  };
+
+  const shown = projects
+    .filter((p) => !filter || (p.name || '').toLowerCase().includes(filter.toLowerCase()))
+    .slice()
+    .sort((a, b) => (sortBy === 'name'
+      ? (a.name_lower || '').localeCompare(b.name_lower || '')
+      : (b.modified || 0) - (a.modified || 0)));
+
   return (
     <div className="ft" onDragLeave={() => setDropOn(null)}>
       <div className="ft-head">
         <span className="ft-title">Papers</span>
         <div className="ft-head-actions">
+          <button
+            type="button"
+            title={sortBy === 'recent' ? 'Sorted by last edit — sort by name' : 'Sorted by name — sort by last edit'}
+            onClick={() => setSortBy((v) => (v === 'recent' ? 'name' : 'recent'))}
+          >
+            {sortBy === 'recent' ? <Clock size={13} /> : <ArrowDownAZ size={13} />}
+          </button>
           <button
             type="button"
             title="New paper"
@@ -480,11 +530,28 @@ export default function FileTree({ projectId, openPath, onOpen, onProjectGone })
         </div>
       </div>
 
+      {/* Shown once there are enough rows to be worth narrowing. Below that it
+          is a control asking to be used on a list you can already read. */}
+      {projects.length > 6 && (
+        <div className="ft-filter">
+          <Search size={11} />
+          <input
+            value={filter}
+            placeholder="Filter papers"
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setFilter(''); }}
+          />
+          {filter && <span className="ft-filter-count">{shown.length}</span>}
+        </div>
+      )}
+
       <div className="ft-list">
-        {projects.map(renderProject)}
+        {shown.map(renderProject)}
         {pending?.kind === 'project' && nameRow('paper name', commitPending, 0)}
         {projects.length === 0 && !pending
           && <p className="ft-empty">No papers yet. Press + to start one.</p>}
+        {projects.length > 0 && shown.length === 0
+          && <p className="ft-empty">No paper matches “{filter}”.</p>}
       </div>
 
       {error && <p className="ft-error">{error}</p>}

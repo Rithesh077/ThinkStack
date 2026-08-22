@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Save, Play, Download, ArrowUp, FileText, Loader2, BookOpen, ChevronDown,
 } from 'lucide-react';
+import BibliographyPanel from './BibliographyPanel';
 import { papersApi, documentsApi, projectFilesApi, useLlmBusy } from '../utils/api';
 import PageHeader from './PageHeader';
 import FileTree from './FileTree';
@@ -68,6 +70,7 @@ function insertLatexAt(src, gen, caret) {
 export default function Scribe() {
   const [projects, setProjects] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const nav = useNavigate();
   const [source, setSource] = useState('');
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState('');
@@ -712,6 +715,14 @@ export default function Scribe() {
                   : <ArrowUp size={15} />}
               </button>
             </div>
+            {/* What the document cites, under the editor it belongs to.
+                Collapsed: a thing you consult, not a thing you read while
+                writing, so the editor keeps its height until you ask. */}
+            <BibliographyPanel
+              projectId={activeId}
+              source={source}
+              onOpenPaper={(docId) => nav(`/?doc=${encodeURIComponent(docId)}`)}
+            />
           </div>
 
           {/* the compiled PDF is the only preview -- see the note at the top */}
@@ -735,7 +746,13 @@ export default function Scribe() {
             {warnings.length > 0 && (
               <details className="pw-warn">
                 <summary>
-                  ⚠ Compiled with {warnings.length} warning{warnings.length > 1 ? 's' : ''} - PDF may have missing figures
+                  {/* "may have missing figures" was written when a warning
+                      could only come from a figure that failed to draw. A
+                      compile now also reports tables whose rows do not match
+                      their column count, and telling a reader to look for a
+                      missing figure sends them hunting for the wrong thing.
+                      The banner says how many and lets the list say what. */}
+                  ⚠ Compiled with {warnings.length} warning{warnings.length > 1 ? 's' : ''} — the PDF was produced, but read these
                 </summary>
                 <pre>{warnings.join('\n\n')}</pre>
               </details>
