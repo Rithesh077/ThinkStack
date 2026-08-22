@@ -77,13 +77,6 @@ def current(repo: Path) -> str:
     return out.stdout.strip()
 
 
-def pending_minor(repo: Path) -> int:
-    out = subprocess.run(
-        [sys.executable, str(SCRIPT), "--pending-minor"],
-        cwd=repo, capture_output=True, text=True, check=True,
-    )
-    return int(out.stdout.strip())
-
 
 class TestBaseNeverGoesBackwards:
     def test_a_beta_tag_outranks_an_older_stable_tag(self, repo):
@@ -106,17 +99,17 @@ class TestBaseNeverGoesBackwards:
         assert next_version(repo) == "1.6.8"
 
 
-class TestEveryLandingMovesZ:
-    """X and Y are a decision; Z is a consequence.
+class TestTheBranchNameSaysWhichColumnMoves:
+    """feat/ moves Y, fix/ moves Z.
 
-    Deciding that a set of landings amounts to a minor version, or to a
-    release, is editorial. A script reading branch prefixes cannot make that
-    judgement -- it can only guess consistently, which is what it used to do
-    (feat/ -> minor) and what produced version numbers nobody had chosen.
+    The branch name is the claim: naming a branch feat/ says "this adds
+    something", made by the person who knows, at the moment it is true. The
+    alternative -- every landing moving Z and only a human moving Y -- was tried
+    and made Y almost never move, so a version that had gained a subsystem read
+    the same as one that had fixed a typo.
 
-    Z is automatic for the opposite reason: it is not a judgement. Something
-    landed, so the number moves. It has to move, or the build matches a tag
-    that already exists, is skipped as published, and never reaches a tester.
+    X is not on this list. "A new generation of the product" is not a claim a
+    branch name can make, so only the release workflow moves it.
     """
 
     def test_a_fix_moves_z(self, repo):
@@ -124,31 +117,37 @@ class TestEveryLandingMovesZ:
         land(repo, "fix/parser")
         assert next_version(repo) == "2.0.1"
 
-    def test_a_feature_also_moves_z_and_nothing_else(self, repo):
-        # It used to bump the minor. Landing work is not the same event as
-        # deciding the result is a minor version.
-        git(repo, "tag", "-a", "v2.0.0", "-m", "s")
+    def test_a_feature_moves_y_and_resets_z(self, repo):
+        git(repo, "tag", "-a", "v2.0.7", "-m", "s")
         land(repo, "feat/litgraph")
-        assert next_version(repo) == "2.0.1"
+        assert next_version(repo) == "2.1.0"
 
-    def test_order_no_longer_changes_the_answer(self, repo):
-        # Previously a fix-then-feature gave a different number from a
-        # feature-then-fix. With one rule for both, sequencing is irrelevant --
-        # three landings are three landings.
+    def test_a_feature_at_the_radix_carries_into_x(self, repo):
+        # Y is a single digit; the tenth feature moves X and clears both below
+        git(repo, "tag", "-a", "v2.9.4", "-m", "s")
+        land(repo, "feat/the-tenth")
+        assert next_version(repo) == "3.0.0"
+
+    def test_order_changes_the_answer(self, repo):
+        """A feature resets Z, so sequencing is visible in the result.
+
+        fix, feat, fix  ->  the feature clears the first fix's Z
+        feat, fix, fix  ->  both fixes accumulate after it
+        """
         git(repo, "tag", "-a", "v2.0.0", "-m", "s")
         land(repo, "fix/a"); land(repo, "feat/b"); land(repo, "fix/c")
-        assert next_version(repo) == "2.0.3"
+        assert next_version(repo) == "2.1.1"
 
-    def test_several_landings_each_count_once(self, repo):
+    def test_several_features_each_move_y(self, repo):
         git(repo, "tag", "-a", "v1.0.0", "-m", "s")
         for b in ("feat/a", "feat/b", "feat/c"):
             land(repo, b)
-        assert next_version(repo) == "1.0.3"
+        assert next_version(repo) == "1.3.0"
 
     def test_feature_and_hotfix_aliases_are_recognised(self, repo):
         git(repo, "tag", "-a", "v1.0.0", "-m", "s")
         land(repo, "feature/x"); land(repo, "hotfix/y")
-        assert next_version(repo) == "1.0.2"
+        assert next_version(repo) == "1.1.1"
 
 
 class TestXAndYAreDeclared:
@@ -204,11 +203,12 @@ class TestXAndYAreDeclared:
             key = lambda v: tuple(int(x) for x in v.split("."))
             assert key(after) > key(before), f"{before} --bump {kind} -> {after}"
 
-    def test_landings_do_not_move_y_however_many_there_are(self, repo):
+    def test_features_move_y_and_carry_rather_than_piling_into_z(self, repo):
         git(repo, "tag", "-a", "v2.0.0", "-m", "s")
         for i in range(12):
             land(repo, f"feat/thing-{i}")
-        assert next_version(repo) == "2.0.12"
+        # twelve features from 2.0.0: ten of them carry Y into X, leaving 3.2.0
+        assert next_version(repo) == "3.2.0"
 
 
 class TestWhatMustNotMoveTheVersion:
@@ -259,10 +259,10 @@ class TestOnlyCountsSinceTheNewestTag:
     def test_a_new_tag_rebaselines_the_count(self, repo):
         git(repo, "tag", "-a", "v1.0.0", "-m", "s")
         land(repo, "feat/a")
-        assert next_version(repo) == "1.0.1"
-        git(repo, "tag", "-a", "v1.0.1", "-m", "s")
+        assert next_version(repo) == "1.1.0"
+        git(repo, "tag", "-a", "v1.1.0", "-m", "s")
         land(repo, "fix/b")
-        assert next_version(repo) == "1.0.2"
+        assert next_version(repo) == "1.1.1"
 
 
 class TestMergeSubjectFormats:
@@ -275,7 +275,7 @@ class TestMergeSubjectFormats:
         # exactly what GitHub writes when a PR is merged
         git(repo, "merge", "-q", "--no-ff", "-m",
             "Merge pull request #48 from get-thinkstack/feat/via-pr", "feat/via-pr")
-        assert next_version(repo) == "1.0.1"
+        assert next_version(repo) == "1.1.0"
 
 
 class TestWorkArrivingThroughAnotherBranch:
@@ -301,10 +301,10 @@ class TestWorkArrivingThroughAnotherBranch:
         land(repo, "feat/litgraph")
         git(repo, "checkout", "-q", "-b", "beta", "main")
         git(repo, "merge", "-q", "--no-ff", "--no-edit", "dev")
-        # Z, not Y: landing a feature is not the same event as declaring the
-        # result a minor version. The point this test guards is that the
-        # landing is SEEN at all through the dev merge, not which digit moves.
-        assert next_version(repo) == "1.6.8"
+        # The point this test guards is that the landing is SEEN AT ALL through
+        # the dev merge -- it used to be invisible behind --first-parent. That
+        # it moves Y is the branch prefix doing its job.
+        assert next_version(repo) == "1.7.0"
 
     def test_the_dev_merge_itself_does_not_count(self, repo):
         # "Merge branch 'dev'" is not a feat/ or fix/ landing.
@@ -325,88 +325,3 @@ class TestWorkArrivingThroughAnotherBranch:
         assert next_version(repo) == "1.6.8"   # not 1.6.9
 
 
-class TestFeaturesLandingWithoutAMinor:
-    """X and Y are editorial, and the rule had no enforcement.
-
-    Between v2.1.9 and v2.1.16 four `feat:` commits arrived on two feature
-    branches, and every landing was numbered as a patch, because moving Y
-    requires a person to remember and nothing said otherwise. The judgement
-    stays with the human. The omission stops being silent.
-    """
-
-    def test_a_feature_landing_since_the_minor_is_counted(self, repo):
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "feat/citations")
-        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
-
-        assert pending_minor(repo) == 1
-
-    def test_it_counts_across_the_whole_minor_series(self, repo):
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "feat/one")
-        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
-        land(repo, "fix/thing")
-        git(repo, "tag", "-a", "v2.1.2", "-m", "p")
-        land(repo, "feat/two")
-        git(repo, "tag", "-a", "v2.1.3", "-m", "p")
-
-        assert pending_minor(repo) == 2
-
-    def test_fixes_alone_leave_nothing_pending(self, repo):
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "fix/one")
-        land(repo, "hotfix/two")
-        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
-
-        assert pending_minor(repo) == 0
-
-    def test_declaring_the_minor_clears_it(self, repo):
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "feat/citations")
-        git(repo, "tag", "-a", "v2.1.1", "-m", "p")
-        assert pending_minor(repo) == 1
-
-        # the human runs the workflow with bump=minor, and that tag is cut
-        git(repo, "tag", "-a", "v2.2.0", "-m", "m")
-
-        assert pending_minor(repo) == 0
-
-    def test_it_counts_landings_and_not_commit_subjects(self, repo):
-        """The version is derived from branch names, so the warning must be.
-
-        A `feat:` subject inside a fix branch is a fix as far as the number is
-        concerned, and a warning that counted it would contradict the version
-        it is warning about.
-        """
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        git(repo, "checkout", "-q", "-b", "fix/small")
-        (repo / "f").write_text("x")
-        git(repo, "commit", "-qam", "feat: written as a feature, landed as a fix")
-        git(repo, "checkout", "-q", "main")
-        git(repo, "merge", "-q", "--no-ff", "--no-edit", "fix/small")
-
-        assert pending_minor(repo) == 0
-
-    def test_the_count_is_reported_where_the_beta_number_is_derived(self, repo):
-        """--next is what numbers a beta, so that is where it has to say so."""
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "feat/citations")
-
-        out = subprocess.run(
-            [sys.executable, str(SCRIPT), "--next", "--explain"],
-            cwd=repo, capture_output=True, text=True, check=True,
-        )
-
-        assert "1 feature(s) have landed" in out.stderr
-        assert "bump=minor" in out.stderr
-
-    def test_a_quiet_series_says_nothing(self, repo):
-        git(repo, "tag", "-a", "v2.1.0", "-m", "m")
-        land(repo, "fix/one")
-
-        out = subprocess.run(
-            [sys.executable, str(SCRIPT), "--next", "--explain"],
-            cwd=repo, capture_output=True, text=True, check=True,
-        )
-
-        assert "feature(s) have landed" not in out.stderr
