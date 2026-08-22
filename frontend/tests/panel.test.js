@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  clampPanel, neighbours, nearestFurthest, gapPassages,
+  clampPanel, neighbours, nearestFurthest, gapPassages, localGraph,
 } from '../src/components/litgraph/panel';
 
 describe('clampPanel', () => {
@@ -155,5 +155,71 @@ describe('gapPassages', () => {
   it('survives a gap with no evidence and no papers', () => {
     expect(gapPassages({ doc_ids: ['A'], evidence: [] }, texts)[0].passage).toBe(null);
     expect(gapPassages(null, texts)).toEqual([]);
+  });
+});
+
+/**
+ * The local graph. A chain plus one branch, so a paper is reachable at more
+ * than one depth and the shortest one has to win:
+ *
+ *   a -- b -- c -- d
+ *   |         |
+ *   e         f
+ */
+describe('localGraph', () => {
+  const edges = [
+    { source: 'a', target: 'b', weight: 0.8 },
+    { source: 'b', target: 'c', weight: 0.7 },
+    { source: 'c', target: 'd', weight: 0.6 },
+    { source: 'a', target: 'e', weight: 0.5 },
+    { source: 'c', target: 'f', weight: 0.4 },
+  ];
+
+  it('depth 1 is the papers this one is linked to', () => {
+    const hop = localGraph('a', edges, 1);
+    expect([...hop.keys()].sort()).toEqual(['a', 'b', 'e']);
+    expect(hop.get('a')).toBe(0);
+    expect(hop.get('b')).toBe(1);
+  });
+
+  it('depth 2 adds what those are linked to', () => {
+    const hop = localGraph('a', edges, 2);
+    expect([...hop.keys()].sort()).toEqual(['a', 'b', 'c', 'e']);
+    expect(hop.get('c')).toBe(2);
+  });
+
+  it('depth 3 reaches round the corner', () => {
+    const hop = localGraph('a', edges, 3);
+    expect([...hop.keys()].sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect(hop.get('d')).toBe(3);
+    expect(hop.get('f')).toBe(3);
+  });
+
+  it('records the shortest hop, not the last one found', () => {
+    // Reached from b at 1 and from e at 2; the ring it is drawn in is 1.
+    const hop = localGraph('b', [...edges, { source: 'e', target: 'c', weight: 0.3 }], 3);
+    expect(hop.get('c')).toBe(1);
+  });
+
+  it('reads an edge from whichever end the paper sits on', () => {
+    // The edge list is undirected, and every one of these has `a` as source.
+    expect([...localGraph('e', edges, 1).keys()].sort()).toEqual(['a', 'e']);
+  });
+
+  it('an orphan is alone, and is still in its own map', () => {
+    const hop = localGraph('z', edges, 3);
+    expect([...hop.keys()]).toEqual(['z']);
+    expect(hop.get('z')).toBe(0);
+  });
+
+  it('stops early rather than looping when the walk runs out', () => {
+    // Depth 9 on a graph five hops wide must terminate, and must not revisit.
+    const hop = localGraph('a', edges, 9);
+    expect(hop.size).toBe(6);
+  });
+
+  it('survives an empty or missing edge list', () => {
+    expect([...localGraph('a', [], 2).keys()]).toEqual(['a']);
+    expect([...localGraph('a', undefined, 2).keys()]).toEqual(['a']);
   });
 });
