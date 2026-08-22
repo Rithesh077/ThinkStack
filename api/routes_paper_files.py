@@ -254,6 +254,12 @@ async def api_link_raw(project_id: str, link_id: str):
     """Serve a linked file, so a figure can be previewed where it lies."""
     d = _project(project_id)
     link = _guard(lambda: L.get(d, link_id))
+    if link.kind == "dir":
+        # A linked folder is a remembered location, not a browsable one.
+        # Serving its contents would turn "remember where my figures are" into
+        # a remote directory listing, which is a much larger thing to offer and
+        # is not what a paper needs.
+        raise HTTPException(status_code=400, detail=f"{link.name} is a folder.")
     r = L.resolve(d, link)
     if r.resolved is None:
         raise HTTPException(status_code=404, detail=f"{link.name} cannot be found.")

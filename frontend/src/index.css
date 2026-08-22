@@ -3818,3 +3818,5 @@ input::-webkit-credentials-auto-fill-button {
 
 .lf-empty { font-size: var(--type-xs); color: var(--ink-4); padding: 0 0.55rem 0.3rem; }
 .lf-typed { padding: 0.15rem 0.55rem 0.3rem; }
+.lf-head-actions { display: inline-flex; gap: 0.1rem; }
+.lf-kind { margin-right: 0.3rem; vertical-align: -1px; color: var(--ink-3); }

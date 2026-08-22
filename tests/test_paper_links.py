@@ -205,3 +205,86 @@ class TestTheIndexItself:
 
         L.add_link(project, _tex(outside, "a.tex"))
         assert "links.json" not in [e.name for e in F.list_files(project)]
+
+
+class TestLinkingAFolder:
+    """A shared `figures/` directory is the case this exists for.
+
+    A folder cannot be filtered by suffix -- directories have no extension --
+    so it earns its safety differently: nothing ever reads or serves the
+    contents of a linked folder. It is a remembered location, and copying it in
+    is the only thing that touches what is inside.
+    """
+
+    def test_a_folder_can_be_linked(self, project, outside):
+        figures = outside / "figures"
+        figures.mkdir()
+        _tex(figures, "plot.tex")
+
+        link = L.add_link(project, figures)
+        assert link.kind == "dir"
+        assert link.name == "figures"
+        assert L.list_links(project)[0].status == "ok"
+
+    def test_a_renamed_folder_is_followed(self, project, outside):
+        figures = outside / "figures"
+        figures.mkdir()
+        _tex(figures, "plot.tex")
+        L.add_link(project, figures)
+
+        figures.rename(outside / "images")
+        r = L.list_links(project)[0]
+        assert r.status == "moved"
+        assert r.resolved.name == "images"
+
+    def test_copying_a_folder_in_is_recursive_and_filtered(self, project, outside):
+        figures = outside / "figures"
+        (figures / "nested").mkdir(parents=True)
+        _tex(figures, "one.tex", "a")
+        _tex(figures / "nested", "two.tex", "b")
+        (figures / "notes.docx").write_text("not for us")
+
+        link = L.add_link(project, figures)
+        rel = L.copy_into_project(project, link.id)
+
+        assert (project / rel / "one.tex").read_text() == "a"
+        assert (project / rel / "nested" / "two.tex").read_text() == "b"
+        # the same rule as linking a file: only what a paper can use
+        assert not (project / rel / "notes.docx").exists()
+
+    def test_a_folder_is_not_served_as_a_file(self, tmp_path, monkeypatch):
+        """The raw endpoint refuses a folder rather than trying to stream it.
+
+        Driven through the real route, because the point is what an HTTP caller
+        gets back -- a 400 saying it is a folder, not a 500 from FileResponse
+        failing to open a directory.
+        """
+        from fastapi.testclient import TestClient
+
+        import main
+        from domain.paper_writer import compiler
+
+        workspace = tmp_path / "papers"
+        workspace.mkdir()
+        monkeypatch.setattr(compiler, "PAPERS_DIR", workspace)
+        proj = workspace / "abc123456789"
+        proj.mkdir()
+
+        figures = tmp_path / "figures"
+        figures.mkdir()
+        link = L.add_link(proj, figures)
+
+        c = TestClient(main.app, raise_server_exceptions=False)
+        r = c.get(f"/api/papers/projects/abc123456789/links/{link.id}/raw")
+        assert r.status_code == 400
+        assert "folder" in r.text
+
+    def test_a_missing_folder_is_reported_not_guessed(self, project, outside):
+        import shutil
+
+        figures = outside / "figures"
+        figures.mkdir()
+        L.add_link(project, figures)
+        shutil.rmtree(figures)
+
+        assert L.list_links(project)[0].status == "missing"
