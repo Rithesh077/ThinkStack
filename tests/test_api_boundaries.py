@@ -140,3 +140,34 @@ class TestHowFarACallerCanReach:
             assert "shadow" not in r.text
             # a directory listing would carry these keys; index.html does not
             assert '"files"' not in r.text or r.status_code == 404
+
+
+class TestWhereItListens:
+    """The default bind address, which was every interface.
+
+    Three launchers passed --host 127.0.0.1, so the safe behaviour was real but
+    accidental: it held because three callers remembered. Anything starting the
+    binary without the flag served an unauthenticated API to the local network.
+    """
+
+    def test_the_default_is_loopback(self):
+        from config import Settings
+
+        assert Settings().host == "127.0.0.1"
+
+    def test_the_argument_parser_inherits_that_default(self):
+        """`main.py --port 9000` with no --host must still bind loopback."""
+        import argparse
+
+        from config import settings
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--host", default=settings.host)
+        parser.add_argument("--port", type=int, default=settings.port)
+        assert parser.parse_args(["--port", "9000"]).host == "127.0.0.1"
+
+    def test_binding_wider_is_still_possible_on_purpose(self, monkeypatch):
+        from config import Settings
+
+        monkeypatch.setenv("THINKSTACK_HOST", "0.0.0.0")
+        assert Settings().host == "0.0.0.0"
