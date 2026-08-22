@@ -138,3 +138,87 @@ class TestPersistence:
         (d / "vectors.json").write_text("{ not json")
         s = VectorStore(persist_dir=str(d))  # must not raise
         assert s.count() == 0
+
+
+class TestSqliteMigration:
+    """Moving an existing installation off vectors.json.
+
+    The store used to be one JSON file rewritten in full on every write. A user
+    upgrading has that file and nothing else, so the first open has to import it
+    -- exactly once, without destroying it, and without noticing a second time.
+    """
+
+    @staticmethod
+    def _legacy(dirpath, entries):
+        import json
+        dirpath.mkdir(parents=True, exist_ok=True)
+        (dirpath / "vectors.json").write_text(json.dumps(entries), encoding="utf-8")
+
+    def test_a_legacy_file_is_imported_on_first_open(self, tmp_path):
+        d = tmp_path / "vs"
+        self._legacy(d, [
+            {"id": "a", "document": "alpha", "embedding": [1.0, 0.0],
+             "metadata": {"doc_id": "d1"}},
+            {"id": "b", "document": "beta", "embedding": [0.0, 1.0],
+             "metadata": {"doc_id": "d1"}},
+        ])
+        s = VectorStore(persist_dir=str(d))
+        assert s.count() == 2
+        assert s.get(ids=["a"])["documents"] == ["alpha"]
+        # and the vectors survived the round trip, not just the text
+        assert s.query([1.0, 0.0], n_results=1)["ids"] == ["a"]
+
+    def test_the_legacy_file_is_kept_not_deleted(self, tmp_path):
+        d = tmp_path / "vs"
+        self._legacy(d, [{"id": "a", "document": "x", "embedding": [1.0, 0.0],
+                          "metadata": {}}])
+        VectorStore(persist_dir=str(d))
+        assert not (d / "vectors.json").exists()
+        # a migration that destroys its only source has no second attempt
+        assert (d / "vectors.json.migrated").exists()
+
+    def test_migration_does_not_run_twice(self, tmp_path):
+        """A second legacy file appearing later must not re-import over newer data."""
+        d = tmp_path / "vs"
+        self._legacy(d, [{"id": "a", "document": "old", "embedding": [1.0, 0.0],
+                          "metadata": {}}])
+        s1 = VectorStore(persist_dir=str(d))
+        s1.upsert(["b"], ["new"], [[0.0, 1.0]], [{}])
+
+        # someone restores a stale export next to the database
+        self._legacy(d, [{"id": "a", "document": "STALE", "embedding": [1.0, 0.0],
+                          "metadata": {}}])
+        s2 = VectorStore(persist_dir=str(d))
+
+        assert s2.count() == 2                      # not reset to the stale copy
+        assert s2.get(ids=["a"])["documents"] == ["old"]
+
+    def test_a_write_touches_only_its_own_rows(self, tmp_path):
+        """The reason for the change: cost must not scale with the corpus.
+
+        Asserted by behaviour rather than by timing -- an existing row is left
+        byte-identical while a new one is added, which is what "no full rewrite"
+        means in terms anyone can check.
+        """
+        import sqlite3
+        d = str(tmp_path / "vs")
+        s = VectorStore(persist_dir=d)
+        s.upsert(["a"], ["alpha"], [[1.0, 0.0]], [{"doc_id": "d1"}])
+
+        con = sqlite3.connect(str(tmp_path / "vs" / "vectors.db"))
+        before = con.execute("SELECT embedding FROM chunks WHERE id='a'").fetchone()[0]
+
+        s.upsert(["b"], ["beta"], [[0.0, 1.0]], [{"doc_id": "d2"}])
+
+        after = con.execute("SELECT embedding FROM chunks WHERE id='a'").fetchone()[0]
+        assert before == after
+        assert con.execute("SELECT COUNT(*) FROM chunks").fetchone()[0] == 2
+        con.close()
+
+    def test_deleting_removes_the_row_from_disk(self, tmp_path):
+        d = str(tmp_path / "vs")
+        s = VectorStore(persist_dir=d)
+        s.upsert(["a", "b"], ["x", "y"], [[1.0, 0.0], [0.0, 1.0]], [{}, {}])
+        s.delete(["a"])
+        # gone from memory and from the database, not merely filtered out
+        assert VectorStore(persist_dir=d).count() == 1

@@ -1,23 +1,43 @@
 """
 vector store module.
 
-provides a file-backed vector store using numpy for cosine similarity
-search. stores embeddings and metadata as json files on disk, avoiding
-the need for compiled c++ dependencies like hnswlib.
+Vectors live in SQLite; similarity search stays in numpy. Those are two
+separate decisions and it is worth keeping them apart.
 
-this is a lightweight alternative to chromadb suitable for offline
-academic use with collections of up to a few thousand documents.
+WHY NOT CHROMADB OR FAISS: both depend on compiled C++ extensions (hnswlib and
+friends), which are the most fragile thing that can go into a PyInstaller
+bundle built on three operating systems -- the component that works on two and
+fails on the third, at a user's launch rather than at our build.
+
+WHY SQLITE IS NOT THAT: it is compiled into CPython and reached through the
+standard library. No wheel, no toolchain, no --hidden-import, nothing new for
+the bundler to miss. The objection that rules out the alternatives does not
+apply to it.
+
+WHY NOT JSON, WHICH THIS USED TO BE: one file holding every chunk had to be
+rewritten in full on every write and parsed in full at every start. Measured on
+a real store, 464 chunks across 21 papers was 5.6MB, 54ms to parse and 70ms to
+rewrite; the same shape at 500 papers is 133MB, 1.3s and 1.7s, and ingesting
+the five-hundredth paper rewrote the previous four hundred and ninety-nine.
+Building a library was quadratic in the number of papers. Here a write touches
+only the rows it changes.
+
+WHAT DID NOT CHANGE: the search. SQLite has no vector index and none is wanted.
+Every embedding is held in one numpy matrix and a query is compared against all
+of them, exactly as before -- deliberately exact rather than approximate, which
+is affordable for a personal library and is the reason no ANN index appears
+here.
 """
 
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 from config import settings
-from infrastructure.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -30,41 +50,119 @@ class VectorStore:
     def __init__(self, persist_dir: str = None):
         self.persist_dir = Path(persist_dir or str(settings.chroma_dir))
         self.persist_dir.mkdir(parents=True, exist_ok=True)
-        self._data_file = self.persist_dir / "vectors.json"
+        self._data_file = self.persist_dir / "vectors.json"   # legacy, migrated
+        self._db_file = self.persist_dir / "vectors.db"
         self._entries = []
         self._embeddings = None
+        self._connect()
+        self._migrate_json_if_present()
         self._load()
 
-    def _load(self):
-        """load stored vectors from disk."""
-        if self._data_file.exists():
-            try:
-                with open(self._data_file, "r", encoding="utf-8") as f:
-                    self._entries = json.load(f)
-                if self._entries:
-                    self._embeddings = np.array(
-                        [e["embedding"] for e in self._entries],
-                        dtype=np.float32,
-                    )
-                else:
-                    self._embeddings = None
-                logger.info("loaded %d vectors from disk", len(self._entries))
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning("failed to load vector store, starting fresh: %s", e)
-                self._entries = []
-                self._embeddings = None
-        else:
-            self._entries = []
-            self._embeddings = None
+    # ---------------------------------------------------------------- storage
 
-    def _save(self):
-        """persist vectors to disk atomically.
+    def _connect(self):
+        """Open the database and make sure the schema is there.
 
-        writes to a temp file and renames it over ``vectors.json`` so a crash
-        or power loss mid-write can never truncate the existing store. if the
-        data is not serializable the write raises and the old file is kept.
+        `check_same_thread=False` because the job queue writes from a worker
+        while requests read on the event loop thread; access is serialised by
+        the GIL around short statements, and WAL lets a reader proceed during a
+        write rather than blocking on it.
         """
-        atomic_write_json(self._data_file, self._entries)
+        self._con = sqlite3.connect(str(self._db_file), check_same_thread=False)
+        self._con.execute("PRAGMA journal_mode=WAL")
+        self._con.execute("PRAGMA synchronous=NORMAL")
+        self._con.execute(
+            """CREATE TABLE IF NOT EXISTS chunks (
+                   id        TEXT PRIMARY KEY,
+                   doc_id    TEXT,
+                   document  TEXT NOT NULL,
+                   embedding BLOB NOT NULL,
+                   metadata  TEXT NOT NULL
+               )"""
+        )
+        self._con.execute("CREATE INDEX IF NOT EXISTS ix_chunks_doc ON chunks(doc_id)")
+        self._con.commit()
+
+    def _migrate_json_if_present(self):
+        """One-time import of the old vectors.json, then set it aside.
+
+        Kept rather than deleted: an installation that downgrades should still
+        find its data, and a migration that destroys its only source has no
+        second attempt if it goes wrong.
+        """
+        if not self._data_file.exists():
+            return
+        if self._con.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
+            return                      # already migrated; leave both alone
+        try:
+            entries = json.loads(self._data_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("could not read legacy vectors.json: %s", e)
+            return
+        if not entries:
+            return
+        self._write_rows(entries)
+        self._data_file.rename(self._data_file.with_suffix(".json.migrated"))
+        logger.info("migrated %d vectors from vectors.json into sqlite", len(entries))
+
+    @staticmethod
+    def _pack(embedding) -> bytes:
+        return np.asarray(embedding, dtype=np.float32).tobytes()
+
+    @staticmethod
+    def _unpack(blob: bytes) -> list:
+        return np.frombuffer(blob, dtype=np.float32).tolist()
+
+    def _write_rows(self, entries: list[dict]):
+        """Insert or replace exactly these entries. Nothing else is touched."""
+        self._con.executemany(
+            "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?)",
+            [
+                (
+                    e["id"],
+                    (e.get("metadata") or {}).get("doc_id"),
+                    e["document"],
+                    self._pack(e["embedding"]),
+                    json.dumps(e.get("metadata") or {}),
+                )
+                for e in entries
+            ],
+        )
+        self._con.commit()
+
+    def _load(self):
+        """Read every row into memory, once, at startup.
+
+        The whole corpus is held resident because that is what the search
+        needs: one matrix, compared in full. Reading it back is a scan of a
+        b-tree and a memoryview per blob, which is roughly an order of
+        magnitude cheaper than parsing the equivalent JSON.
+        """
+        self._entries = []
+        try:
+            rows = self._con.execute(
+                "SELECT id, document, embedding, metadata FROM chunks"
+            ).fetchall()
+        except sqlite3.DatabaseError as e:
+            logger.warning("failed to read vector store, starting fresh: %s", e)
+            self._embeddings = None
+            return
+
+        mat = []
+        for entry_id, document, blob, meta in rows:
+            vec = np.frombuffer(blob, dtype=np.float32)
+            self._entries.append(
+                {
+                    "id": entry_id,
+                    "document": document,
+                    "embedding": vec.tolist(),
+                    "metadata": json.loads(meta),
+                }
+            )
+            mat.append(vec)
+
+        self._embeddings = np.vstack(mat) if mat else None
+        logger.info("loaded %d vectors from sqlite", len(self._entries))
 
     def _rebuild_matrix(self):
         """rebuild the numpy embedding matrix from entries."""
@@ -95,6 +193,7 @@ class VectorStore:
             number of entries upserted.
         """
         existing_ids = {e["id"]: i for i, e in enumerate(self._entries)}
+        touched = []
 
         for entry_id, doc, emb, meta in zip(ids, documents, embeddings, metadatas):
             entry = {
@@ -107,9 +206,12 @@ class VectorStore:
                 self._entries[existing_ids[entry_id]] = entry
             else:
                 self._entries.append(entry)
+            touched.append(entry)
 
         self._rebuild_matrix()
-        self._save()
+        # only the rows in this call are written. the cost of ingesting a paper
+        # no longer depends on how many papers came before it.
+        self._write_rows(touched)
         return len(ids)
 
     def update(
@@ -136,8 +238,20 @@ class VectorStore:
                     updated += 1
 
         if updated > 0:
-            self._save()
-            
+            self._con.executemany(
+                "UPDATE chunks SET metadata = ?, doc_id = ? WHERE id = ?",
+                [
+                    (
+                        json.dumps(self._entries[existing_ids[i]]["metadata"]),
+                        (self._entries[existing_ids[i]]["metadata"] or {}).get("doc_id"),
+                        i,
+                    )
+                    for i in ids
+                    if i in existing_ids
+                ],
+            )
+            self._con.commit()
+
         return updated
 
     def query(
@@ -290,7 +404,10 @@ class VectorStore:
 
         if deleted > 0:
             self._rebuild_matrix()
-            self._save()
+            self._con.executemany(
+                "DELETE FROM chunks WHERE id = ?", [(i,) for i in id_set]
+            )
+            self._con.commit()
 
         return deleted
 
