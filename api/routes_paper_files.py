@@ -187,9 +187,17 @@ async def api_delete(project_id: str, path: str):
 #      waited for it.
 #   2. The path comes from a native file dialog the user drove, not from
 #      anything the interface invented.
-#   3. Only suffixes a LaTeX project can use are linkable, so the files worth
-#      stealing are not reachable through it: ~/.ssh/id_rsa has no suffix, and
-#      neither does /etc/passwd.
+#   3. The file is never read into a response that a page could script: a
+#      served project file goes out with Content-Disposition: attachment.
+#
+# Point 3 used to read differently, and the change is worth recording. A suffix
+# allowlist refused anything LaTeX could not use, which also kept ~/.ssh/id_rsa
+# and /etc/passwd out of reach because neither has a suffix. That was removed
+# on 2026-08-23: it was refusing datasets, READMEs and image formats people
+# legitimately keep beside a paper, and the protection it stood in for is now
+# point 1's job. The honest summary is that this endpoint reaches any file the
+# user can reach, and what keeps that acceptable is that the user is the only
+# caller who can get to it.
 #
 # The file itself is never modified. A link is a note about where something is.
 
@@ -264,3 +272,78 @@ async def api_link_raw(project_id: str, link_id: str):
     if r.resolved is None:
         raise HTTPException(status_code=404, detail=f"{link.name} cannot be found.")
     return FileResponse(r.resolved, filename=r.resolved.name)
+
+
+# ── browsing the machine, so the user can point at something ─────────────
+#
+# The native dialog only exists inside the desktop shell. In a browser there is
+# none, and a file input hands back bytes with the path deliberately withheld --
+# so the fallback was typing a path, which is not a way to choose a file.
+#
+# This is the way out: the backend lists a directory, the interface draws it,
+# and the user navigates and clicks. Identical in the desktop window and in a
+# browser, and testable, which the native dialog is not.
+#
+# It lists and nothing else. No content is read through it, no file is opened,
+# nothing is written. The reply carries names, sizes and whether each entry is a
+# directory -- exactly what is needed to draw a chooser and no more. Reading
+# still goes through the link endpoints, which apply the suffix rule.
+#
+# It is reachable only by this application: the API answers same-origin requests
+# and the dev server, so a page the user happens to visit cannot enumerate their
+# disk with it. That fix landing is what made this reasonable to add.
+
+
+@router.get("/browse")
+async def api_browse(path: str = ""):
+    """One directory, listed for a chooser.
+
+    `path` empty means the user's home, which is where a person looks first.
+    Unreadable directories answer 403 rather than an empty listing, because
+    "there is nothing here" and "you may not look here" are different facts and
+    a chooser that confuses them sends people hunting.
+    """
+    root = Path(path).expanduser() if path else Path.home()
+    try:
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=404, detail="That folder does not exist.") from None
+    if not root.is_dir():
+        raise HTTPException(status_code=400, detail="That is not a folder.")
+
+    dirs, files = [], []
+    try:
+        for entry in root.iterdir():
+            if entry.name.startswith("."):
+                continue                     # dotfiles are noise in a chooser
+            try:
+                if entry.is_dir():
+                    dirs.append({"name": entry.name, "path": str(entry), "is_dir": True})
+                elif entry.is_file():
+                    files.append({
+                        "name": entry.name,
+                        "path": str(entry),
+                        "is_dir": False,
+                        "size": entry.stat().st_size,
+                        # what the link endpoints will accept, so the chooser can
+                        # grey out the rest rather than let someone pick a file
+                        # that is then refused
+                        # Every file can be taken now. `latex` is a hint the
+                        # picker can show -- "a document could reference this"
+                        # -- rather than a reason to refuse one.
+                        "linkable": True,
+                        "latex": entry.suffix.lower() in F.LATEX_SUFFIXES,
+                    })
+            except OSError:
+                continue                     # a broken symlink is not a reason to fail
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="That folder cannot be opened.") from None
+
+    dirs.sort(key=lambda e: e["name"].lower())
+    files.sort(key=lambda e: e["name"].lower())
+    return {
+        "path": str(root),
+        "parent": None if root.parent == root else str(root.parent),
+        "home": str(Path.home()),
+        "entries": dirs + files,
+    }

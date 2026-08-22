@@ -374,6 +374,13 @@ export const projectFilesApi = {
      these returns the whole resolved list, because adding or repairing one
      link can change what another reports: the search for a moved file looks
      near the folders other links sit in. */
+  /** one directory, listed for the chooser. an empty path means the user's home.
+      The query is always sent, even when empty: a nested template in the PATH
+      makes the URL unreadable to the api-contract test, which is checking that
+      every call here hits a route the backend actually defines. */
+  browse: (path = '') =>
+    request(`/papers/browse?path=${encodeURIComponent(path)}`),
+
   links: (projectId) => request(`/papers/projects/${projectId}/links`),
 
   addLink: (projectId, path) =>

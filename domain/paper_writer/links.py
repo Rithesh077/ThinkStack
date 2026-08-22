@@ -58,7 +58,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from domain.paper_writer.files import (
-    ALLOWED_SUFFIXES,
     MAX_FILE_BYTES,
     FileError,
     unique_name,
@@ -177,11 +176,6 @@ def add_link(project_dir: Path, target: str | Path) -> LinkedFile:
         kind, size = "dir", 0
     elif p.is_file():
         kind = "file"
-        if p.suffix.lower() not in ALLOWED_SUFFIXES:
-            raise FileError(
-                f"{p.suffix or 'That kind of file'} cannot be linked. "
-                f"Allowed: {', '.join(sorted(ALLOWED_SUFFIXES))}"
-            )
         size = p.stat().st_size
         if size > MAX_FILE_BYTES:
             raise FileError(
@@ -379,8 +373,11 @@ def copy_into_project(project_dir: Path, link_id: str, dest: str = "") -> str:
         for item in sorted(root.rglob("*")):
             if not item.is_file():
                 continue
-            if item.suffix.lower() not in ALLOWED_SUFFIXES:
-                continue                       # same rule as linking a file
+            # Every member comes across, matching the rule for linking a file.
+            # The per-project cap in write_bytes is what bounds this, so a
+            # folder larger than the project may allow stops partway with the
+            # cap's own error rather than being silently thinned to the files
+            # LaTeX happens to understand.
             inner = item.relative_to(root).as_posix()
             write_bytes(project_dir, f"{free}/{inner}", item.read_bytes())
         return free
