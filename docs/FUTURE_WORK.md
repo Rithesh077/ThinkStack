@@ -499,6 +499,13 @@ and for an explicit copy to duplicate; the raw endpoint refuses it rather than
 listing it, because a browsable remote directory is a much larger thing to offer
 than a remembered one.
 
+**A linked file now reaches the compile.** Until 23 August this was the gap in
+the whole idea: the reference was tracked and repaired, and the engine could
+not see it. Each resolved link contributes a directory to the compile's search
+path, so a bare `\includegraphics{chart.png}` resolves. See `docs/ADR.md` for
+why that is `-Z search-path` rather than `TEXINPUTS` -- Tectonic ignores the
+environment variable, which is a trap worth not falling into twice.
+
 **What was built, and its honest limits.** Path is tried before identity, so a
 file saved over in place -- an editor writing a temporary file and renaming it,
 which changes the inode -- still reads as the same document rather than a
@@ -509,13 +516,19 @@ chapter. It does not walk a home directory. A file moved somewhere the project
 has never referred to is reported **missing**, which is the honest answer and
 comes with the ask rather than a guess.
 
-The suffix allowlist turned out to be load-bearing rather than tidy. Linking is
-the one place the application accepts an absolute path from its caller, so
-restricting it to what a LaTeX project can use also means the files worth
-stealing are not linkable: `~/.ssh/id_rsa` has no suffix, and neither does
-`/etc/passwd`. This is also why the feature waited for the same-origin fix --
-an endpoint that reads a chosen path was not something to add while any web
-page could call it.
+The suffix allowlist was load-bearing rather than tidy, and was then removed on
+23 August. Linking is the one place the application accepts an absolute path
+from its caller, so restricting it to what a LaTeX project can use also meant
+the files worth stealing were not linkable: `~/.ssh/id_rsa` has no suffix, and
+neither does `/etc/passwd`. This is also why the feature waited for the
+same-origin fix -- an endpoint that reads a chosen path was not something to
+add while any web page could call it.
+
+It was removed because it was the wrong instrument: it refused datasets,
+READMEs and image formats people legitimately keep beside a paper, while never
+describing the actual threat. What keeps the endpoint acceptable is that only
+the person at the machine can reach it, which is the same-origin check and the
+loopback bind. The cost is that this was a second layer and there is now one.
 
 So: relative within, identity plus path without, a watcher while running, and
 when all of that fails, **say the file is missing and offer to locate it** —

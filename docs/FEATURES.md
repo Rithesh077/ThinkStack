@@ -239,13 +239,21 @@ it is empty rather than leaving "drop a PDF here" as the only instruction.
 - **Choose it by navigating to it** — linking opens a window you browse, with
   `Ctrl+O` for a file and `Ctrl+K Ctrl+O` for a folder. Files the project cannot
   use are shown but not selectable, so a folder never looks emptier than it is.
-- **Use a file without moving it** — link a `.tex`, `.bib`, figure or PDF that
-  lives anywhere on the machine and the project refers to it where it sits,
-  rather than taking a copy. If it is renamed or moved, it is found again by its
-  filesystem identity and the reference repairs itself; if it genuinely goes,
-  the panel says **missing** and offers to locate it rather than quietly
-  dropping the entry. Copying it in is available when a project needs to travel
-  as a unit.
+- **Use a file without moving it** — link a figure, `.tex`, `.bib` or anything
+  else that lives elsewhere on the machine, and **write its bare name**:
+  `\includegraphics{chart.png}` resolves to the linked file where it sits. The
+  compile is told where to look rather than the file being copied in, so one
+  `references.bib` can be shared by three papers and stay a single file. If it
+  is renamed or moved, it is found again by its filesystem identity and the
+  reference repairs itself; if it genuinely goes, the panel says **missing**
+  and offers to locate it rather than quietly dropping the entry, and the
+  compile carries on without it. Copying it in is still there for when a
+  project needs to travel as a unit.
+- **Link anything, not only what LaTeX reads** — a dataset, a README, an image
+  format the engine cannot open. A file type LaTeX cannot use is useless to a
+  document rather than dangerous to one, and refusing it told authors their own
+  files were not allowed in their own folder. The chooser still marks which
+  files a document could actually reference, as a hint rather than a refusal.
 - **Cite from your library, inline** — type `cite` and the library drops down
   under the caret; keep typing to filter on title, author, year or key; press
   Enter and the word becomes `\cite{vaswani2017attention}` with the entry

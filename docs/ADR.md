@@ -741,6 +741,65 @@ accepted because the id is chosen from a served list, never typed.
 The default is served too, as `default`. Hardcoding "paper" in the interface
 would be a second place that has to change when the set does.
 
+## 2026-08-23: a linked file is put on the compile's search path, not copied
+
+**Context.** A link records where a file is rather than taking a copy. Tectonic
+runs with the project as its working directory, so that was bookkeeping and
+nothing more: `\includegraphics{chart.png}` failed on a file the panel listed
+as present. The only thing that worked was typing an absolute path, which works
+whether or not the file was ever linked and breaks the moment it moves --
+precisely what linking exists to survive.
+
+**Decision.** Every resolved link contributes a directory to the compile's
+search path: a linked file its parent, a linked folder itself. Tectonic is
+given `-Z search-path`; the pdflatex fallback is given `TEXINPUTS`, and its
+separate BibTeX pass `BIBINPUTS`.
+
+**Consequences.** `-Z search-path`, not `TEXINPUTS`, is the mechanism for the
+shipped engine, and the difference is not cosmetic: Tectonic has its own IO
+layer and ignores the environment variable outright. Verified against the
+bundled 0.15.0 -- the same document fails with `TEXINPUTS` set and compiles
+with the flag. Setting the variable and believing it worked is exactly how this
+could have looked fixed while still failing, so a test asserts Tectonic is
+*not* given it.
+
+One flag covers `\input`, `\includegraphics` and `\bibliography` alike,
+because BibTeX runs inside Tectonic's own multi-pass build and inherits it.
+That makes a shared `references.bib` work, which was the case the feature was
+argued for in the first place.
+
+A missing link is skipped rather than failing the compile. It is already
+reported in the panel, and refusing to build because one of several linked
+files moved is a worse answer than building and saying what was missing.
+
+## 2026-08-23: what may be linked is not decided by what LaTeX can read
+
+**Context.** A suffix allowlist refused anything a LaTeX project could not use.
+It was also doing security work: linking is the one place the application
+accepts an absolute path, and refusing extensionless files kept `~/.ssh/id_rsa`
+and `/etc/passwd` out of reach.
+
+**Decision.** Any file may be linked or uploaded. The set survives as
+`LATEX_SUFFIXES`, a hint the chooser shows -- which files a document could
+actually reference -- rather than a refusal.
+
+**Consequences.** The rule was refusing datasets, READMEs and image formats
+people legitimately keep beside a paper, and telling them their own files were
+not allowed in their own folder. A type the engine cannot read is useless to a
+document, not dangerous to one; nothing here executes a project file, and a
+served one goes out as `Content-Disposition: attachment`.
+
+The security argument is not dismissed, it is relocated. What keeps an
+absolute-path endpoint acceptable is that only the person at the machine can
+reach it -- the same-origin check and the loopback bind, both landed earlier
+this month. That is where an access question belongs, rather than in a list of
+file extensions that never described the threat accurately anyway.
+
+What is given up is honest to state: this was a second layer, and there is now
+one. If the origin check were ever weakened, the blast radius is larger than it
+was. The endpoint reaches any file the user can reach.
+
+
 ## 2026-08-23: a control that chooses must not displace the control that acts
 
 **Context.** The template picker was added to the Scribe tree header as a

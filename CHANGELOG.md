@@ -67,6 +67,14 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   their hands. It reads directories through the backend, so it behaves the same
   in the desktop app as in a browser; files a paper cannot use are shown greyed
   rather than hidden, so a folder never looks emptier than it is.
+- **A linked file is usable, not just remembered.** Write its bare name --
+  `\includegraphics{chart.png}` -- and the compile finds it where it sits. One
+  `references.bib` can be shared by three papers and stay a single file. A link
+  that has gone missing is skipped and reported rather than failing the build.
+- **Anything can be linked or added to a paper**, not only the file types LaTeX
+  reads. A dataset or a README beside a document is a normal thing to keep, and
+  a type the engine cannot open is useless to a document rather than dangerous
+  to one. The chooser still marks which files a document could reference.
 - **Scribe works with an empty library.** It carries its own TeX engine and
   compiles offline, so writing never depended on having read anything — but the
   first screen of a new install said only "drop a PDF here", which reads as a
