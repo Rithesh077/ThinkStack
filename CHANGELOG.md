@@ -47,6 +47,16 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
   selectable at all.
 - **The panel says where a paper sits** before it lists anything, and a
   neighbourhood can be followed out to a chosen depth.
+- **A paper can use a file that lives somewhere else.** Link a `.tex`, `.bib`,
+  figure or PDF from anywhere on the machine; the project references it where it
+  sits rather than taking a copy, for the reason imported models are not copied
+  either. Because a referenced file can move, each link also stores the
+  operating system's identity for it, which survives a rename and a move within
+  a filesystem — so reorganising your documents does not silently break a paper.
+  The path is checked before the identity, so an editor that saves by writing a
+  temporary file and renaming it still reads as the same document. A file moved
+  somewhere the project has never referred to is reported as missing, with a
+  button to find it, rather than guessed at.
 
 ### Changed
 - **A `feat/` branch moves the minor again.** Landing a feature advances Y and
