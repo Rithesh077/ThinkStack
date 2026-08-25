@@ -432,11 +432,6 @@ The remaining work is therefore narrower than "build a file explorer":
 
 - **the rearranging gesture.** `move` exists and is safe; dragging is what is
   missing, along with moving a file between two projects rather than within one;
-- **reaching files that are not in the project.** Everything above is
-  project-relative by design -- correct for what it does, and exactly why a
-  linked file is a new concept rather than an extension of it. Someone with a
-  half-written paper elsewhere on the machine should be able to open it here
-  rather than start again;
 - **saving the compiled PDF where the author chose, under a name they gave it**,
   rather than a file appearing somewhere the application picked;
 - a command entry for the editor's own operations, the way a code editor has one.
@@ -476,13 +471,39 @@ Content hashing survives all three but costs a read of every file and cannot
 distinguish two copies of the same thing, which for a `.bib` shared between
 projects is exactly the wrong answer.
 
+A **folder** can be linked as well as a file -- a shared `figures/` directory
+used by several papers is the case it exists for. A folder cannot be filtered by
+suffix, so it earns its safety differently: nothing reads or serves the contents
+of a linked folder. It is a remembered location, for `\graphicspath` to point at
+and for an explicit copy to duplicate; the raw endpoint refuses it rather than
+listing it, because a browsable remote directory is a much larger thing to offer
+than a remembered one.
+
+**What was built, and its honest limits.** Path is tried before identity, so a
+file saved over in place -- an editor writing a temporary file and renaming it,
+which changes the inode -- still reads as the same document rather than a
+missing one. The search for a moved file covers the folders the project already
+refers to, their parents and one level of subdirectory beneath, under a budget;
+that catches a rename, a drop into `figures/`, and a move beside a sibling
+chapter. It does not walk a home directory. A file moved somewhere the project
+has never referred to is reported **missing**, which is the honest answer and
+comes with the ask rather than a guess.
+
+The suffix allowlist turned out to be load-bearing rather than tidy. Linking is
+the one place the application accepts an absolute path from its caller, so
+restricting it to what a LaTeX project can use also means the files worth
+stealing are not linkable: `~/.ssh/id_rsa` has no suffix, and neither does
+`/etc/passwd`. This is also why the feature waited for the same-origin fix --
+an endpoint that reads a chosen path was not something to add while any web
+page could call it.
+
 So: relative within, identity plus path without, a watcher while running, and
 when all of that fails, **say the file is missing and offer to locate it** —
 once, remembering the answer. A tree that quietly drops an entry is worse than
 one that admits it lost track.
 
-**Both decisions are settled, and they are recorded here because they shape
-what is stored rather than what is drawn.**
+**Both decisions are now built** (`domain/paper_writer/links.py`), and are
+recorded here because they shape what is stored rather than what is drawn.
 
 *A linked file is referenced where it lies, and copied only when the user asks.*
 This follows the rule already adopted for imported models -- referenced, never

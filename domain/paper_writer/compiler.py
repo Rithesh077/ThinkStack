@@ -456,6 +456,47 @@ def _find_engine() -> tuple[str, str] | None:
     return None
 
 
+def _link_search_paths(project_dir: Path) -> list[Path]:
+    """Directories a compile should look in besides the project itself.
+
+    A link records where a file IS rather than taking a copy. Until this
+    existed that was bookkeeping and nothing more: Tectonic runs with the
+    project as its working directory, so a linked figure was invisible to the
+    compile and `\includegraphics{chart.png}` failed on a file the panel
+    listed as present. The only thing that worked was typing an absolute path,
+    which works whether or not the file was ever linked and breaks the moment
+    it moves -- which is the exact thing linking exists to survive.
+
+    A linked FILE contributes its parent; a linked FOLDER contributes itself,
+    which is what makes a shared `figures/` directory work.
+
+    Failures here are not the compile's problem. A missing link is already
+    reported in the panel, and a compile that refused to start because one of
+    several linked files had moved would be a worse answer than one that runs
+    and reports what it could not find.
+    """
+    from domain.paper_writer import links as _links
+
+    out: list[Path] = []
+    try:
+        resolved = _links.list_links(project_dir)
+    except Exception as e:  # noqa: BLE001 - never block a compile on this
+        logger.warning("could not read links for the search path: %s", e)
+        return out
+
+    for r in resolved:
+        if r.status == "missing" or r.resolved is None:
+            continue
+        d = r.resolved if r.link.kind == "dir" else r.resolved.parent
+        try:
+            d = d.resolve()
+        except OSError:
+            continue
+        if d.is_dir() and d not in out:
+            out.append(d)
+    return out
+
+
 def _tectonic_env() -> dict:
     """Environment for Tectonic, pointing it at a writable, pre-warmed cache.
 
@@ -486,17 +527,37 @@ def _run_engine(engine: str, kind: str, tex_file: Path, project_dir: Path):
     "a PDF exists" is what we treat as success (overleaf behaviour), with the
     errors surfaced as warnings.
     """
+    search = _link_search_paths(project_dir)
+
     if kind == "tectonic":
+        # -Z search-path, NOT TEXINPUTS. Tectonic has its own IO layer and
+        # ignores the environment variable outright -- verified against the
+        # bundled 0.15.0: with TEXINPUTS set it still reports "Unable to load
+        # picture or PDF file" and writes no PDF, and with -Z search-path the
+        # same document compiles. The flag covers \input, \includegraphics
+        # and \bibliography alike, because BibTeX runs inside Tectonic's own
+        # multi-pass build and inherits it.
+        cmd = [
+            engine, "-X", "compile", str(tex_file),
+            "--outdir", str(project_dir),
+            "--keep-logs", "--synctex",
+            "-Z", "continue-on-errors",
+        ]
+        for d in search:
+            cmd += ["-Z", f"search-path={d}"]
         return subprocess.run(
-            [
-                engine, "-X", "compile", str(tex_file),
-                "--outdir", str(project_dir),
-                "--keep-logs", "--synctex",
-                "-Z", "continue-on-errors",
-            ],
+            cmd,
             capture_output=True, text=True, timeout=180,
             cwd=str(project_dir), env=_tectonic_env(),
         )
+
+    # pdflatex is the fallback engine and is the one that DOES read TEXINPUTS.
+    # The trailing empty entry is load-bearing: without it this replaces the
+    # default search path instead of extending it, and the document loses the
+    # standard classes and packages rather than gaining a figure.
+    env = dict(os.environ)
+    if search:
+        env["TEXINPUTS"] = "".join(f"{d}:" for d in search) + os.environ.get("TEXINPUTS", "")
     return subprocess.run(
         [
             engine,
@@ -504,7 +565,7 @@ def _run_engine(engine: str, kind: str, tex_file: Path, project_dir: Path):
             "-output-directory", str(project_dir),
             str(tex_file),
         ],
-        capture_output=True, text=True, timeout=60, cwd=str(project_dir),
+        capture_output=True, text=True, timeout=60, cwd=str(project_dir), env=env,
     )
 
 
@@ -536,10 +597,18 @@ def _needs_bibtex_pass(project_dir: Path, tex_file: Path, kind: str) -> bool:
         logger.warning("bibtex is not installed; citations will render as [?]")
         return False
 
+    # Only reached on the fallback engine -- Tectonic drives BibTeX itself and
+    # passes its own search path down. Standalone bibtex reads BIBINPUTS, not
+    # TEXINPUTS, so a linked .bib needs this or every citation renders as [?].
+    env = dict(os.environ)
+    search = _link_search_paths(project_dir)
+    if search:
+        env["BIBINPUTS"] = "".join(f"{d}:" for d in search) + os.environ.get("BIBINPUTS", "")
+
     try:
         subprocess.run(
             [bibtex, tex_file.stem],
-            capture_output=True, text=True, timeout=60, cwd=str(project_dir),
+            capture_output=True, text=True, timeout=60, cwd=str(project_dir), env=env,
         )
     except (OSError, subprocess.SubprocessError) as e:
         # A missing bibliography must not cost the author their PDF.

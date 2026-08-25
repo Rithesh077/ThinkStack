@@ -31,7 +31,7 @@ from pathlib import Path
 # Files ThinkStack writes and owns. They are regenerated on every compile and
 # mean nothing to an author, so listing them turns a four-file project into a
 # nine-file one where the two that matter are hard to find.
-HIDDEN_NAMES = {"meta.json"}
+HIDDEN_NAMES = {"meta.json", "links.json"}
 HIDDEN_SUFFIXES = {
     ".aux", ".log", ".out", ".toc", ".synctex.gz", ".fls", ".fdb_latexmk",
     ".bbl", ".blg",
@@ -44,7 +44,18 @@ HIDDEN_SUFFIXES = {
 
 # What a LaTeX project can actually use. An arbitrary upload is a file the
 # compiler will not read and the user cannot open -- it just consumes the disk.
-ALLOWED_SUFFIXES = {
+# What LaTeX can actually do something with. This is a HINT, not a gate: the
+# picker uses it to mark which files a document could reference, and nothing
+# refuses a file for being absent from it.
+#
+# It was a gate until 2026-08-23. The argument for that was never really about
+# LaTeX -- a type the engine cannot read is useless, not dangerous -- it was
+# that linking is the one place the app takes an absolute path, and refusing
+# extensionless files kept ~/.ssh/id_rsa and /etc/passwd out of reach. What
+# carries that now is the same-origin check and the loopback bind: the only
+# caller able to reach this API is the person sitting at the machine, choosing
+# their own files. See docs/ADR.md, 2026-08-23.
+LATEX_SUFFIXES = {
     ".tex", ".bib", ".cls", ".sty", ".bst",           # source
     ".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg",  # figures
     ".csv", ".dat", ".txt",                           # data for pgfplots
@@ -309,12 +320,17 @@ def unique_name(project_dir: Path, relpath: str) -> str:
 
 
 def _check_suffix(name: str) -> None:
-    suffix = Path(name).suffix.lower()
-    if not suffix:
-        raise FileError(f"{name} needs a file extension.")
-    if suffix not in ALLOWED_SUFFIXES:
-        allowed = ", ".join(sorted(ALLOWED_SUFFIXES))
-        raise FileError(f"{suffix} files are not used by LaTeX. Allowed: {allowed}.")
+    """Kept as the one place a name is vetted, now that type is not the test.
+
+    A project is a folder the author owns, and refusing a file because LaTeX
+    would not read it told someone their own PNG-adjacent asset, dataset or
+    README was not allowed in their own directory. What still matters is that
+    the NAME cannot be used to escape the project or to name nothing at all --
+    the path itself is checked by safe_path(), and this catches the rest.
+    """
+    stem = Path(name).name
+    if not stem or stem in {".", ".."}:
+        raise FileError("That name cannot be used.")
 
 
 def _check_room(project_dir: Path, incoming: int, replacing: Path | None = None) -> None:

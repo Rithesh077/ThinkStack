@@ -54,3 +54,44 @@ export async function pickModelFile() {
     return { path: null, reason: 'unsupported' };
   }
 }
+
+
+/**
+ * Ask for a file to LINK into a paper project.
+ *
+ * Same mechanism as `pickModelFile` and for the same reason: linking records
+ * where a file IS, so it needs a path, and a browser file input deliberately
+ * withholds one. The filters mirror the suffixes the backend will accept, so a
+ * user is not offered a choice that is then refused -- but the backend checks
+ * anyway, because a dialog filter is a convenience and not a boundary.
+ */
+export async function pickProjectFile({ directory = false } = {}) {
+  if (!inTauri()) return { path: null, reason: 'unsupported' };
+
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      directory,
+      title: directory
+        ? 'Link a folder into this paper'
+        : 'Link a file into this paper',
+      // A folder chooser must not be filtered by file extension, or the
+      // dialog shows nothing selectable.
+      ...(directory ? {} : {
+        filters: [
+          { name: 'Anything a paper can use',
+            extensions: ['tex', 'bib', 'cls', 'sty', 'bst',
+                         'png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg',
+                         'csv', 'dat', 'txt'] },
+        ],
+      }),
+    });
+    if (!selected) return { path: null, reason: 'cancelled' };
+    const path = typeof selected === 'string' ? selected : selected.path;
+    return path ? { path, reason: 'ok' } : { path: null, reason: 'cancelled' };
+  } catch (err) {
+    console.warn('[filePicker] native dialog unavailable:', err);
+    return { path: null, reason: 'unsupported' };
+  }
+}
