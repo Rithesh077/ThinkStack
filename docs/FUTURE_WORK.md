@@ -432,6 +432,15 @@ The remaining work is therefore narrower than "build a file explorer":
 
 - **the rearranging gesture.** `move` exists and is safe; dragging is what is
   missing, along with moving a file between two projects rather than within one;
+- **the chooser is built and is the application's own.** A native dialog exists
+  only inside the desktop shell, and in a browser there is none — a file input
+  returns bytes with the path deliberately withheld. Falling back to a typed
+  path asked the user to remember a location rather than choose one, and it was
+  the only branch that could be tested. `PathPicker` lists directories through
+  the backend instead, so the same window opens in the app and in a tab. The
+  listing endpoint lists and nothing else: no content is read through it, and it
+  marks which files the link endpoints would actually accept so an unusable one
+  can be shown greyed rather than picked and refused;
 - **saving the compiled PDF where the author chose, under a name they gave it**,
   rather than a file appearing somewhere the application picked;
 - a command entry for the editor's own operations, the way a code editor has one.

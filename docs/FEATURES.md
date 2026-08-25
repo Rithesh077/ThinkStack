@@ -223,6 +223,9 @@ no account, no queue and no time limit.
   - isolates a single broken figure/table behind a placeholder so the rest of the
     paper still produces a PDF, and as a last resort neutralises all figures
     rather than failing outright.
+- **Choose it by navigating to it** — linking opens a window you browse, with
+  `Ctrl+O` for a file and `Ctrl+K Ctrl+O` for a folder. Files the project cannot
+  use are shown but not selectable, so a folder never looks emptier than it is.
 - **Use a file without moving it** — link a `.tex`, `.bib`, figure or PDF that
   lives anywhere on the machine and the project refers to it where it sits,
   rather than taking a copy. If it is renamed or moved, it is found again by its
