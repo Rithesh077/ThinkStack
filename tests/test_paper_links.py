@@ -377,3 +377,40 @@ class TestBrowsing:
         (tmp_path / "secret.tex").write_text("SENSITIVE-CONTENT-MARKER")
         r = self._client().get("/api/papers/browse", params={"path": str(tmp_path)})
         assert "SENSITIVE-CONTENT-MARKER" not in r.text
+
+
+class TestWhatTheDocumentCites:
+    """references.bib says what could be cited; the source says what is."""
+
+    def test_multiple_keys_in_one_call_are_separate_citations(self):
+        from domain.paper_writer.bibliography import cited_keys
+
+        assert cited_keys(r"\cite{a,b, c}") == {"a": 1, "b": 1, "c": 1}
+
+    def test_repeats_are_counted(self):
+        from domain.paper_writer.bibliography import cited_keys
+
+        src = r"\cite{x} and later \citep{x} again"
+        assert cited_keys(src)["x"] == 2
+
+    def test_a_commented_out_citation_is_not_a_citation(self):
+        from domain.paper_writer.bibliography import cited_keys
+
+        assert "gone" not in cited_keys("% \\cite{gone}\n\\cite{here}")
+
+    def test_an_escaped_percent_does_not_start_a_comment(self):
+        """"50\\% of \\cite{x}" is a real sentence, not a comment."""
+        from domain.paper_writer.bibliography import cited_keys
+
+        assert cited_keys(r"50\% of \cite{x}") == {"x": 1}
+
+    def test_optional_arguments_are_skipped(self):
+        from domain.paper_writer.bibliography import cited_keys
+
+        assert cited_keys(r"\citep[see][p.~3]{smith2020}") == {"smith2020": 1}
+
+    def test_bib_keys_are_read_in_order(self):
+        from domain.paper_writer.bibliography import bib_keys
+
+        text = "@article{one,\n title={x}}\n@book{two,\n title={y}}\n"
+        assert bib_keys(text) == ["one", "two"]

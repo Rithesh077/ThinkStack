@@ -374,6 +374,10 @@ export const projectFilesApi = {
      these returns the whole resolved list, because adding or repairing one
      link can change what another reports: the search for a moved file looks
      near the folders other links sit in. */
+  /** what the document cites, and whether each citation will resolve */
+  bibliography: (projectId) =>
+    request(`/papers/projects/${projectId}/bibliography`),
+
   /** one directory, listed for the chooser. an empty path means the user's home.
       The query is always sent, even when empty: a nested template in the PATH
       makes the URL unreadable to the api-contract test, which is checking that

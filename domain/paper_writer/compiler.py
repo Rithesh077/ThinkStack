@@ -194,6 +194,101 @@ def _ensure_compilable(source: str) -> str:
     return _ensure_packages(wrapped)
 
 
+# ── tables the model got wrong ───────────────────────────────────────────
+#
+# A tabular declares its columns once and then every row has to agree. A model
+# writing one from a prompt loses count, and TeX answers with
+#
+#     ! Extra alignment tab has been changed to \cr
+#
+# which names a line and says nothing a person who did not write LaTeX can act
+# on. A tester on Windows hit exactly this. The engine was right and the
+# document was wrong; `_ensure_packages` can declare a missing package but has
+# no opinion about arithmetic.
+#
+# Counting is the whole fix, and it is worth doing HERE rather than by prompting
+# more carefully: a grammar or a better instruction makes the mistake rarer,
+# while counting makes it impossible to reach the engine.
+
+# The column specification, reduced to the letters that consume a cell. Anything
+# in @{...}, !{...} or >{...} is material between columns, not a column, and a
+# p/m/b takes a width argument that must not be read as more columns.
+_COLSPEC_NOISE = re.compile(r"[@!>]\{(?:[^{}]|\{[^{}]*\})*\}")
+# siunitx writes S[table-format=2.1]; the bracket is an option, not six columns.
+_COLSPEC_OPTION = re.compile(r"\[[^\]]*\]")
+_COLSPEC_SIZED = re.compile(r"[pmb]\{(?:[^{}]|\{[^{}]*\})*\}")
+_COLSPEC_STAR = re.compile(r"\*\{(\d+)\}\{([^{}]*)\}")
+
+
+def _count_columns(spec: str) -> int:
+    """How many cells one row of this tabular is allowed to have."""
+    # *{3}{c} means three of them; expand before anything else counts letters.
+    while True:
+        m = _COLSPEC_STAR.search(spec)
+        if not m:
+            break
+        spec = spec[:m.start()] + m.group(2) * int(m.group(1)) + spec[m.end():]
+    spec = _COLSPEC_NOISE.sub("", spec)
+    spec = _COLSPEC_OPTION.sub("", spec)
+    spec = _COLSPEC_SIZED.sub("X", spec)      # one column each, width consumed
+    return sum(1 for ch in spec if ch in "lcrXsSY")
+
+
+def _cells_in_row(row: str) -> int:
+    r"""Cells in one row, counting only ampersands TeX would treat as separators.
+
+    An escaped \& is text -- a column headed "R&D" is not two columns -- and a
+    \multicolumn{n}{...}{...} occupies n of them while carrying one separator.
+    """
+    body = re.sub(r"\\&", "", row)                 # \& is a literal ampersand
+    body = re.sub(r"%.*", "", body)                # a comment cannot hold a cell
+    cells = 1 + body.count("&")
+    for n in re.findall(r"\\multicolumn\s*\{\s*(\d+)\s*\}", body):
+        cells += int(n) - 1                        # it spans n, was counted once
+    return cells
+
+
+def _check_tables(source: str) -> list[str]:
+    r"""Rows whose cell count disagrees with their tabular's declaration.
+
+    Reported rather than repaired. Padding a short row with `&` would put empty
+    cells into a table an author believes is finished, and truncating a long one
+    silently deletes their data -- both are worse than being told which line is
+    wrong while the rest of the document still compiles.
+    """
+    problems: list[str] = []
+    pattern = re.compile(
+        r"\\begin\{(tabular\*?|array|longtable)\}\s*(?:\[[^\]]*\])?\s*"
+        r"(?:\{[^{}]*\}\s*)??\{((?:[^{}]|\{[^{}]*\})*)\}",
+    )
+    for m in pattern.finditer(source):
+        env, spec = m.group(1), m.group(2)
+        declared = _count_columns(spec)
+        if declared < 1:
+            continue
+        end = source.find(rf"\end{{{env}}}", m.end())
+        body = source[m.end():end if end != -1 else len(source)]
+        line_of_start = source.count("\n", 0, m.end()) + 1
+        # Newlines BEFORE each row, accumulated as we walk -- counting the ones
+        # inside the current row put every message one line early.
+        consumed = 0
+        for row in body.split(r"\\"):
+            stripped = re.sub(r"\\(hline|toprule|midrule|bottomrule|cmidrule)"
+                              r"(\([^)]*\))?(\{[^}]*\})?", "", row).strip()
+            found = _cells_in_row(stripped) if stripped else 0
+            if stripped and found > declared:
+                # A chunk runs from one row separator to the next, so it may
+                # open with a rule on its own line. The cells are on the chunk's
+                # LAST line, which is where a reader will look.
+                line = line_of_start + consumed + row.count("\n")
+                problems.append(
+                    f"A row near line {line} has {found} cells but the table "
+                    f"declares {declared} column{'s' if declared != 1 else ''}."
+                )
+            consumed += row.count("\n")
+    return problems
+
+
 def _ensure_workspace() -> Path:
     """create the papers workspace directory if it doesn't exist."""
     PAPERS_DIR.mkdir(parents=True, exist_ok=True)
@@ -667,6 +762,20 @@ def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
     if not tex_file.exists():
         raise FileNotFoundError(f"project {project_id} has no main.tex")
 
+    # Tables the model miscounted, checked BEFORE the engine sees them.
+    #
+    # These are reported, never repaired. Padding a short row puts empty cells
+    # into a table the author believes is finished; truncating a long one
+    # deletes their data. Both are worse than a sentence naming the line, which
+    # is what the engine could not give them: "! Extra alignment tab has been
+    # changed to \cr" names a line and nothing a person who did not write LaTeX
+    # can act on.
+    table_warnings: list[str] = []
+    try:
+        table_warnings = _check_tables(tex_file.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001 - a checker must never block a compile
+        logger.warning("table check skipped: %s", e)
+
     # auto-heal: wrap bare fragments + declare any packages the body relies on
     # (fixes "Environment tikzpicture undefined" and similar).
     try:
@@ -744,6 +853,14 @@ def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
     except Exception as e:  # noqa: BLE001
         logger.warning("%s reference pass skipped: %s", kind, e)
 
+    # The table warnings go FIRST. They are the ones written for a person, and
+    # they explain the engine errors that follow rather than competing with
+    # them -- a reader who sees "row 4 has 7 cells, the table declares 3" does
+    # not need to decode "Extra alignment tab" underneath it.
+    for w in table_warnings:
+        if w not in warnings:
+            warnings.insert(0, w)
+
     # surface any errors pdflatex recovered from as warnings (overleaf-style)
     if log_file.exists():
         recovered = _extract_errors(log_file.read_text(encoding="utf-8", errors="replace"))
@@ -758,27 +875,47 @@ def compile_pdf(project_id: str) -> tuple[Path, list[str]]:
 
 
 def list_projects() -> list[dict]:
-    """list all paper projects.
+    """Every paper project, newest work first.
 
-    returns:
-        list of project metadata dicts.
+    Ordered by when `main.tex` was last written, because that is what a person
+    means by "the one I was working on". It used to come back in whatever order
+    the filesystem listed the directories -- effectively creation order, which
+    puts the paper you touched a minute ago wherever it happens to fall among
+    two dozen others. With seven projects named `bundle-validation` and four
+    named `untitled`, finding one was a visual scan of near-identical rows.
+
+    `modified` is carried so the interface can say *when* rather than only
+    imply it by position, and `name_lower` so sorting by name does not put
+    `Zebra` above `apple`.
     """
     import json
     workspace = _ensure_workspace()
     projects = []
 
-    for child in sorted(workspace.iterdir()):
+    for child in workspace.iterdir():
         if not child.is_dir():
             continue
         meta_file = child / "meta.json"
-        if meta_file.exists():
-            try:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
-                meta["has_pdf"] = (child / "main.pdf").exists()
-                projects.append(meta)
-            except Exception:
-                continue
+        if not meta_file.exists():
+            continue
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        pdf = child / "main.pdf"
+        tex = child / "main.tex"
+        meta["has_pdf"] = pdf.exists()
+        try:
+            # The source, not the directory: compiling rewrites the folder's
+            # own mtime, so a project you only opened and built would sort as
+            # though you had written it.
+            meta["modified"] = tex.stat().st_mtime if tex.exists() else child.stat().st_mtime
+        except OSError:
+            meta["modified"] = 0.0
+        meta["name_lower"] = str(meta.get("name", "")).lower()
+        projects.append(meta)
 
+    projects.sort(key=lambda m: m.get("modified", 0.0), reverse=True)
     return projects
 
 
