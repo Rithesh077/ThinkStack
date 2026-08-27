@@ -366,6 +366,13 @@ export const projectFilesApi = {
     });
   },
 
+  /** move a file into a different paper */
+  moveTo: (projectId, src, toProject, dst = '') =>
+    request(`/papers/projects/${projectId}/files/move-to`, {
+      method: 'POST',
+      body: { src, to_project: toProject, dst },
+    }),
+
   mkdir: (projectId, path) =>
     request(`/papers/projects/${projectId}/files/folder`, { method: 'POST', body: { path } }),
 

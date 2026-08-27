@@ -4024,3 +4024,16 @@ input::-webkit-credentials-auto-fill-button {
 .bib-unused .bib-key { margin-right: 0.5rem; }
 .bib-empty, .bib-error { font-size: var(--type-sm); color: var(--ink-4); padding: 0.3rem 0; }
 .bib-error { color: var(--danger); }
+
+/* ── dragging inside the tree ──────────────────────────
+   A file being moved, and the folder it would land in. Both states are drawn
+   because a drag with no feedback is a guess: you find out where it went by
+   letting go. */
+.ft-row.is-dragging { opacity: 0.45; }
+.ft-row.is-drop-into {
+  background: var(--sheet-3);
+  outline: 1px solid var(--rule-2);
+  outline-offset: -1px;
+}
+/* The whole paper, as a drop target for a file from another one. */
+.ft-project.is-dropping > .ft-row.is-project { background: var(--sheet-3); }
