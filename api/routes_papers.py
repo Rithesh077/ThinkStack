@@ -7,6 +7,8 @@ and managing latex paper projects.
 
 import logging
 import re
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -242,10 +244,19 @@ async def api_list_projects():
 
 @router.get("/projects/{project_id}")
 async def api_get_project(project_id: str):
-    """get the latex source for a project."""
+    """The LaTeX source for a project, and the name it goes by.
+
+    The name is carried because the caller needs it for anything user-facing --
+    a save dialog's suggested filename, a window title -- and asking a second
+    endpoint for one string it already has here is a round trip for nothing.
+    """
     try:
         source = get_source(project_id)
-        return {"project_id": project_id, "source": source}
+        return {
+            "project_id": project_id,
+            "source": source,
+            "name": _pdf_name(project_id),
+        }
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="project not found")
 
@@ -396,6 +407,71 @@ async def api_compile_pdf(req: CompileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _pdf_name(project_id: str) -> str:
+    """A filename a person would recognise, from the paper's own name.
+
+    Reduced to what every filesystem accepts rather than what any one of them
+    does: Windows refuses < > : " / \\ | ? * and trailing dots, and a name that
+    works on the machine that saved it should work on the machine it is sent to.
+    """
+    from domain.paper_writer.compiler import list_projects
+
+    name = ""
+    for p in list_projects():
+        if p.get("project_id") == project_id:
+            name = str(p.get("name") or "")
+            break
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip(" .")
+    return cleaned[:80] or project_id
+
+
+class ExportRequest(BaseModel):
+    path: str
+
+
+@router.post("/projects/{project_id}/export-pdf")
+async def api_export_pdf(project_id: str, req: ExportRequest):
+    """Write the compiled PDF to a path the author chose.
+
+    The destination is an absolute path, which is normally the shape of a
+    traversal. Three things make it acceptable, and they are the same three that
+    made linking a file acceptable:
+
+      * the API answers same-origin requests and the dev server, so a page the
+        user happens to visit cannot reach it;
+      * the path comes from a native save dialog the user drove, not from
+        anything the interface invented;
+      * the CONTENT is not chosen by the caller. This copies one file -- the
+        project's own compiled PDF -- and nothing else. It is not a write
+        endpoint that happens to be pointed at a PDF.
+
+    It must still end in .pdf, so a mis-typed or crafted destination cannot be
+    used to drop a file the system would treat as executable.
+    """
+    from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
+
+    try:
+        pdf_file = _get_project_dir(project_id) / "main.pdf"
+    except ProjectIdError:
+        raise HTTPException(status_code=404, detail="project not found") from None
+    if not pdf_file.exists():
+        raise HTTPException(status_code=404, detail="Compile the paper first.")
+
+    target = Path(req.path).expanduser()
+    if not target.is_absolute():
+        raise HTTPException(status_code=400, detail="Choose a full path to save to.")
+    if target.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="The file must be saved as a .pdf.")
+    if not target.parent.is_dir():
+        raise HTTPException(status_code=400, detail="That folder does not exist.")
+
+    try:
+        shutil.copyfile(pdf_file, target)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"Could not save there: {e}") from None
+    return {"saved": str(target), "bytes": target.stat().st_size}
+
+
 @router.get("/download/{project_id}")
 async def api_download_pdf(project_id: str, download: bool = False):
     """serve the compiled pdf for a project.
@@ -412,10 +488,13 @@ async def api_download_pdf(project_id: str, download: bool = False):
             raise HTTPException(status_code=404, detail="project not found") from None
         if not pdf_file.exists():
             raise HTTPException(status_code=404, detail="pdf not found. compile first.")
+        # The paper's name, not its id. `0040e3568858.pdf` in a downloads
+        # folder is a file nobody can identify a week later, and the id is an
+        # implementation detail the author never chose.
         return FileResponse(
             path=str(pdf_file),
             media_type="application/pdf",
-            filename=f"{project_id}.pdf",
+            filename=f"{_pdf_name(project_id)}.pdf",
             content_disposition_type="attachment" if download else "inline",
         )
     except HTTPException:

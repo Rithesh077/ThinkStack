@@ -502,6 +502,13 @@ export const papersApi = {
   /* inline disposition - renders inside the preview <iframe> */
   previewUrl: (projectId) => `${BASE_URL}/papers/download/${projectId}`,
 
+  /** write the compiled PDF to a path the author chose */
+  exportPdf: (projectId, path) =>
+    request(`/papers/projects/${projectId}/export-pdf`, {
+      method: 'POST',
+      body: { path },
+    }),
+
   /* attachment disposition - triggers a save-to-disk */
   downloadUrl: (projectId) => `${BASE_URL}/papers/download/${projectId}?download=1`,
 };

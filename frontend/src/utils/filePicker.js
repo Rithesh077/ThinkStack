@@ -95,3 +95,30 @@ export async function pickProjectFile({ directory = false } = {}) {
     return { path: null, reason: 'unsupported' };
   }
 }
+
+
+/**
+ * Ask where to SAVE something, and under what name.
+ *
+ * Returns a path rather than writing anything: the dialog plugin gives a
+ * destination, and the backend copies the file there. That avoids adding a
+ * filesystem plugin and its capability for one button, and it keeps the write
+ * on the side that already knows which file it is allowed to copy.
+ */
+export async function pickSavePath(suggested = 'paper.pdf') {
+  if (!inTauri()) return { path: null, reason: 'unsupported' };
+
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const chosen = await save({
+      title: 'Save the compiled PDF',
+      defaultPath: suggested,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (!chosen) return { path: null, reason: 'cancelled' };
+    return { path: typeof chosen === 'string' ? chosen : chosen.path, reason: 'ok' };
+  } catch (err) {
+    console.warn('[filePicker] save dialog unavailable:', err);
+    return { path: null, reason: 'unsupported' };
+  }
+}
