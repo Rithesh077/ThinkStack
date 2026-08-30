@@ -377,6 +377,28 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             record(FAIL, "summarize request failed", repr(e))
 
+    # 6c. the starter documents survived freezing.
+    #     templates.py is imported INSIDE the two functions that use it, never
+    #     at module scope. PyInstaller's static analysis does follow those, but
+    #     "does follow" is a claim about a tool, and a missing starter is not a
+    #     crash -- create_project falls back to the paper on an unknown id, so a
+    #     bundle that lost the module would quietly offer one template and look
+    #     like a design choice. Assert the whole set instead.
+    try:
+        got = get(f"{base}/api/papers/templates")
+        ids = {t["id"] for t in got.get("templates", [])}
+        missing = {"paper", "article", "letter", "cv", "report", "slides"} - ids
+        if missing:
+            record(FAIL, "starter documents missing from the bundle", ", ".join(sorted(missing)))
+        elif not all(t.get("label") for t in got["templates"]):
+            # a blank label is an unusable picker, which has happened once
+            record(FAIL, "a starter document shipped without a label")
+        else:
+            record(PASS, f"all {len(ids)} starter documents are in the bundle",
+                   ", ".join(sorted(ids)))
+    except Exception as e:  # noqa: BLE001
+        record(FAIL, "could not list starter documents", repr(e))
+
     # 7. the paper writer actually compiles a PDF.
     #    This is the check that would have caught the flagship feature failing
     #    on every machine without a system LaTeX. It asserts the SHIPPED TeX

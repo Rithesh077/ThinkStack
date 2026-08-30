@@ -450,8 +450,11 @@ export const encryptionApi = {
 export const papersApi = {
   list: () => request('/papers/projects'),
 
-  create: (name) =>
-    request('/papers/projects', { method: 'POST', body: { name } }),
+  /** what a new document can start as */
+  templates: () => request('/papers/templates'),
+
+  create: (name, template) =>
+    request('/papers/projects', { method: 'POST', body: { name, template } }),
 
   // Only the display name. The directory is named after the project id, so a
   // rename cannot break a compile, a PDF preview, or an \includegraphics path.
