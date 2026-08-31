@@ -406,16 +406,20 @@ its own — for a letter, a CV, a set of lecture notes, an assignment. The
 citation feature is then what makes it *better* for research rather than what
 makes it usable at all.
 
-That is a positioning decision with real consequences:
+That is a positioning decision with real consequences. **All three are now
+built**, and are kept here because they explain what Scribe is for:
 
 - **nothing may require an ingested paper.** Creating a document, editing and
-  compiling must all work on a first launch with an empty library. The `cite`
-  trigger simply finds nothing and stays out of the way;
-- **templates beyond the research paper** — article, letter, CV, report, and
-  Beamer for slides — because the starter template currently assumes the user is
-  writing a paper, which most people opening a LaTeX editor are not;
-- **the first-run path cannot begin with "add papers"**, which is what it
-  implies now.
+  compiling all work on a first launch with an empty library. The `cite` trigger
+  finds nothing and stays out of the way. Held by tests rather than by care: the
+  citation routes return empty rather than failing, and no starter document
+  arrives citing a key nothing defines;
+- **templates beyond the research paper** — article, letter, CV, report and
+  Beamer for slides, served from the backend so the picker and the set cannot
+  drift. The paper is still the default, because most people here are writing
+  one; it is no longer the only thing on offer;
+- **the first-run path no longer begins with "add papers".** The empty Library
+  offers Scribe beside ingestion, and the offer is a link, not a sentence.
 
 **File management, as its own panel.** A paper is already a folder on disk, and
 more of this exists than this section previously implied.
@@ -428,10 +432,14 @@ symlink only to `resolve()`. There are size caps per file and per project, a
 suffix allowlist, nine routes in `api/routes_paper_files.py` exposing them, and
 a `FileTree.jsx` that renders the tree with uploads and a two-step delete.
 
-The remaining work is therefore narrower than "build a file explorer":
+The remaining work was therefore narrower than "build a file explorer", and is
+now done:
 
-- **the rearranging gesture.** `move` exists and is safe; dragging is what is
-  missing, along with moving a file between two projects rather than within one;
+- **the rearranging gesture.** `move` was already safe; dragging was what was
+  missing, along with moving a file between two projects rather than within one.
+  Both exist. Folders accept drops and files do not, because "beside it" would
+  be a reorder this tree does not have; a folder does not cross between papers,
+  because that is an unbounded subtree with no size known in advance;
 - **the chooser is built and is the application's own.** A native dialog exists
   only inside the desktop shell, and in a browser there is none — a file input
   returns bytes with the path deliberately withheld. Falling back to a typed
@@ -443,7 +451,10 @@ The remaining work is therefore narrower than "build a file explorer":
   can be shown greyed rather than picked and refused;
 - **saving the compiled PDF where the author chose, under a name they gave it**,
   rather than a file appearing somewhere the application picked;
-- a command entry for the editor's own operations, the way a code editor has one.
+- a command entry, the way a code editor has one. `Ctrl+K` lists every screen
+  and every paper. It does not yet reach the editor's own operations — compile,
+  link, save-as — which is the next increment and wants the editor rewrite
+  below to land first, since that is where most of those operations will live.
 
 
 **Paths that survive the user renaming things.** Opening arbitrary folders
@@ -488,6 +499,13 @@ and for an explicit copy to duplicate; the raw endpoint refuses it rather than
 listing it, because a browsable remote directory is a much larger thing to offer
 than a remembered one.
 
+**A linked file now reaches the compile.** Until 23 August this was the gap in
+the whole idea: the reference was tracked and repaired, and the engine could
+not see it. Each resolved link contributes a directory to the compile's search
+path, so a bare `\includegraphics{chart.png}` resolves. See `docs/ADR.md` for
+why that is `-Z search-path` rather than `TEXINPUTS` -- Tectonic ignores the
+environment variable, which is a trap worth not falling into twice.
+
 **What was built, and its honest limits.** Path is tried before identity, so a
 file saved over in place -- an editor writing a temporary file and renaming it,
 which changes the inode -- still reads as the same document rather than a
@@ -498,13 +516,19 @@ chapter. It does not walk a home directory. A file moved somewhere the project
 has never referred to is reported **missing**, which is the honest answer and
 comes with the ask rather than a guess.
 
-The suffix allowlist turned out to be load-bearing rather than tidy. Linking is
-the one place the application accepts an absolute path from its caller, so
-restricting it to what a LaTeX project can use also means the files worth
-stealing are not linkable: `~/.ssh/id_rsa` has no suffix, and neither does
-`/etc/passwd`. This is also why the feature waited for the same-origin fix --
-an endpoint that reads a chosen path was not something to add while any web
-page could call it.
+The suffix allowlist was load-bearing rather than tidy, and was then removed on
+23 August. Linking is the one place the application accepts an absolute path
+from its caller, so restricting it to what a LaTeX project can use also meant
+the files worth stealing were not linkable: `~/.ssh/id_rsa` has no suffix, and
+neither does `/etc/passwd`. This is also why the feature waited for the
+same-origin fix -- an endpoint that reads a chosen path was not something to
+add while any web page could call it.
+
+It was removed because it was the wrong instrument: it refused datasets,
+READMEs and image formats people legitimately keep beside a paper, while never
+describing the actual threat. What keeps the endpoint acceptable is that only
+the person at the machine can reach it, which is the same-origin check and the
+loopback bind. The cost is that this was a second layer and there is now one.
 
 So: relative within, identity plus path without, a watcher while running, and
 when all of that fails, **say the file is missing and offer to locate it** —
