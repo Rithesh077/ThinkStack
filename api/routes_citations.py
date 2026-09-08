@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from domain.knowledge_base.author_codec import decode_authors
 from domain.knowledge_base.repository import get_document_metadata
 from domain.paper_writer import bibliography as B
-from domain.paper_writer.compiler import _get_project_dir
+from domain.paper_writer.compiler import ProjectIdError, _get_project_dir
 from infrastructure.file_manager import list_stored_pdfs
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,10 @@ router = APIRouter()
 
 
 def _project(project_id: str) -> Path:
-    d = _get_project_dir(project_id)
+    try:
+        d = _get_project_dir(project_id)
+    except ProjectIdError:
+        raise HTTPException(status_code=404, detail="project not found") from None
     if not d.is_dir():
         raise HTTPException(status_code=404, detail="project not found")
     return d
@@ -68,6 +71,19 @@ def _library() -> list[B.Citable]:
 
     docs.sort(key=lambda d: (d.title.lower(), d.doc_id))
     return docs
+
+
+def _library_with_keys():
+    """Every citable paper with the key it would be cited by.
+
+    The same pairing the dropdown uses, exposed so the bibliography panel can
+    put a title against a key the document already cites.
+    """
+    taken: list[str] = []
+    for doc in _library():
+        key = B.bibkey(doc, taken)
+        taken.append(key)
+        yield doc, key
 
 
 def _as_row(doc: B.Citable, key: str, cited: bool) -> dict:
@@ -126,3 +142,42 @@ async def api_add_citation(project_id: str, req: CiteRequest):
         raise HTTPException(status_code=500, detail="Could not write the bibliography.") from e
 
     return {"key": key, "added": added, "cite": f"\\cite{{{key}}}"}
+
+
+@router.get("/projects/{project_id}/bibliography")
+async def api_bibliography(project_id: str):
+    """What this document cites, and whether each citation will resolve.
+
+    Three states, and the two unhappy ones are the point. `references.bib` says
+    what COULD be cited and the source says what IS; they drift in both
+    directions and neither drift is visible today. A key cited but missing from
+    the bib renders as [?] in the PDF -- which is how the question-mark bug was
+    reported in the first place -- and an entry nothing cites is carried
+    forever.
+    """
+    d = _project(project_id)
+    tex = d / "main.tex"
+    source = tex.read_text(encoding="utf-8") if tex.is_file() else ""
+
+    used = B.cited_keys(source)
+    defined = B.bib_keys(B.read_bib(d))
+    library = {row["key"]: row for row in (_as_row(doc, key, False)
+                                           for doc, key in _library_with_keys())}
+
+    entries = []
+    for key, count in sorted(used.items(), key=lambda kv: -kv[1]):
+        known = library.get(key)
+        entries.append({
+            "key": key,
+            "count": count,
+            "in_bib": key in defined,
+            "doc_id": (known or {}).get("doc_id"),
+            "title": (known or {}).get("title"),
+            "authors": (known or {}).get("authors"),
+            "year": (known or {}).get("year"),
+            # cited but undefined is the one that renders as [?]
+            "status": "ok" if key in defined else "missing",
+        })
+
+    unused = [k for k in defined if k not in used]
+    return {"entries": entries, "unused": unused, "total_cited": sum(used.values())}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import {
   Search as SearchIcon, Brain, Lightbulb, Layers, Target, Clock, X,
-  Lock, Eye, EyeOff, Maximize2, Plus, Minus, BookOpen,
+  Lock, Eye, EyeOff, Maximize2, Plus, Minus, BookOpen, Settings2, Waypoints, Scan,
 } from 'lucide-react';
 import {
   documentsApi, searchApi, graphApi, analysisApi, gapsApi, useLlmBusy, useJobs,
@@ -12,6 +12,7 @@ import useCanvas from './litgraph/useCanvas';
 import { clampPanel, gapPassages } from './litgraph/panel';
 import { fetchPaper } from './litgraph/paperText';
 import PaperPanel from './litgraph/PaperPanel';
+import GraphSettings from './litgraph/GraphSettings';
 import { earn, EARNED_BY } from '../utils/pigments';
 import './litgraph/litgraph.css';
 
@@ -83,6 +84,18 @@ export default function LitGraph() {
 
   // runs
   const [runsOpen, setRunsOpen] = useState(false);
+  // Where the layout dial sits, and whether the cog is open. The canvas owns
+  // the layout; this mirror is only so the dial and the Forces group can render
+  // their own state. 0 is the projection, which is what the map opens on.
+  const [blend, setBlendState] = useState(0);
+  const [cogOpen, setCogOpen] = useState(false);
+  // How many papers have been placed by hand. Read off the canvas after any
+  // gesture that can change it, so the Unpin all control knows to exist.
+  const [pinCount, setPinCount] = useState(0);
+  // How far the focused paper's neighbourhood reaches. Lives here rather than
+  // in the panel because both the panel's little map and the big canvas read
+  // it. 1 is what the map has always dimmed to, so the default is a no-op.
+  const [depth, setDepth] = useState(1);
   const [analysisRuns, setAnalysisRuns] = useState([]);
   const [gapRuns, setGapRuns] = useState([]);
   const [openRun, setOpenRun] = useState(null);
@@ -261,8 +274,31 @@ export default function LitGraph() {
   }, []);
 
   const canvas = useCanvas({
-    svgRef, graph, colors, matches, focus, expanded, onSelect, onLasso,
+    svgRef, graph, colors, matches, focus, expanded, onSelect, onLasso, depth,
   });
+
+  /**
+   * Flip the layout.
+   *
+   * The canvas owns the mode; this only mirrors it into React so the switch
+   * can ink the live word and the Forces group can disable itself. Kept here
+   * rather than inside the switch's onClick because the settings panel offers
+   * the same move from its Forces group.
+   */
+  const slideBlend = useCallback(
+    (value) => { setBlendState(value); canvas.setBlend(value); },
+    [canvas],
+  );
+
+  // The pin count lives on the canvas: it is written by a pointer gesture and
+  // read back from localStorage, neither of which goes through React. Pulled
+  // across on the gestures that can change it -- a drop, a double-click, and
+  // opening the panel that shows it -- rather than mirrored on every drag
+  // frame or synchronised in an effect that would cascade a render per load.
+  const syncPins = useCallback(
+    () => setPinCount(Object.keys(canvas.pins || {}).length),
+    [canvas],
+  );
 
   // Clicking a paper frames it WITH the papers it is linked to.
   //
@@ -455,7 +491,7 @@ export default function LitGraph() {
       />
       <div ref={setRoot} className={`lg-root ${panel ? 'lg-has-panel' : ''}`}>
       {/* ---------- canvas ---------- */}
-      <div className="lg-stage">
+      <div className="lg-stage" onPointerUp={syncPins} onDoubleClick={syncPins}>
         {/* The cursor lives in CSS (crosshair, because dragging selects). The
             pointer handlers write it inline from there, which is why there is
             no style prop here -- one would win over the stylesheet forever. */}
@@ -511,6 +547,38 @@ export default function LitGraph() {
 
           </div>
 
+          {/* The layout dial. Not two modes -- one number. At Meaning every
+              paper is exactly where the projection put it; sliding towards
+              Force loosens the spring that holds it there, so the map declutters
+              without ever throwing away what a position means. */}
+          <div className="lg-blend">
+            <span className={blend <= 0 ? 'is-live' : ''} title="Papers exactly where the projection put them">
+              <Scan size={12} /> Meaning
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={blend}
+              aria-label="Layout: Meaning to Force"
+              aria-valuetext={blend <= 0 ? 'Meaning — the projection' : `${Math.round(blend * 100)}% relaxed`}
+              onChange={(e) => slideBlend(parseFloat(e.target.value))}
+            />
+            <span className={blend >= 1 ? 'is-live' : ''} title="Relax the same papers freely">
+              Force <Waypoints size={12} />
+            </span>
+          </div>
+
+          <button
+            className={`lg-cog${cogOpen ? ' on' : ''}`}
+            onClick={() => { setCogOpen((o) => !o); syncPins(); }}
+            aria-expanded={cogOpen}
+            title="Graph settings"
+          >
+            <Settings2 size={16} />
+          </button>
+
           {/* the library at a glance -- what the map is made of, before you
               touch anything. Sits up here because the bottom of the stage
               belongs to the action bar once anything is selected. */}
@@ -534,6 +602,25 @@ export default function LitGraph() {
             </button>
           )}
         </div>
+
+        {cogOpen && (
+          <GraphSettings
+            canvas={canvas}
+            blend={blend}
+            onBlend={slideBlend}
+            pinCount={pinCount}
+            onUnpinAll={() => { canvas.unpinAll(); syncPins(); }}
+            onClose={() => setCogOpen(false)}
+          />
+        )}
+
+        {/* One line, so nobody reads a relaxed layout as the projection. */}
+        {blend > 0 && (
+          <p className="lg-mode-note">
+            <b>{Math.round(blend * 100)}% relaxed</b> — the same papers, loosened
+            from where the projection put them. Drag one and it stays put.
+          </p>
+        )}
 
         {/* ---------- results list ---------- */}
         {!!results.length && (
@@ -744,6 +831,8 @@ export default function LitGraph() {
               openAt={panel.seek}
               tab={panel.tab}
               onTab={(tab) => setPanel((p) => ({ ...p, tab }))}
+              depth={depth}
+              onDepth={setDepth}
               onSelect={onSelect}
               expanded={expanded}
               onExpand={setExpanded}

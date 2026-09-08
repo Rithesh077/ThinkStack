@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   makeAlpha, lassoFar, gestureFor, citedBy, edgeLit, hitRadius, hitRadiusAt,
+  lodBand, placeLabels, loadPins, LOD_FAR, LOD_NEAR,
 } from '../src/components/litgraph/useCanvas';
 
 const m = (...ids) => new Map(ids.map((id) => [id, { score: 1 }]));
@@ -194,5 +195,107 @@ describe('hitRadiusAt', () => {
 
   it('does not shrink below the un-zoomed target when zoomed in', () => {
     expect(hitRadiusAt(4.5, 3)).toBeGreaterThanOrEqual(hitRadius(4.5));
+  });
+});
+
+/**
+ * Level of detail.
+ *
+ * A map of two hundred papers cannot draw two hundred titles and stay a map.
+ * The bands are named rather than continuous so the O(n^2) label placement can
+ * be cached per band instead of running on every frame of a pan.
+ */
+describe('lodBand', () => {
+  it('is territories only when zoomed out', () => {
+    expect(lodBand(0.2)).toBe(0);
+    expect(lodBand(0.3)).toBe(0);
+    expect(lodBand(LOD_FAR - 0.01)).toBe(0);
+  });
+
+  it('names the biggest papers in the middle', () => {
+    expect(lodBand(LOD_FAR)).toBe(1);
+    expect(lodBand(0.8)).toBe(1);
+    expect(lodBand(LOD_NEAR - 0.01)).toBe(1);
+  });
+
+  it('shows everything once you are in', () => {
+    expect(lodBand(LOD_NEAR)).toBe(2);
+    expect(lodBand(2)).toBe(2);
+    expect(lodBand(6)).toBe(2);
+  });
+
+  it('is stable within a band, which is what makes the cache legal', () => {
+    // If this were not constant across a pan's zoom jitter, the placement pass
+    // would run per frame and the whole point of banding would be gone.
+    expect(lodBand(0.6)).toBe(lodBand(1.05));
+    expect(lodBand(1.2)).toBe(lodBand(5.9));
+  });
+});
+
+/**
+ * Label placement.
+ *
+ * The pass used to consider only other labels, so on a relaxed layout the
+ * titles cleared each other and then landed squarely across the papers.
+ */
+describe('placeLabels', () => {
+  const at = (text, x, y) => ({ text, x, y });
+
+  it('keeps a label that hits nothing', () => {
+    expect(placeLabels([at('Attention Is All You Need', 500, 400)])).toEqual([true]);
+  });
+
+  it('drops the second of two labels on top of each other', () => {
+    expect(placeLabels([at('Dense Passage Retrieval', 500, 400), at('Sparse Attention', 505, 402)]))
+      .toEqual([true, false]);
+  });
+
+  it('earlier entries win, so callers order by what matters most', () => {
+    const [first, second] = placeLabels([at('theme', 500, 400), at('a paper title here', 502, 401)]);
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+  });
+
+  it('drops a label that would land on a paper', () => {
+    // The omission behind the jumble: a dot is an obstacle, not empty space.
+    const dot = { x: 480, y: 392, w: 40, h: 40 };
+    expect(placeLabels([at('Graph Attention Networks', 500, 400)], [dot])).toEqual([false]);
+    expect(placeLabels([at('Graph Attention Networks', 500, 400)])).toEqual([true]);
+  });
+
+  it('an obstacle far away costs nothing', () => {
+    expect(placeLabels([at('Node2Vec at Scale', 500, 400)], [{ x: 10, y: 10, w: 20, h: 20 }]))
+      .toEqual([true]);
+  });
+});
+
+/**
+ * Pins. A paper the user has put somewhere outranks both the projection and
+ * the simulation, so it has to survive a reload -- and must not resurrect a
+ * paper that has since been deleted.
+ */
+describe('loadPins', () => {
+  const ids = ['a', 'b', 'c'];
+
+  it('reads back what was written', () => {
+    const saved = JSON.stringify({ a: { x: 12, y: 34 }, b: { x: 5, y: 6 } });
+    expect(loadPins(saved, ids)).toEqual({ a: { x: 12, y: 34 }, b: { x: 5, y: 6 } });
+  });
+
+  it('prunes papers that are no longer in the library', () => {
+    const saved = JSON.stringify({ a: { x: 1, y: 2 }, gone: { x: 9, y: 9 } });
+    expect(loadPins(saved, ids)).toEqual({ a: { x: 1, y: 2 } });
+  });
+
+  it('treats a corrupt store as no pins rather than taking the map down', () => {
+    expect(loadPins('not json at all', ids)).toEqual({});
+    expect(loadPins('[1,2,3]', ids)).toEqual({});
+    expect(loadPins(null, ids)).toEqual({});
+    expect(loadPins(undefined, ids)).toEqual({});
+  });
+
+  it('drops an entry whose coordinates are not numbers', () => {
+    const saved = JSON.stringify({ a: { x: 'left', y: 3 }, b: null, c: { x: 1, y: 2 } });
+    expect(loadPins(saved, ids)).toEqual({ c: { x: 1, y: 2 } });
   });
 });

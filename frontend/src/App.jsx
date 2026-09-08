@@ -7,6 +7,8 @@ import { checkForUpdatesInteractive, APP_VERSION } from './utils/updater';
 // Every feature is declared once, here, and the nav / routes / brand mark are
 // all rendered from it. The shell no longer names a single feature.
 import { FEATURES, featureForPath, markFor } from './features';
+import CommandPalette from './components/CommandPalette';
+import { papersApi } from './utils/api';
 import { shellStore } from './utils/shell';
 // Eager, not lazy: it decides whether to render on first paint, and a
 // lazy chunk would let the page settle before the note appears.
@@ -148,6 +150,69 @@ function MainRegion({ children }) {
  * asked for it. A deliberate collapse is unaffected: that lives in a separate
  * flag this does not clear.
  */
+/**
+ * Ctrl+K, and everything it can reach.
+ *
+ * The application had exactly one shortcut before this -- Ctrl+Enter in Scribe
+ * -- so finding a paper and opening it was entirely mouse. Ctrl+K is the key
+ * every editor and half the web already use, and borrowing it costs nothing
+ * and saves teaching.
+ *
+ * It lives inside the router because half of what it offers is navigation, and
+ * the commands are assembled here rather than inside the palette because what
+ * is reachable is a fact about the shell: the screens it knows and the papers
+ * that exist. A palette offering actions that do nothing where you stand is
+ * worse than a smaller one.
+ */
+function Commands() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [papers, setPapers] = useState([]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'k') return;
+      e.preventDefault();
+      setOpen((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Fetched when the palette is first asked for rather than on every render of
+  // the shell: most sessions never open it, and the list is only useful once
+  // it is on screen.
+  useEffect(() => {
+    if (!open || papers.length) return;
+    let cancelled = false;
+    papersApi.list()
+      .then((d) => { if (!cancelled) setPapers(d.projects || []); })
+      .catch(() => { if (!cancelled) setPapers([]); });
+    return () => { cancelled = true; };
+  }, [open, papers.length]);
+
+  if (!open) return null;
+
+  const commands = [
+    ...FEATURES.map((f) => ({
+      id: `go:${f.id}`,
+      label: `Go to ${f.label}`,
+      group: 'Screen',
+      run: () => navigate(f.path),
+    })),
+    ...papers.map((p) => ({
+      id: `paper:${p.project_id}`,
+      label: p.name || 'untitled',
+      group: 'Paper',
+      run: () => navigate(`/write?project=${encodeURIComponent(p.project_id)}`),
+    })),
+  ];
+
+  return <CommandPalette commands={commands} onClose={() => setOpen(false)} />;
+}
+
+
 function ReleaseFocusOnNavigate() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -275,6 +340,7 @@ export default function App() {
       <BrowserRouter>
         <div className={`app-layout ${collapsed ? 'is-collapsed' : ''}`}>
           <ReleaseFocusOnNavigate />
+          <Commands />
           <aside className="sidebar">
             <div className="sidebar-brand">
               <div className="brand-logo-container">

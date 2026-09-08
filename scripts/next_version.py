@@ -3,17 +3,17 @@
 
 The rules, stated once:
 
-    anything landing   -> X.Y.Z -> X.Y.(Z+1)      automatic, Z is unbounded
-    --bump minor       -> X.Y.Z -> X.(Y+1).0      a decision, taken by a human
-    --bump minor at Y=9 > X.9.Z  -> (X+1).0.0     Y carries into X at ten
+    a fix/ landing     -> X.Y.Z -> X.Y.(Z+1)      Z is unbounded
+    a feat/ landing    -> X.Y.Z -> X.(Y+1).0      the branch name is the claim
+    at Y=9, a feature  -> X.9.Z -> (X+1).0.0      Y carries into X at ten
     --bump major       -> X.Y.Z -> (X+1).0.0      a decision, taken by a human
 
-X and Y are never inferred from a branch name. Deciding that a set of landings
-amounts to a minor version, or to a release, is editorial, and a script reading
-branch prefixes cannot make that judgement -- it can only guess consistently.
-Z is automatic precisely because it is not a judgement: something landed, so
-the number moves, and the build reaches testers.
-    a breaking -> major     X.Y.Z   -> (X+1).0.0
+The branch name is the claim. Naming a branch feat/ says "this adds something",
+and the person naming it is the one who knows; that judgement is made once, at
+the moment it is true, rather than reconstructed later from a list of merges.
+
+X is not inferred from anything. "This is a new generation of the product" is
+not a claim a branch name can make, so only the release workflow moves it.
 
 "Current" means the newest published STABLE tag (vX.Y.Z), not whatever happens
 to sit in tauri.conf.json, because that file is only bumped as part of cutting a
@@ -237,58 +237,31 @@ def replay_landings(
         if not m:
             continue
         branch = m.group("branch")
-        # Every landing moves Z, feature or fix alike.
+        # The branch name says which column moves.
         #
-        # X and Y are a DECISION, taken deliberately by running the release
-        # workflow with a bump; nothing a branch is named can move them. But a
-        # landing that moved no digit at all would be invisible: the version
-        # would match a tag that already exists, the build would be skipped as
-        # already-published, and the work would never reach a tester. So Z
-        # advances on anything that lands, and the editorial question -- is
-        # this a minor, is this a release -- stays with the human.
+        #   feat/ or feature/ -> Y, and Z resets
+        #   fix/  or hotfix/  -> Z
+        #
+        # This was briefly the other way -- every landing moved Z and only a
+        # human could move Y -- on the reasoning that "is this a feature
+        # release" is editorial and a prefix cannot make that judgement. In
+        # practice it made Y almost never move, so the number stopped saying
+        # anything about the SHAPE of what had landed: a version that had
+        # gained a whole subsystem read the same as one that had fixed a
+        # typo. Naming a branch feat/ IS the judgement, made by the person who
+        # knows what they built, at the moment they know it.
+        #
+        # X stays a decision. Only the release workflow moves it, because
+        # "this is a new generation of the product" is not something a branch
+        # name can claim.
         if branch.startswith(("feat/", "feature/", "fix/", "hotfix/")):
             kind = "feature" if branch.startswith(("feat/", "feature/")) else "fix"
-            patch += 1
+            if kind == "feature":
+                major, minor, patch = bump_minor(major, minor)
+            else:
+                patch += 1
             notes.append(f"{kind:<8} {branch:<34} -> {major}.{minor}.{patch}")
     return (major, minor, patch), notes
-
-
-def minor_series_start() -> str | None:
-    """The earliest tag sharing the newest tag's X.Y, or None.
-
-    Y only ever moves because a person said so, so "when did this minor series
-    begin" is the same question as "when did anyone last make that call".
-    """
-    base, _ = newest_tag()
-    same: list[tuple[int, str]] = []
-    for line in _git("tag", "--list", "v*").splitlines():
-        m = VERSION_TAG.match(line.strip())
-        if not m:
-            continue
-        major, minor, patch = (int(g) for g in m.groups()[:3])
-        if (major, minor) == (base[0], base[1]):
-            same.append((patch, line.strip()))
-    return min(same)[1] if same else None
-
-
-def features_awaiting_a_minor() -> tuple[int, str | None]:
-    """How many features have landed since Y last moved, and from which tag.
-
-    Counted by REPLAYING the same landings the version itself is derived from,
-    rather than by reading commit subjects. The two disagree -- a `feat:`
-    subject inside a `fix/` branch is a fix here -- and a warning that counts
-    differently from the number it is warning about is worse than no warning.
-
-    Exists because the rule that X and Y are editorial has no enforcement: four
-    features landed between v2.1.9 and v2.1.16 and every one of them was
-    numbered as a patch, because moving Y requires someone to remember and
-    nothing said otherwise. The judgement stays with the human; the omission
-    stops being silent.
-    """
-    start = minor_series_start()
-    base, _ = newest_tag()
-    _, notes = replay_landings(base, start)
-    return sum(1 for n in notes if n.startswith("feature")), start
 
 
 def apply_bump(version: tuple[int, int, int], bump: str) -> str:
@@ -312,9 +285,6 @@ def main() -> int:
     g.add_argument("--bump", choices=["major", "minor", "patch"])
     g.add_argument("--infer", action="store_true")
     g.add_argument("--current", action="store_true")
-    g.add_argument("--pending-minor", action="store_true", dest="pending",
-                   help="print how many features have landed since Y last "
-                        "moved; 0 when the number is telling the truth")
     g.add_argument("--next", action="store_true", dest="next_",
                    help="replay every feat/ and fix/ branch merged since the "
                         "newest tag, applying one bump each, in order")
@@ -327,19 +297,6 @@ def main() -> int:
     if args.current:
         print("%d.%d.%d" % base)
         return 0
-
-    if args.pending:
-        count, since = features_awaiting_a_minor()
-        if args.explain and count:
-            print(f"  {count} feature(s) have landed since {since}, the last "
-                  f"declared minor.", file=sys.stderr)
-            print("  This build numbers them as a patch. Rerun the release "
-                  "workflow", file=sys.stderr)
-            print("  with bump=minor if they amount to a feature release.",
-                  file=sys.stderr)
-        print(count)
-        return 0
-
     if args.next_:
         nxt, notes = replay_landings(base, base_tag)
         if args.explain:
@@ -353,14 +310,7 @@ def main() -> int:
                 print("  landed since   : nothing that moves the version",
                       file=sys.stderr)
             print("  next           : v%d.%d.%d" % nxt, file=sys.stderr)
-            pending, since = features_awaiting_a_minor()
-            if pending:
-                print(f"  NOTE           : {pending} feature(s) have landed "
-                      f"since {since}, the last", file=sys.stderr)
-                print("                   declared minor, and this numbers "
-                      "them as a patch.", file=sys.stderr)
-                print("                   Rerun with bump=minor if they are a "
-                      "feature release.", file=sys.stderr)
+
         print("%d.%d.%d" % nxt)
         return 0
 

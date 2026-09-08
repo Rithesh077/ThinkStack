@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { documentsApi } from '../../utils/api';
 import { shellStore } from '../../utils/shell';
-import { neighbours, nearestFurthest } from './panel';
+import { neighbours, nearestFurthest, localGraph } from './panel';
 import { markSpans, kindsOf, locateQuote } from './highlight';
 import { fetchPaper, forgetPaper } from './paperText';
 import PdfReader from './PdfReader';
@@ -16,6 +16,12 @@ import PdfReader from './PdfReader';
  *
  * All of About comes out of the single /graph payload the canvas already
  * holds. None of it is a new request; it was simply never shown.
+ *
+ * About used to be eight sections in a flat stack, every one of them wearing
+ * the same uppercase rule, in a 360px column. Everything is still here; what
+ * changed is that the answer to "why is this paper where it is" is one
+ * sentence at the top with a picture under it, and the lists below it can be
+ * shut.
  */
 
 // Whether the original pdf exists for a doc, probed once with a HEAD request.
@@ -24,6 +30,7 @@ const pdfOkCache = new Map();
 
 export default function PaperPanel({
   node, graph, matches, query, tab, onTab, onSelect, expanded, onExpand, openAt,
+  depth = 1, onDepth,
 }) {
   const links = neighbours(node.doc_id, graph.edges);
   const theme = (graph.themes || []).find((t) => t.doc_ids?.includes(node.doc_id));
@@ -32,6 +39,20 @@ export default function PaperPanel({
   const titleOf = (id) => graph.nodes.find((n) => n.doc_id === id)?.title || 'a deleted paper';
   const hits = matches.get(node.doc_id)?.hits;
   const { doc, error } = usePaperText(node);
+
+  // Which sections are open. Remembered across paper switches on purpose: it
+  // is a statement about what you are reading FOR, not about this paper, and
+  // re-opening the same three sections on every click was the flat panel's
+  // other cost. Theme starts shut, because the placement line already names it.
+  const [open, setOpen] = useState({ links: true, gaps: true, claims: true, theme: false });
+  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+
+  // Which paper this is within its theme. The projection and _separate() fix
+  // the order, so this reads as a position rather than a shuffle.
+  const mates = theme
+    ? theme.doc_ids.filter((d) => graph.nodes.some((n) => n.doc_id === d))
+    : [];
+  const ord = mates.indexOf(node.doc_id) + 1;
 
   // Which passage the reader should scroll to when it opens. Set by clicking a
   // claim; cleared once used, so returning to the tab does not jump again.
@@ -63,7 +84,7 @@ export default function PaperPanel({
   return (
     <>
       <div className="lg-kind">Paper</div>
-      <h3>{node.title}</h3>
+      <h3 className="lg-paper-title">{node.title}</h3>
       <div className="lg-authors">{node.authors} {node.year}</div>
 
       <div className="lg-tabs" role="tablist">
@@ -94,6 +115,45 @@ export default function PaperPanel({
         )
         : (
           <div className="lg-tabbody">
+            {/* Where it sits, promoted to one sentence at the top. This was
+                four separate sections -- theme, closest, furthest, gaps --
+                each behind its own uppercase rule, which put the answer to
+                "why is this paper here" six scrolls down a 360px column. */}
+            {place && (
+              <p className="lg-placement">
+                {theme && ord > 0 && (
+                  <>
+                    <span className="lg-ord">{ordinal(ord)}</span> of {mates.length} in{' '}
+                    <b>{theme.label}</b>,{' '}
+                  </>
+                )}
+                closest to <b>{place.near.title}</b>
+                {place.far && <>, furthest from <b>{place.far.title}</b></>}
+                {inGaps.length > 0 && (
+                  <>, cited in {inGaps.length} gap{inGaps.length === 1 ? '' : 's'}</>
+                )}.
+              </p>
+            )}
+
+            {/* The local graph. Obsidian gives the neighbourhood of the open
+                note its own pane; here it sits in the panel beside the facts
+                it explains, and the depth it is set to also decides how far
+                the big map stays lit. */}
+            <LocalMap rootId={node.doc_id} edges={graph.edges} depth={depth} />
+            <div className="lg-depth" role="group" aria-label="Local graph depth">
+              <span>Local depth</span>
+              {[1, 2, 3].map((d) => (
+                <button
+                  key={d}
+                  className={depth === d ? 'on' : ''}
+                  aria-pressed={depth === d}
+                  onClick={() => onDepth?.(d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+
             {node.summary
               ? <p>{node.summary}</p>
               : (
@@ -107,6 +167,8 @@ export default function PaperPanel({
                 </p>
               )}
 
+            {/* Not collapsible: this one is about the search you just ran
+                rather than about the paper, and it leaves with the query. */}
             {hits?.length > 0 && (
               <>
                 <h4>Why this matched</h4>
@@ -122,61 +184,52 @@ export default function PaperPanel({
             {/* The edge set has always been drawn and never listed. Hovering a
                 node and watching what stays bright was the only way to read it. */}
             {links.length > 0 && (
-              <>
-                <h4>Connected to · {links.length}</h4>
+              <Section id="links" label="Connected to" n={links.length} open={open} toggle={toggle}>
                 {links.map((l) => (
                   <button key={l.id} className="lg-claim" onClick={() => onSelect(l.id)}>
-                    <span className="lg-tag">{l.weight.toFixed(2)}</span>
+                    <span className="lg-tag"><span className="lg-w">{l.weight.toFixed(2)}</span></span>
                     {titleOf(l.id)}
                   </button>
                 ))}
-              </>
-            )}
-
-            {theme && (
-              <>
-                <h4>Theme</h4>
-                <p className="lg-fact">
-                  <b>{theme.label}</b>
-                  {theme.doc_ids.length > 1 && `, shared with ${theme.doc_ids.length - 1} other ${theme.doc_ids.length === 2 ? 'paper' : 'papers'}`}
-                </p>
-              </>
+              </Section>
             )}
 
             {/* A gap names its evidence; this is that relation read backwards. */}
             {inGaps.length > 0 && (
-              <>
-                <h4>Cited in gaps · {inGaps.length}</h4>
+              <Section id="gaps" label="Cited in gaps" n={inGaps.length} open={open} toggle={toggle}>
                 {inGaps.map((g) => (
-                  <button key={g.gap_id} className="lg-claim" onClick={() => onSelect(g.gap_id, null, true)}>
+                  <button
+                    key={g.gap_id}
+                    className="lg-claim lg-is-gap"
+                    onClick={() => onSelect(g.gap_id, null, true)}
+                  >
                     <span className="lg-tag">{g.severity}</span>
                     {(g.gap_type || '').replace(/_/g, ' ')}
                   </button>
                 ))}
-              </>
-            )}
-
-            {place && (
-              <>
-                <h4>Where it sits</h4>
-                <p className="lg-fact">
-                  Closest to <b>{place.near.title}</b>
-                  {place.far && <>, furthest from <b>{place.far.title}</b></>}.
-                  {' '}The map is a projection of what each paper is about, so distance is disagreement.
-                </p>
-              </>
+              </Section>
             )}
 
             {node.claims?.length > 0 && (
-              <>
-                <h4>Claims · {node.claims.length}</h4>
+              <Section id="claims" label="Claims" n={node.claims.length} open={open} toggle={toggle}>
                 {node.claims.map((c, i) => (
                   <button key={i} className="lg-claim" onClick={() => openAtClaim(c, i)}>
                     <span className="lg-tag">{(c.type || c.claim_type || '').replace(/_/g, ' ')}</span>
                     {c.text || c.claim_text}
                   </button>
                 ))}
-              </>
+              </Section>
+            )}
+
+            {theme && (
+              <Section id="theme" label="Theme" n={theme.doc_ids.length} open={open} toggle={toggle}>
+                <p className="lg-fact">
+                  <b>{theme.label}</b>
+                  {theme.doc_ids.length > 1 && `, shared with ${theme.doc_ids.length - 1} other ${theme.doc_ids.length === 2 ? 'paper' : 'papers'}`}
+                  . The map is a projection of what each paper is about, so
+                  distance is disagreement.
+                </p>
+              </Section>
             )}
 
             <div className="lg-stat"><span>Chunks</span><b>{node.chunks}</b></div>
@@ -189,6 +242,94 @@ export default function PaperPanel({
           </div>
         )}
     </>
+  );
+}
+
+/** 3 -> "3rd". Only ever called on a 1-based position within a theme. */
+function ordinal(n) {
+  const rest = n % 100;
+  if (rest >= 11 && rest <= 13) return `${n}th`;
+  return n + (['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+}
+
+/**
+ * One collapsible section of the About tab.
+ *
+ * The count sits in the header rather than the body, which is the whole reason
+ * a shut section is still worth having: "Cited in gaps 2" answers the question
+ * without being opened.
+ */
+function Section({ id, label, n, open, toggle, children }) {
+  return (
+    <div className="lg-sec">
+      <button className="lg-sec-head" onClick={() => toggle(id)} aria-expanded={!!open[id]}>
+        <span className="lg-car" aria-hidden="true">{open[id] ? '−' : '+'}</span>
+        {label}
+        <span className="lg-sec-n">{n}</span>
+      </button>
+      {open[id] && <div className="lg-sec-body">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * The neighbourhood, drawn small.
+ *
+ * Deliberately NOT the real coordinates. At 300x148 a projection of a dense
+ * library collapses into a smudge, and a picture that cannot be read is worse
+ * than no picture -- so this lays the hops out as rings: the paper in the
+ * middle, what it links to around it, what those link to further out. The big
+ * map keeps the true positions; this one answers "how connected is this, and
+ * to what shape of thing".
+ */
+function LocalMap({ rootId, edges, depth }) {
+  const hop = localGraph(rootId, edges, depth);
+  const at = new Map([[rootId, { x: 150, y: 74, r: 6 }]]);
+
+  const ring = (d) => [...hop.entries()].filter(([, h]) => h === d).map(([id]) => id);
+  const lay = (ids, rx, ry, r, turn) =>
+    ids.forEach((id, i) => {
+      const a = (i / Math.max(ids.length, 1)) * Math.PI * 2 - Math.PI / 2 + turn;
+      at.set(id, { x: 150 + Math.cos(a) * rx, y: 74 + Math.sin(a) * ry, r });
+    });
+
+  lay(ring(1), 36, 30, 4.5, 0);
+  // Capped: past fourteen the outer ring is a solid arc of dots and says less
+  // than "many". The count under the picture carries the rest.
+  lay(ring(2).slice(0, 14), 66, 56, 3.2, 0.25);
+  lay(ring(3).slice(0, 18), 104, 66, 2.4, 0.5);
+
+  const drawn = (edges || []).filter((e) => at.has(e.source) && at.has(e.target));
+
+  return (
+    <div className="lg-thumb">
+      <svg
+        viewBox="0 0 300 148"
+        role="img"
+        aria-label={`${hop.size - 1} papers within ${depth} link${depth === 1 ? '' : 's'} of this one`}
+      >
+        {drawn.map((e, i) => (
+          <line
+            key={i}
+            className="lg-thumb-edge"
+            x1={at.get(e.source).x} y1={at.get(e.source).y}
+            x2={at.get(e.target).x} y2={at.get(e.target).y}
+            strokeWidth={(0.5 + e.weight).toFixed(2)}
+          />
+        ))}
+        {[...at.entries()].map(([id, p]) => (
+          <circle
+            key={id}
+            className={`lg-thumb-node${id === rootId ? ' is-root' : ''}`}
+            cx={p.x} cy={p.y} r={p.r}
+          />
+        ))}
+      </svg>
+      <div className="lg-thumb-cap">
+        <span>Local graph</span>
+        <span>depth <b>{depth}</b> · <b>{hop.size - 1}</b> linked</span>
+      </div>
+    </div>
   );
 }
 

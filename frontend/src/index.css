@@ -2396,9 +2396,24 @@ input::-webkit-credentials-auto-fill-button {
   color: var(--text);
 }
 
+/* One column at any width was wrong on every screen but a laptop: on a 1920px
+   window the list ran down the left in a narrow ribbon with the rest of the
+   page empty, and on a phone-width window the cards still had to be scrolled
+   one at a time.
+
+   An auto-fill grid tracks the WINDOW rather than a set of breakpoints. Cards
+   are at least 22rem, and as many fit as will; below that the track collapses
+   to a single column on its own. No media query, and nothing to keep in sync
+   with the sidebar's own widths when they change.
+
+   `minmax(min(22rem, 100%), 1fr)` rather than `minmax(22rem, 1fr)`: a bare
+   22rem minimum cannot shrink below itself, so on a viewport narrower than
+   22rem the track overflows and the page scrolls sideways. The min() lets the
+   track give way when there is genuinely less room than that. */
 .model-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  align-items: start;
   gap: 0.75rem;
   margin-top: 1rem;
 }
@@ -3224,14 +3239,24 @@ input::-webkit-credentials-auto-fill-button {
 .ft-row.is-project.is-active { color: var(--text); }
 .ft-row.is-project.is-active .ft-icon { color: var(--accent); opacity: 1; }
 
+/* The "has a compiled PDF" mark.
+
+   No margin-left: auto here. .ft-when already has one, and flexbox splits the
+   free space EQUALLY between every auto margin in a row -- so with two of
+   them the date landed at a different x in every row depending on how long
+   the name was, and a row with no dot pushed it hard right instead. The dates
+   read as scattered rather than as a column.
+
+   The slot is always rendered, dot or no dot, so a paper that has never been
+   compiled does not shift the date of the row above it. */
 .ft-dot {
   width: 5px;
   height: 5px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
 }
+.ft-dot.is-empty { background: transparent; }
 
 .ft-spin { margin-left: auto; animation: spin 1s linear infinite; flex-shrink: 0; }
 .ft-indent { padding-left: 34px; }
@@ -3741,3 +3766,382 @@ input::-webkit-credentials-auto-fill-button {
 .upload-failures svg { color: var(--danger); flex-shrink: 0; align-self: center; }
 .upload-failure-name { font-family: var(--sans); color: var(--ink); }
 .upload-failure-why { font-size: var(--type-xs); color: var(--ink-3); }
+
+/* ── linked files ──────────────────────────────────────
+   Files a paper uses that live elsewhere on the machine. Rendered under the
+   project's own tree and set apart by a rule rather than an indent, because
+   they are not children of the project -- they are references out of it, and
+   indenting them under the tree would say the opposite.
+
+   The three states are told in WORDS, not only in colour: "missing" and
+   "moved" are labels. A reader who cannot distinguish the tones still learns
+   which file needs attention, and this design language keeps colour for
+   emphasis rather than for meaning. */
+.lf {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+.lf-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 0.55rem 0.25rem;
+}
+.lf-title {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: var(--type-xs); color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.lf-head button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.15rem; border-radius: 2px; display: inline-flex;
+}
+.lf-head button:hover { color: var(--ink); background: var(--sheet-2); }
+
+.lf-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-size: var(--type-sm);
+  border-radius: 2px;
+}
+.lf-row:hover { background: var(--sheet-2); }
+.lf-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2);
+}
+.lf-row.is-missing .lf-name { color: var(--ink-3); text-decoration: line-through; }
+.lf-meta { font-size: var(--type-xs); color: var(--ink-3); white-space: nowrap; }
+.lf-warn  { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--danger); }
+.lf-moved { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--ink-3); }
+
+.lf-actions { display: inline-flex; gap: 0.15rem; opacity: 0; }
+.lf-row:hover .lf-actions,
+.lf-row.is-missing .lf-actions { opacity: 1; }   /* a broken link always offers the way out */
+.lf-actions button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.1rem 0.25rem; border-radius: 2px; font-size: var(--type-xs);
+  display: inline-flex; align-items: center;
+}
+.lf-actions button:hover { color: var(--ink); background: var(--sheet-3); }
+
+.lf-empty { font-size: var(--type-xs); color: var(--ink-4); padding: 0 0.55rem 0.3rem; }
+.lf-typed { padding: 0.15rem 0.55rem 0.3rem; }
+.lf-head-actions { display: inline-flex; gap: 0.1rem; }
+.lf-kind { margin-right: 0.3rem; vertical-align: -1px; color: var(--ink-3); }
+
+/* ── the path chooser ──────────────────────────────────
+   Navigating to a file rather than remembering where it is. Deliberately the
+   same window in the desktop app and in a browser: the native dialog exists
+   only in the shell, and the alternative there was typing a path, which is not
+   choosing.
+
+   Sized to a list rather than to the screen. A chooser that fills a 1920px
+   window makes the reader's eye travel the width of the desk to match a name
+   to its size. */
+.pp-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(46, 42, 34, 0.28);
+  display: grid; place-items: center;
+}
+.pp {
+  width: min(38rem, 92vw);
+  max-height: min(34rem, 82vh);
+  display: flex; flex-direction: column;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 14px 44px rgba(46, 42, 34, 0.22);
+  overflow: hidden;
+}
+.pp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--rule);
+}
+.pp-title { font-weight: 600; font-size: var(--type-base); }
+.pp-head button, .pp-bar button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-3);
+  padding: 0.2rem; border-radius: 2px; display: inline-flex;
+}
+.pp-head button:hover, .pp-bar button:hover:not(:disabled) {
+  color: var(--ink); background: var(--sheet-2);
+}
+.pp-bar button:disabled { opacity: 0.35; cursor: default; }
+
+.pp-bar {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.45rem 0.85rem; border-bottom: 1px solid var(--rule);
+}
+/* A long path is truncated from the LEFT, because the end is the part that
+   says where you are. `direction: rtl` is what moves the ellipsis to the front
+   -- but on its own it also relocates the leading slash to the end, rendering
+   /home/u/papers as home/u/papers/. `unicode-bidi: plaintext` fixes that: the
+   run is laid out left-to-right by its own content while the overflow still
+   happens at the start. */
+.pp-cwd {
+  font-family: var(--font-mono); font-size: var(--type-xs); color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; unicode-bidi: plaintext; text-align: left; flex: 1;
+}
+.pp-filter {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.85rem; border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.pp-filter input {
+  flex: 1; border: 0; background: none; outline: none;
+  font-size: var(--type-sm); color: var(--ink);
+}
+
+.pp-list { overflow-y: auto; padding: 0.3rem 0.35rem; flex: 1; }
+.pp-row {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.32rem 0.5rem; border: 0; border-radius: 2px;
+  background: none; cursor: pointer; text-align: left;
+  font-size: var(--type-sm); color: var(--ink-2);
+}
+.pp-row.is-cursor { background: var(--sheet-2); color: var(--ink); }
+/* a file a paper cannot use is shown but not offered -- hiding it would make
+   the folder look emptier than it is */
+.pp-row.is-off { color: var(--ink-4); cursor: default; }
+.pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-size { font-size: var(--type-xs); color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+.pp-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.55rem 0.85rem; border-top: 1px solid var(--rule);
+}
+.pp-hint {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: var(--type-xs); color: var(--ink-4);
+}
+.pp-take {
+  font-size: var(--type-sm); padding: 0.3rem 0.75rem;
+  border: 1px solid var(--rule-2); border-radius: 2px;
+  background: var(--ink); color: var(--paper); cursor: pointer;
+}
+.pp-take:disabled { opacity: 0.4; cursor: default; }
+.pp-note, .pp-error {
+  font-size: var(--type-sm); color: var(--ink-3); padding: 0.6rem 0.5rem;
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.pp-error { color: var(--danger); }
+
+/* ── the project filter and the "when" column ──────────
+   The tree holds two dozen papers, seven of them called bundle-validation and
+   four called untitled. Sorting by last edit answers "the one I was working
+   on"; the relative time answers "which of these seven"; the filter answers
+   the rest. */
+.ft-filter {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.55rem 0.35rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.ft-filter input {
+  flex: 1; min-width: 0;            /* or the input's default size floors the row */
+  border: 0; background: none; outline: none;
+  font-size: var(--type-sm); color: var(--ink);
+}
+.ft-filter input::placeholder { color: var(--ink-4); }
+.ft-filter-count {
+  font-size: var(--type-xs); color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Right-aligned, quiet, and out of the way of the name it qualifies. It is
+   the answer to "which one", not a thing to read on its own. */
+/* The one auto margin in the row: everything before it packs left, the date
+   and the dot sit together at the right. Right-aligned over a reserved width
+   so "now" and "Aug 15" end at the same place -- tabular-nums then keeps the
+   digits from shifting as the numbers change. */
+.ft-when {
+  margin-left: auto;
+  min-width: 3.2rem;
+  text-align: right;
+  font-size: var(--type-xs);
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ft-row.is-active .ft-when { color: var(--ink-3); }
+
+/* ── the bibliography panel ────────────────────────────
+   What the document cites, under the editor it belongs to. Collapsed by
+   default: a thing you consult, not a thing you read while writing, so the
+   editor keeps its height until asked.
+
+   The two unhappy states are told in WORDS as well as colour -- "missing" and
+   "unused" are labels. A key cited but absent from references.bib is the one
+   that renders as [?] in the PDF, which is how that bug reached us. */
+.bib { border-top: 1px solid var(--rule); flex: 0 0 auto; }
+.bib-head {
+  display: flex; align-items: center; gap: 0.4rem; width: 100%;
+  padding: 0.4rem 0.7rem; border: 0; background: none; cursor: pointer;
+  color: var(--ink-3); font-size: var(--type-sm); text-align: left;
+}
+.bib-head:hover { background: var(--sheet-2); color: var(--ink); }
+.bib-title { font-weight: 500; }
+.bib-counts {
+  margin-left: auto; display: inline-flex; gap: 0.6rem; align-items: center;
+  font-size: var(--type-xs); color: var(--ink-4);
+}
+.bib-warn {
+  display: inline-flex; align-items: center; gap: 0.2rem; color: var(--danger);
+}
+.bib-quiet { color: var(--ink-4); }
+
+.bib-body { padding: 0.15rem 0.7rem 0.6rem; max-height: 15rem; overflow-y: auto; }
+.bib-row {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.22rem 0; font-size: var(--type-sm);
+  border-bottom: 1px solid var(--rule);
+}
+.bib-row:last-child { border-bottom: 0; }
+.bib-key {
+  font-family: var(--font-mono); font-size: var(--type-xs);
+  color: var(--ink-2); white-space: nowrap;
+}
+.bib-row.is-missing .bib-key { color: var(--danger); }
+.bib-what {
+  flex: 1; min-width: 0; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bib-times { font-size: var(--type-xs); color: var(--ink-4); }
+.bib-row button {
+  background: none; border: 0; cursor: pointer; color: var(--ink-4);
+  padding: 0 0.15rem; display: inline-flex;
+}
+.bib-row button:hover { color: var(--ink); }
+
+.bib-unused { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--rule); }
+.bib-unused-label {
+  display: block; font-size: var(--type-xs); color: var(--ink-4);
+  margin-bottom: 0.25rem;
+}
+.bib-unused .bib-key { margin-right: 0.5rem; }
+.bib-empty, .bib-error { font-size: var(--type-sm); color: var(--ink-4); padding: 0.3rem 0; }
+.bib-error { color: var(--danger); }
+
+/* ── dragging inside the tree ──────────────────────────
+   A file being moved, and the folder it would land in. Both states are drawn
+   because a drag with no feedback is a guess: you find out where it went by
+   letting go. */
+.ft-row.is-dragging { opacity: 0.45; }
+.ft-row.is-drop-into {
+  background: var(--sheet-3);
+  outline: 1px solid var(--rule-2);
+  outline-offset: -1px;
+}
+/* The whole paper, as a drop target for a file from another one. */
+.ft-project.is-dropping > .ft-row.is-project { background: var(--sheet-3); }
+
+/* ── the command palette ───────────────────────────────
+   Ctrl+K. The application had one shortcut before this, so the core loop --
+   find a paper, open it, start writing -- was entirely mouse.
+
+   Sits high rather than centred: the list grows downward, and a box that
+   grows from the middle of the screen moves its own first row as you type. */
+.cp-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(46, 42, 34, 0.26);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding-top: 14vh;
+}
+.cp {
+  width: min(36rem, 92vw);
+  max-height: 60vh; display: flex; flex-direction: column;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2); border-radius: var(--radius-md);
+  box-shadow: 0 16px 48px rgba(46, 42, 34, 0.24);
+  overflow: hidden;
+}
+.cp-input {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+.cp-input input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font-size: var(--type-base); color: var(--ink);
+}
+.cp-list { overflow-y: auto; padding: 0.25rem; }
+.cp-row {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.4rem 0.65rem; border: 0; background: none; cursor: pointer;
+  border-radius: 2px; text-align: left;
+  font-size: var(--type-sm); color: var(--ink-2);
+}
+.cp-row.is-cursor { background: var(--sheet-2); color: var(--ink); }
+.cp-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The group is context, not content: it says which kind of thing this is
+   without competing with the thing's own name. */
+.cp-group { font-size: var(--type-xs); color: var(--ink-4); }
+.cp-hint {
+  font-family: var(--font-mono); font-size: var(--type-xs);
+  color: var(--ink-4); background: var(--sheet-2);
+  padding: 0.05rem 0.3rem; border-radius: 2px;
+}
+.cp-empty { padding: 0.7rem; font-size: var(--type-sm); color: var(--ink-4); }
+.cp-foot {
+  display: flex; align-items: center; gap: 0.3rem;
+  padding: 0.45rem 0.9rem; border-top: 1px solid var(--rule);
+  font-size: var(--type-xs); color: var(--ink-4);
+}
+/* The second door out of an empty Library. Quieter than the first, because
+   most people here did come to read papers -- but present, because some did
+   not, and an empty shelf should not read as a locked one. */
+.empty-alt { margin-top: 0.6rem; font-size: var(--type-sm); color: var(--ink-4); }
+.empty-alt a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+.empty-alt a:hover { color: var(--ink); }
+
+/* The template menu, opened by the + in the Scribe tree.
+
+   Deliberately the same treatment as .ft-menu, the context menu already in
+   this component: fixed position, --z-over, --surface, --lift-high. The first
+   attempt invented its own and got two things wrong that only show on screen
+   -- it painted with var(--surface-1), which is not a token in this
+   stylesheet, so the background silently resolved to nothing and the menu
+   rendered transparent over the file list.
+
+   A dropdown lived in the header before this and took 120px of a 200px
+   sidebar, pushing the + itself off the edge. The menu costs no width, and
+   it can afford to describe each template rather than just name it. */
+.ft-tpl-scrim { position: fixed; inset: 0; z-index: var(--z-over); }
+.ft-tpl-menu {
+  position: fixed;
+  z-index: var(--z-over);
+  min-width: 15rem;
+  max-width: min(19rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--lift-high);
+}
+.ft-tpl-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.ft-tpl-item:hover, .ft-tpl-item:focus-visible { background: var(--surface-2); }
+.ft-tpl-label { color: var(--ink); font-size: var(--type-sm); font-weight: 500; }
+.ft-tpl-desc {
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.35;
+  /* the description is the point of the menu, so it wraps rather than clips */
+  white-space: normal;
+}

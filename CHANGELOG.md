@@ -7,11 +7,12 @@ does not pretend to be. Under semver, MAJOR means "we broke your code", which is
 meaningless for a desktop application nobody imports. The number here says how
 far a build has drifted from the current one:
 
-- **Z** advances on its own for anything that lands, and is unbounded
-- **Y** moves only when a human declares a feature release, and carries into X
-  at **ten** — so `1.9.4` is followed by `2.0.0`, never `1.10.0`. Y is a single
+- **Z** advances when a `fix/` branch lands, and is unbounded
+- **Y** advances when a `feat/` branch lands, resetting Z, and carries into X at
+  **ten** — so `1.9.4` is followed by `2.0.0`, never `1.10.0`. Y is a single
   digit, 0–9
-- **X** moving resets both columns below it
+- **X** is declared by a human running the release workflow, and moving it
+  resets both columns below it
 
 Ordering is preserved either way, which is the property that actually matters:
 the updater compares versions and must never be offered a number lower than the
@@ -29,7 +30,87 @@ See [scripts/README.md](scripts/README.md) for how releases are cut.
 
 ## [Unreleased]
 
+### Added
+- **The map can be relaxed without ceasing to mean anything.** LitGraph draws
+  where PCA put each paper, which is the product's central claim — position
+  encodes meaning — but a static plate cannot be taken hold of. A single dial
+  now runs from the projection exactly as computed, through overlap loosened
+  with clusters intact, to a free layout where position is shape rather than
+  meaning. Every paper keeps a spring back to **its own** projected home rather
+  than to a shared centre, which is what makes it a dial rather than a switch:
+  a small library pulled towards one point, with nothing anchoring any paper,
+  settles into a knot in the middle of an empty plate.
+- **Papers can be dragged and pinned.** A press that does not move is a
+  selection rather than a zero-distance drag — committing on `pointerdown` had
+  pinned every clicked paper where it already sat, and the pin's own re-render
+  then replaced the element before the click landed, so papers stopped being
+  selectable at all.
+- **The panel says where a paper sits** before it lists anything, and a
+  neighbourhood can be followed out to a chosen depth.
+- **A paper can use a file that lives somewhere else.** Link a `.tex`, `.bib`,
+  figure or PDF from anywhere on the machine; the project references it where it
+  sits rather than taking a copy, for the reason imported models are not copied
+  either. Because a referenced file can move, each link also stores the
+  operating system's identity for it, which survives a rename and a move within
+  a filesystem — so reorganising your documents does not silently break a paper.
+  The path is checked before the identity, so an editor that saves by writing a
+  temporary file and renaming it still reads as the same document. A file moved
+  somewhere the project has never referred to is reported as missing, with a
+  button to find it, rather than guessed at. A whole **folder** can be linked
+  too — a shared `figures/` directory used by several papers — though its
+  contents are never read or served: it is a remembered location, and copying
+  it in is the only thing that touches what is inside.
+- **A file chooser that works everywhere.** Clicking to link something opens a
+  window you navigate — home, up, type to narrow, Enter to open or take — rather
+  than asking for a path you have to remember. `Ctrl+O` chooses a file and
+  `Ctrl+K Ctrl+O` a folder, following the editor most people already have in
+  their hands. It reads directories through the backend, so it behaves the same
+  in the desktop app as in a browser; files a paper cannot use are shown greyed
+  rather than hidden, so a folder never looks emptier than it is.
+- **A linked file is usable, not just remembered.** Write its bare name --
+  `\includegraphics{chart.png}` -- and the compile finds it where it sits. One
+  `references.bib` can be shared by three papers and stay a single file. A link
+  that has gone missing is skipped and reported rather than failing the build.
+- **Anything can be linked or added to a paper**, not only the file types LaTeX
+  reads. A dataset or a README beside a document is a normal thing to keep, and
+  a type the engine cannot open is useless to a document rather than dangerous
+  to one. The chooser still marks which files a document could reference.
+- **Scribe works with an empty library.** It carries its own TeX engine and
+  compiles offline, so writing never depended on having read anything — but the
+  first screen of a new install said only "drop a PDF here", which reads as a
+  locked door to anyone who came to write. The empty Library now offers Scribe
+  beside ingestion, and nothing in Scribe requires an ingested paper.
+- **A new document can be something other than a research paper.** Six starters
+  — research paper, article, letter, CV, report and Beamer slides — opened as a
+  menu from the **+** in the tree, each described rather than merely named. A
+  letter is no longer a paper you have to delete first. The set comes from the
+  backend, so the menu cannot offer a shape that no longer exists, and an
+  unrecognised one gives you the paper rather than an error.
+- **The project tree is navigable at 23 papers.** Sort by name or last edit,
+  filter once there are enough to be worth narrowing, and see when each was last
+  touched.
+- **A bibliography panel.** What the document cites, what `references.bib`
+  defines, and which entries nothing cites — read from the source rather than
+  the compiled PDF, so a citation typed a moment ago is already there.
+- **Files can be dragged where they belong**, including into another paper.
+  Folders are the drop targets; a file is not, because "beside it" would be a
+  reorder this tree does not have.
+- **The compiled PDF saves where you choose, named after the paper** — reduced
+  to what every filesystem accepts, not to the project id. The button says
+  **Save PDF**, because labelled only "PDF" it read as a link to the file and
+  the save behaviour went unfound. In a browser it stays an ordinary download,
+  because a page cannot choose a folder, but it arrives correctly named either
+  way.
+- **`Ctrl+K` reaches any screen or any paper** from the keyboard.
+
 ### Changed
+- **A `feat/` branch moves the minor again.** Landing a feature advances Y and
+  resets Z; a `fix/` advances Z. Between 2026-08-05 and now every landing moved
+  Z and only a human could move Y, on the reasoning that calling something a
+  feature release is editorial. It is — but naming a branch `feat/` *is* that
+  judgement, made by the person who built it. What the previous rule produced
+  was a Y that almost never moved, so a build that had gained a whole subsystem
+  read the same as one that had fixed a typo.
 - **Y carries into X at ten again, not twenty.** The radix was raised to twenty
   on 2026-08-09 so that X would not climb after ten features, which can be one
   quiet quarter. Reverted: a two-digit Y is precisely what the scheme exists to

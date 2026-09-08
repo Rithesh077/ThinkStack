@@ -366,8 +366,54 @@ export const projectFilesApi = {
     });
   },
 
+  /** move a file into a different paper */
+  moveTo: (projectId, src, toProject, dst = '') =>
+    request(`/papers/projects/${projectId}/files/move-to`, {
+      method: 'POST',
+      body: { src, to_project: toProject, dst },
+    }),
+
   mkdir: (projectId, path) =>
     request(`/papers/projects/${projectId}/files/folder`, { method: 'POST', body: { path } }),
+
+  /* ── files that live outside the project ──
+     A link is a note about where a file is, not a copy of it. Every one of
+     these returns the whole resolved list, because adding or repairing one
+     link can change what another reports: the search for a moved file looks
+     near the folders other links sit in. */
+  /** what the document cites, and whether each citation will resolve */
+  bibliography: (projectId) =>
+    request(`/papers/projects/${projectId}/bibliography`),
+
+  /** one directory, listed for the chooser. an empty path means the user's home.
+      The query is always sent, even when empty: a nested template in the PATH
+      makes the URL unreadable to the api-contract test, which is checking that
+      every call here hits a route the backend actually defines. */
+  browse: (path = '') =>
+    request(`/papers/browse?path=${encodeURIComponent(path)}`),
+
+  links: (projectId) => request(`/papers/projects/${projectId}/links`),
+
+  addLink: (projectId, path) =>
+    request(`/papers/projects/${projectId}/links`, { method: 'POST', body: { path } }),
+
+  relink: (projectId, linkId, path) =>
+    request(`/papers/projects/${projectId}/links/${linkId}`, {
+      method: 'PUT',
+      body: { path },
+    }),
+
+  unlink: (projectId, linkId) =>
+    request(`/papers/projects/${projectId}/links/${linkId}`, { method: 'DELETE' }),
+
+  copyLinkIn: (projectId, linkId, dest = '') =>
+    request(`/papers/projects/${projectId}/links/${linkId}/copy`, {
+      method: 'POST',
+      body: { dest },
+    }),
+
+  linkRawUrl: (projectId, linkId) =>
+    `${BASE_URL}/papers/projects/${projectId}/links/${linkId}/raw`,
 
   move: (projectId, src, dst) =>
     request(`/papers/projects/${projectId}/files/move`, { method: 'POST', body: { src, dst } }),
@@ -404,8 +450,11 @@ export const encryptionApi = {
 export const papersApi = {
   list: () => request('/papers/projects'),
 
-  create: (name) =>
-    request('/papers/projects', { method: 'POST', body: { name } }),
+  /** what a new document can start as */
+  templates: () => request('/papers/templates'),
+
+  create: (name, template) =>
+    request('/papers/projects', { method: 'POST', body: { name, template } }),
 
   // Only the display name. The directory is named after the project id, so a
   // rename cannot break a compile, a PDF preview, or an \includegraphics path.
@@ -455,6 +504,13 @@ export const papersApi = {
 
   /* inline disposition - renders inside the preview <iframe> */
   previewUrl: (projectId) => `${BASE_URL}/papers/download/${projectId}`,
+
+  /** write the compiled PDF to a path the author chose */
+  exportPdf: (projectId, path) =>
+    request(`/papers/projects/${projectId}/export-pdf`, {
+      method: 'POST',
+      body: { path },
+    }),
 
   /* attachment disposition - triggers a save-to-disk */
   downloadUrl: (projectId) => `${BASE_URL}/papers/download/${projectId}?download=1`,

@@ -714,6 +714,189 @@ has, so the reference is fixed before it is cited, or in that project's file.
 The one rule a user cannot guess is stated in the form -- authors separate on
 commas, or on semicolons when a name contains one.
 
+## 2026-08-22: a new document is not always a research paper
+
+**Context.** Scribe is a LaTeX editor that happens to live inside a research
+application. Every project began from one skeleton -- abstract, methodology,
+results, a bibliography -- because every project was assumed to be a paper.
+Someone opening it to write a letter, a report or a CV had to delete most of
+the document before they could start, and the deleting was the first thing the
+tool asked them to do.
+
+**Decision.** Six starter documents: research paper, article, letter, CV,
+report and Beamer slides. The set is served from the backend at
+`GET /api/papers/templates` rather than listed in the interface, and an
+unrecognised id returns the paper instead of an error.
+
+**Consequences.** The picker and the set cannot drift: a template added to
+`domain/paper_writer/templates.py` appears in the interface with no second
+edit, and one removed cannot be offered for a shape that no longer exists. The
+fallback is the important half -- a new document is not the place to refuse. An
+id can be stale (a template retired between releases) or simply wrong, and in
+both cases the author still wants a document; handing them the paper is worse
+than what they asked for and far better than an error where a document should
+be. The consequence to watch is that a typo cannot be detected, which is
+accepted because the id is chosen from a served list, never typed.
+
+The default is served too, as `default`. Hardcoding "paper" in the interface
+would be a second place that has to change when the set does.
+
+## 2026-08-23: a linked file is put on the compile's search path, not copied
+
+**Context.** A link records where a file is rather than taking a copy. Tectonic
+runs with the project as its working directory, so that was bookkeeping and
+nothing more: `\includegraphics{chart.png}` failed on a file the panel listed
+as present. The only thing that worked was typing an absolute path, which works
+whether or not the file was ever linked and breaks the moment it moves --
+precisely what linking exists to survive.
+
+**Decision.** Every resolved link contributes a directory to the compile's
+search path: a linked file its parent, a linked folder itself. Tectonic is
+given `-Z search-path`; the pdflatex fallback is given `TEXINPUTS`, and its
+separate BibTeX pass `BIBINPUTS`.
+
+**Consequences.** `-Z search-path`, not `TEXINPUTS`, is the mechanism for the
+shipped engine, and the difference is not cosmetic: Tectonic has its own IO
+layer and ignores the environment variable outright. Verified against the
+bundled 0.15.0 -- the same document fails with `TEXINPUTS` set and compiles
+with the flag. Setting the variable and believing it worked is exactly how this
+could have looked fixed while still failing, so a test asserts Tectonic is
+*not* given it.
+
+One flag covers `\input`, `\includegraphics` and `\bibliography` alike,
+because BibTeX runs inside Tectonic's own multi-pass build and inherits it.
+That makes a shared `references.bib` work, which was the case the feature was
+argued for in the first place.
+
+A missing link is skipped rather than failing the compile. It is already
+reported in the panel, and refusing to build because one of several linked
+files moved is a worse answer than building and saying what was missing.
+
+## 2026-08-23: what may be linked is not decided by what LaTeX can read
+
+**Context.** A suffix allowlist refused anything a LaTeX project could not use.
+It was also doing security work: linking is the one place the application
+accepts an absolute path, and refusing extensionless files kept `~/.ssh/id_rsa`
+and `/etc/passwd` out of reach.
+
+**Decision.** Any file may be linked or uploaded. The set survives as
+`LATEX_SUFFIXES`, a hint the chooser shows -- which files a document could
+actually reference -- rather than a refusal.
+
+**Consequences.** The rule was refusing datasets, READMEs and image formats
+people legitimately keep beside a paper, and telling them their own files were
+not allowed in their own folder. A type the engine cannot read is useless to a
+document, not dangerous to one; nothing here executes a project file, and a
+served one goes out as `Content-Disposition: attachment`.
+
+The security argument is not dismissed, it is relocated. What keeps an
+absolute-path endpoint acceptable is that only the person at the machine can
+reach it -- the same-origin check and the loopback bind, both landed earlier
+this month. That is where an access question belongs, rather than in a list of
+file extensions that never described the threat accurately anyway.
+
+What is given up is honest to state: this was a second layer, and there is now
+one. If the origin check were ever weakened, the blast radius is larger than it
+was. The endpoint reaches any file the user can reach.
+
+
+## 2026-08-23: a control that chooses must not displace the control that acts
+
+**Context.** The template picker was added to the Scribe tree header as a
+`<select>`. That header is a fixed-width flex row in a 200px sidebar whose
+buttons are 22px and do not shrink, so 120px of dropdown pushed the **+**
+button past the visible edge. Templates became selectable and papers became
+uncreatable.
+
+**Decision.** The **+** opens the templates as a menu, using the same treatment
+as `.ft-menu`, the context menu already in that component. Choosing a template
+is the same click that creates the paper.
+
+**Consequences.** The menu costs no header width, so it cannot crowd out
+anything. It also has room to describe each template rather than name it, which
+is the difference between "CV" and a choice someone can make without first
+making it to find out — a dropdown could never have done that in this space.
+Making the choice and the creation one click removes a selected-but-unapplied
+state that could drift from the paper it eventually made.
+
+The general rule is worth stating: when a control that *configures* an action
+shares a row with the control that *performs* it, the performing one must win
+the space. A user who cannot configure is inconvenienced; a user who cannot act
+is stuck.
+
+## 2026-08-23: a custom property that does not exist fails only on screen
+
+**Context.** The first version of that menu was written with
+`background: var(--surface-1)`. This project's token is `--surface`. An
+undefined custom property makes the declaration invalid, so the background
+resolved to nothing and the menu rendered transparent over the file list.
+
+Everything passed. The CSS is syntactically valid, the build succeeds, and
+jsdom computes no cascade and no layout, so no interface test can see a panel
+you can see through. It was found by looking at it.
+
+**Decision.** `frontend/tests/cssTokens.test.js` asserts that every
+`var(--token)` read without a fallback is one some stylesheet defines. Comments
+are stripped first, because a token named in a comment is not a token used, and
+`var(--x, fallback)` is exempt because a fallback makes the absence deliberate.
+
+**Consequences.** This is the second defect in one evening that a green suite
+could not see -- the other was a `<select>` clipping a button out of view. The
+two share a shape: a change that is correct as code and wrong as pixels. Not
+all of that class is testable, but the part that is a *name* is, and a name is
+exactly what gets mistyped when a design system has both `--surface` and
+`--surface-2`. The check is a string comparison over two files.
+
+The rest of that class remains uncovered, and the honest mitigation is the one
+that caught both: run it and look at it before committing.
+
+
+## 2026-08-22: an empty library is a state, not a blocker
+
+**Context.** The Library is the first screen, and on a new install it is empty.
+It said one thing: drop a PDF here. For someone who installed ThinkStack to
+write, that is a door with nothing behind it -- and the reasonable conclusion
+from an app whose only instruction cannot be followed is that it is broken, or
+that it is not for them.
+
+**Decision.** Nothing in Scribe may require an ingested paper, and the empty
+Library says so, offering writing beside reading. Tests hold the property
+rather than the wording: the citation routes return empty rather than failing,
+no starter document arrives citing a key nothing defines, and a project can be
+created, edited, listed and compiled with no library at all.
+
+**Consequences.** Scribe carries its own TeX engine and compiles offline, so
+this is a claim the product can actually make -- writing genuinely does not
+depend on reading. The tests matter more than the sentence in the empty state,
+because the sentence is what a reader sees and the property is what makes it
+true; a later change that made some panel throw on an empty library would leave
+the invitation in place and break what it promises.
+
+The link is asserted as a link, not as prose. A sentence mentioning Scribe with
+no way to reach it is the same dead end in nicer words.
+
+## 2026-08-22: a lazily-imported module is asserted over HTTP, not assumed
+
+**Context.** `templates.py` is imported inside the two functions that use it,
+never at module scope. PyInstaller's static analysis does follow function-level
+imports -- verified against the shipped AppImage, whose `/api/models/registry`
+handler imports `domain.model_manager.discovery` the same way and answers
+correctly -- but that is a claim about a tool, checked once, on one platform.
+
+**Decision.** `scripts/validate_bundle.py` asks the frozen backend for the
+template list and asserts all six ids are present and every one is labelled.
+It runs before packaging, on all three platforms, and is not
+`continue-on-error`.
+
+**Consequences.** The failure this guards against is silent rather than loud. A
+bundle that lost the module would not crash: `create_project` falls back to the
+paper on an unknown id, so the picker would offer a single option and look like
+a design decision. Nothing in a build log would say otherwise. The label check
+is there because a blank `<option>` has already shipped once -- the route sends
+`label`, the interface read `name` -- and jsdom computes no layout, so an
+interface test cannot see a picker that renders as empty lines.
+
+
 ## 2026-08-13: the page titles go, and Library introduces the others
 
 **Context.** Every screen carried a heading repeating the nav item that was
@@ -765,6 +948,39 @@ that disagree; this was the two halves disagreeing, on exactly the machines the
 Vulkan work was done to reach. It was invisible here because the development
 laptop reaches its RTX 3050 Ti through NVK, so `nvidia-smi` is absent and the
 sentence had never once appeared.
+
+## 2026-08-22: the branch name says which column moves
+
+**Context.** Since 2026-08-05 every landing moved Z, and only a human running
+the release workflow could move Y. The reasoning was that "is this a feature
+release" is an editorial judgement and a script reading branch prefixes cannot
+make one -- it can only guess consistently, which is what an earlier rule did
+and what produced version numbers nobody had chosen.
+
+**Decision.** `feat/` and `feature/` move Y and reset Z. `fix/` and `hotfix/`
+move Z. X is untouched by any branch name and stays with the release workflow.
+
+**Why the earlier reasoning does not hold.** It was right that the judgement is
+editorial and wrong about who makes it. Naming a branch `feat/` *is* the
+judgement, made by the person who built the thing, at the moment they know it is
+true -- not reconstructed later from a list of merges by someone reading titles.
+What the old rule produced in practice was Y almost never moving, so the number
+stopped saying anything about the SHAPE of what had landed: a build that had
+gained a whole subsystem read the same as one that had fixed a typo, and the
+only signal was a warning nobody had to act on.
+
+X stays a decision, because "this is a new generation of the product" is not a
+claim a branch name can make.
+
+**Consequence.** `replay_landings` in `scripts/next_version.py` routes features
+through `bump_minor`. The `--pending-minor` warning is removed along with its
+step-summary block in `release.yml`: it existed only because the old rule had no
+enforcement, and now the condition it watched for cannot arise, so it could only
+ever be wrong. Order of landings matters again and is asserted -- a feature
+resets Z, so fix-feat-fix and feat-fix-fix differ.
+
+Note that the entry below, from 2026-08-18, says "X and Y are editorial by
+design". That was true when written and is now true only of X.
 
 ## 2026-08-18: Y carries into X at ten (supersedes 2026-08-09)
 

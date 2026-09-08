@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, RefreshCw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
          Lock, ShieldCheck, ShieldOff, Eye, EyeOff, Pencil, Search } from 'lucide-react';
 import { documentsApi, encryptionApi, papersApi, registryApi, useJobs } from '../utils/api';
@@ -466,6 +466,16 @@ export default function Library() {
             <p>
               Drop a PDF on the line above. ThinkStack reads it on this machine,
               and the page starts to take its colour.
+            </p>
+            {/* The first thing a new install said was, in effect, "add
+                papers" -- and for someone who opened this to write a letter
+                or a report that is a door with nothing behind it. Scribe
+                needs no library at all: it compiles offline and carries its
+                own TeX engine. Saying so costs a line and stops the empty
+                shelf reading as a locked one. */}
+            <p className="empty-alt">
+              Or <Link to="/write">start writing</Link> &mdash; Scribe works
+              with an empty library.
             </p>
           </div>
         ) : visible.length === 0 ? (

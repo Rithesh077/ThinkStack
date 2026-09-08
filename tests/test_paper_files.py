@@ -185,14 +185,32 @@ class TestWriting:
         F.write_file(project, "refs.bib", "@article{a}")
         assert F.read_file(project, "refs.bib") == "@article{a}"
 
-    @pytest.mark.parametrize("bad", ["run.exe", "script.sh", "payload.so", "a.py"])
-    def test_files_latex_cannot_use_are_refused(self, project, bad):
-        with pytest.raises(FileError, match="not used by LaTeX"):
-            F.write_bytes(project, bad, b"x")
+    @pytest.mark.parametrize("name", ["run.exe", "script.sh", "data.parquet", "a.py"])
+    def test_a_project_holds_whatever_the_author_puts_in_it(self, project, name):
+        """Type stopped being a gate on 2026-08-23.
 
-    def test_a_file_with_no_extension_is_refused(self, project):
-        with pytest.raises(FileError, match="extension"):
-            F.write_bytes(project, "README", b"x")
+        A project is a folder its author owns. Refusing a dataset or a script
+        that sits beside a paper told them their own file was not allowed in
+        their own directory, and the security argument the rule was really
+        standing in for now lives where access questions belong -- the
+        same-origin check and the loopback bind. Writing a .sh here does not
+        run it; nothing in this application executes a project file, and a
+        served one goes out as an attachment.
+        """
+        entry = F.write_bytes(project, name, b"x")
+        assert entry.name == name
+        assert (project / name).read_bytes() == b"x"
+
+    def test_a_file_with_no_extension_is_allowed(self, project):
+        # README, LICENSE, Makefile -- ordinary things to keep beside a paper.
+        F.write_bytes(project, "README", b"x")
+        assert (project / "README").read_bytes() == b"x"
+
+    @pytest.mark.parametrize("bad", ["", ".", ".."])
+    def test_a_name_that_names_nothing_is_still_refused(self, project, bad):
+        # The path itself is safe_path()'s job; this is the rest of it.
+        with pytest.raises(FileError):
+            F.write_bytes(project, bad, b"x")
 
     def test_an_oversized_file_is_refused(self, project):
         with pytest.raises(FileError, match="limit"):
@@ -285,7 +303,7 @@ class TestErrorsAreFitToShow:
         for call in (
             lambda: F.safe_path(project, "../../../etc/passwd"),
             lambda: F.read_file(project, "nope.tex"),
-            lambda: F.write_bytes(project, "run.exe", b"x"),
+            lambda: F.write_bytes(project, "../escape.tex", b"x"),
             lambda: F.delete_path(project, "main.tex"),
         ):
             with pytest.raises(FileError) as e:

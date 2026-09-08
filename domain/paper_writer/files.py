@@ -31,7 +31,7 @@ from pathlib import Path
 # Files ThinkStack writes and owns. They are regenerated on every compile and
 # mean nothing to an author, so listing them turns a four-file project into a
 # nine-file one where the two that matter are hard to find.
-HIDDEN_NAMES = {"meta.json"}
+HIDDEN_NAMES = {"meta.json", "links.json"}
 HIDDEN_SUFFIXES = {
     ".aux", ".log", ".out", ".toc", ".synctex.gz", ".fls", ".fdb_latexmk",
     ".bbl", ".blg",
@@ -44,7 +44,18 @@ HIDDEN_SUFFIXES = {
 
 # What a LaTeX project can actually use. An arbitrary upload is a file the
 # compiler will not read and the user cannot open -- it just consumes the disk.
-ALLOWED_SUFFIXES = {
+# What LaTeX can actually do something with. This is a HINT, not a gate: the
+# picker uses it to mark which files a document could reference, and nothing
+# refuses a file for being absent from it.
+#
+# It was a gate until 2026-08-23. The argument for that was never really about
+# LaTeX -- a type the engine cannot read is useless, not dangerous -- it was
+# that linking is the one place the app takes an absolute path, and refusing
+# extensionless files kept ~/.ssh/id_rsa and /etc/passwd out of reach. What
+# carries that now is the same-origin check and the loopback bind: the only
+# caller able to reach this API is the person sitting at the machine, choosing
+# their own files. See docs/ADR.md, 2026-08-23.
+LATEX_SUFFIXES = {
     ".tex", ".bib", ".cls", ".sty", ".bst",           # source
     ".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg",  # figures
     ".csv", ".dat", ".txt",                           # data for pgfplots
@@ -239,6 +250,44 @@ def delete_path(project_dir: Path, relpath: str) -> None:
         target.unlink()
 
 
+def move_between(src_dir: Path, src: str, dst_dir: Path, dst: str) -> FileEntry:
+    """Move a file from one project into another.
+
+    Separate from `move_path` because the safety argument is different, not
+    because the code is. `move_path` resolves both ends against ONE project and
+    refuses anything outside it; here there are two roots and each end has to be
+    checked against its own. Folding them into one function would mean a single
+    call site deciding which root applies to which path, which is exactly the
+    kind of decision that gets made wrongly later.
+
+    Directories are refused. Dragging a folder across projects is a copy of an
+    unbounded subtree with a size cap to honour at the far end, and nobody has
+    asked for it -- refusing is smaller and honest.
+    """
+    source = safe_path(src_dir, src)
+    target = safe_path(dst_dir, dst)
+    if not source.exists():
+        raise FileError(f"{src} does not exist.")
+    if source.is_dir():
+        raise FileError("Only files can be moved between papers.")
+    if target.exists():
+        raise FileError(f"{dst} already exists in that paper.")
+    _check_suffix(target.name)
+
+    # the destination's cap, checked with the destination's own helper
+    _check_room(dst_dir, source.stat().st_size)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # shutil.move rather than Path.replace: the two projects can sit on
+    # different filesystems once a workspace is a symlink or a mount, and
+    # replace() raises across devices where move falls back to copy-then-delete.
+    shutil.move(str(source), str(target))
+    return FileEntry(
+        path=_rel(dst_dir, target), name=target.name,
+        is_dir=False, size=target.stat().st_size,
+    )
+
+
 def move_path(project_dir: Path, src: str, dst: str) -> FileEntry:
     """rename, or move into a folder. Both ends are checked."""
     source = safe_path(project_dir, src)
@@ -309,12 +358,17 @@ def unique_name(project_dir: Path, relpath: str) -> str:
 
 
 def _check_suffix(name: str) -> None:
-    suffix = Path(name).suffix.lower()
-    if not suffix:
-        raise FileError(f"{name} needs a file extension.")
-    if suffix not in ALLOWED_SUFFIXES:
-        allowed = ", ".join(sorted(ALLOWED_SUFFIXES))
-        raise FileError(f"{suffix} files are not used by LaTeX. Allowed: {allowed}.")
+    """Kept as the one place a name is vetted, now that type is not the test.
+
+    A project is a folder the author owns, and refusing a file because LaTeX
+    would not read it told someone their own PNG-adjacent asset, dataset or
+    README was not allowed in their own directory. What still matters is that
+    the NAME cannot be used to escape the project or to name nothing at all --
+    the path itself is checked by safe_path(), and this catches the rest.
+    """
+    stem = Path(name).name
+    if not stem or stem in {".", ".."}:
+        raise FileError("That name cannot be used.")
 
 
 def _check_room(project_dir: Path, incoming: int, replacing: Path | None = None) -> None:
